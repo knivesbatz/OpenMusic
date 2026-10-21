@@ -269,7 +269,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Start-Process (Get-ChildItem new -Filter *.exe | Select-Object -First 1).FullName -ArgumentList '/S' -Wait
+          Start-Process (Get-ChildItem ../new -Filter *.exe | Select-Object -First 1).FullName -ArgumentList '/S' -Wait
           cargo install tauri-driver --locked
           $wv = (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv
           if (-not $wv) { $wv = (Get-Item "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe").VersionInfo.ProductVersion }
