@@ -319,3 +319,16 @@ jobs:
           body_path: RELEASE_NOTES.md
           prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
           fail_on_unmatched_files: true
+      - name: Remove superseded releases
+        # Only the newest release is kept. The install test above already upgraded from the previous
+        # one, so it is no longer needed once this release is published.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' |
+            while read -r tag; do
+              if [ "$tag" != "$KEEP" ]; then
+                gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+              fi
+            done
