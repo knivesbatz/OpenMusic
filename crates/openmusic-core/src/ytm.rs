@@ -868,7 +868,7 @@ impl Ytm {
         }
         // The overview only has ~3 items per type; like Spotify's "All", fill each type from its
         // own filtered search (one page each, in parallel).
-        let (songs, artists, albums, playlists) = futures_util::join!(
+        let (songs, artists, albums, playlists) = tokio::join!(
             self.search_kind_pages(q, "songs", 1),
             self.search_kind_pages(q, "artists", 1),
             self.search_kind_pages(q, "albums", 1),
