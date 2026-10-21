@@ -164,7 +164,11 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // Android: Google refuses sign-in in anything that identifies as a WebView ("; wv"),
             // and YouTube sign-in happens in this window there. Present as mobile Chrome.
             #[cfg(target_os = "android")]
-            let main = main.user_agent(ANDROID_USER_AGENT);
+            let main = main.user_agent(ANDROID_USER_AGENT).on_page_load(|_w, p| {
+                if p.event() == tauri::webview::PageLoadEvent::Finished {
+                    commands::main_page_loaded(p.url());
+                }
+            });
             main.build()?;
             // Desktop only: Android release builds block plain-HTTP requests from the webview, so
             // there the UI uses the in-process art:// protocol.

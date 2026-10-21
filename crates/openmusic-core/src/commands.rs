@@ -238,23 +238,26 @@ fn youtube_cookie_header(app: &AppHandle, label: &str) -> String {
     jar.into_iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
 }
 
-/// Android: `cookies()` isn't supported there and `cookies_for_url` waits for the main (UI)
-/// thread to answer, so it must be called from a background thread (from the main thread it
-/// deadlocks, which hung the app right after sign-in).
+/// The YouTube cookies worth keeping from a `Cookie` header ("a=b; c=d"), in a stable order.
+#[cfg_attr(desktop, allow(dead_code))]
+fn keep_yt_cookies(header: &str) -> String {
+    let jar: std::collections::BTreeMap<&str, &str> = header
+        .split(';')
+        .filter_map(|c| c.trim().split_once('='))
+        .filter(|(k, _)| YT_KEEP.contains(k))
+        .collect();
+    jar.into_iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
+}
+
+/// Android: read the webview's cookies through the app's own plugin. wry's `cookies_for_url`
+/// gives up after 10 s and then panics on the UI thread when the answer finally comes, which
+/// crashed the app while YouTube Music was loading right after sign-in.
 #[cfg(mobile)]
-async fn read_cookies(app: &AppHandle, label: &'static str) -> String {
+async fn read_cookies(app: &AppHandle, _label: &'static str) -> String {
     let app = app.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let Some(wv) = app.get_webview_window(label) else { return String::new() };
-        let Ok(url) = "https://music.youtube.com/".parse::<tauri::Url>() else { return String::new() };
-        let Ok(cookies) = wv.cookies_for_url(url) else { return String::new() };
-        // The cookies come back for that URL only, without their domain: keep them by name.
-        let jar: std::collections::BTreeMap<String, String> =
-            cookies.iter().filter(|c| YT_KEEP.contains(&c.name())).map(|c| (c.name().to_string(), c.value().to_string())).collect();
-        jar.into_iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
-    })
-    .await
-    .unwrap_or_default()
+    tauri::async_runtime::spawn_blocking(move || keep_yt_cookies(&tauri_plugin_openmusic_media::cookies(&app, "https://music.youtube.com/")))
+        .await
+        .unwrap_or_default()
 }
 
 #[cfg(desktop)]
@@ -282,54 +285,98 @@ async fn yt_adopt_cookie(app: &AppHandle, state: &AppState, cookie: String) -> R
     Ok(())
 }
 
+/// Pages the main webview finished loading, for an Android sign-in in progress (generation, sender).
+#[cfg(mobile)]
+static LOGIN_PAGES: std::sync::Mutex<Option<(u64, tokio::sync::mpsc::UnboundedSender<tauri::Url>)>> = std::sync::Mutex::new(None);
+
+/// Android: the main window finished loading `url` (see lib.rs). Never blocks: it runs on the UI thread.
+#[cfg(mobile)]
+pub fn main_page_loaded(url: &tauri::Url) {
+    if let Ok(g) = LOGIN_PAGES.lock() {
+        if let Some((_, tx)) = g.as_ref() {
+            let _ = tx.send(url.clone());
+        }
+    }
+}
+
 /// Android allows a single window, so sign-in happens in the main webview: navigate it to the
-/// Google sign-in page, wait until it lands on music.youtube.com with a session, adopt the cookies
-/// and navigate back to the app (which then boots signed in).
+/// Google sign-in page, follow its page loads until it lands on music.youtube.com with a session,
+/// adopt the cookies and navigate back to the app (which then boots signed in). Page loads come
+/// from events rather than polling the webview, whose calls can time out while a heavy page loads.
 #[cfg(mobile)]
 #[tauri::command]
 pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
     let w = app.get_webview_window("main").ok_or_else(|| Error::Invalid("no main window".into()))?;
     let back = w.url().map_err(|e| Error::Invalid(e.to_string()))?;
     let url: tauri::Url = YT_LOGIN_URL.parse().map_err(|_| Error::Invalid("url".into()))?;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let gen = GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
+    if let Ok(mut g) = LOGIN_PAGES.lock() {
+        *g = Some((gen, tx));
+    }
     w.navigate(url).map_err(|e| Error::Invalid(e.to_string()))?;
     let state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
-        // Up to 10 minutes to sign in.
         // Google's pages have no way back to the app: add a small "Back to the app" button.
         let back_btn = format!(
             "if(!document.getElementById('om-back')&&document.body){{const a=document.createElement('a');a.id='om-back';a.href={href};a.textContent='\\u2190 {name}';a.style.cssText='position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:12px 18px;border-radius:999px;background:#1ed760;color:#000;font:700 15px sans-serif;text-decoration:none;box-shadow:0 4px 16px #0008';document.body.appendChild(a)}}",
             href = serde_json::to_string(back.as_str()).unwrap_or_default(),
             name = app.package_info().name,
         );
-        for _ in 0..600 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            let on_ytm = w.url().ok().map(|u| u.host_str() == Some("music.youtube.com")).unwrap_or(false);
-            // Back in the app (user pressed Back or the button): give up quietly.
-            if w.url().ok().map(|u| u.origin() == back.origin()).unwrap_or(true) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
+        let outcome: Option<std::result::Result<(), String>> = loop {
+            if GENERATION.load(Ordering::Relaxed) != gen {
+                // A newer sign-in took over.
                 return;
             }
+            if std::time::Instant::now() > deadline {
+                break Some(Err("Sign-in timed out. Please try again.".into()));
+            }
+            let page = match tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv()).await {
+                Ok(Some(u)) => Some(u),
+                Ok(None) => return,
+                Err(_) => None,
+            };
+            if let Some(u) = &page {
+                // Back in the app (the user pressed Back or the button): give up quietly.
+                if u.origin() == back.origin() {
+                    break None;
+                }
+                if u.host_str() == Some("music.youtube.com") {
+                    // The session cookies can land a moment after the page.
+                    let mut cookie = String::new();
+                    for _ in 0..5 {
+                        cookie = read_cookies(&app, "main").await;
+                        if ytm::sapisid(&cookie).is_some() {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                    }
+                    if ytm::sapisid(&cookie).is_some() {
+                        break Some(yt_adopt_cookie(&app, &state, cookie).await.map_err(|e| e.to_string()));
+                    }
+                }
+            }
+            // Fire-and-forget: re-add the button on Google's single-page steps.
             let _ = w.eval(&back_btn);
-            if !on_ytm {
-                continue;
+        };
+        if let Ok(mut g) = LOGIN_PAGES.lock() {
+            if g.as_ref().is_some_and(|(n, _)| *n == gen) {
+                *g = None;
             }
-            let cookie = read_cookies(&app, "main").await;
-            if ytm::sapisid(&cookie).is_none() {
-                continue;
-            }
-            let result = yt_adopt_cookie(&app, &state, cookie).await;
-            let _ = w.navigate(back.clone());
-            match result {
-                Ok(()) => {
-                    let _ = app.emit("login-done", ());
-                }
-                Err(e) => {
-                    let _ = app.emit("login-error", e.to_string());
-                }
-            }
-            return;
         }
+        let Some(result) = outcome else { return };
         let _ = w.navigate(back);
-        let _ = app.emit("login-error", "Sign-in timed out. Please try again.".to_string());
+        match result {
+            Ok(()) => {
+                let _ = app.emit("login-done", ());
+            }
+            Err(e) => {
+                let _ = app.emit("login-error", e);
+            }
+        }
     });
     Ok(())
 }
@@ -1709,4 +1756,19 @@ pub fn update_restart(app: AppHandle) -> Result<()> {
     }
     app.exit(0);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_only_youtube_session_cookies() {
+        let raw = "YSC=abc; SAPISID=s1/x; PREF=f6=40000000; SID=sid=val; __Secure-3PAPISID=p3; junk; =x";
+        let kept = keep_yt_cookies(raw);
+        assert!(kept.contains("SAPISID=s1/x"));
+        assert!(kept.contains("SID=sid=val"), "values may contain '='");
+        assert!(ytm::sapisid(&kept).is_some());
+        assert_eq!(keep_yt_cookies(""), "");
+    }
 }
