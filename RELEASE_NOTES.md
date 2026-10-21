@@ -1,25 +1,40 @@
-# OpenMusic 1.0.2
+# OpenMusic 1.0.3
 
-Crash fixes for the settings screen and scrolling, YouTube Music song versions instead of music
-videos, and one-click Spotify import.
+Settings and scrolling freeze fix, Autoplay, close to tray, playlist folders, full search results,
+and local files mixed into search and artist pages.
 
-## New in 1.0.2
-- **Settings crashes**: the dropdowns (Language, Japanese text, Audio quality) are now drawn by the app
-  instead of native Windows popups, which were implicated in the crashes.
+## New in 1.0.3
+- **Settings / scrolling freezes and crashes**: everything the Settings page and lists ask the app
+  for (Last.fm status, launch at startup, saving settings, library data, …) now runs in the
+  background. Before, some of it ran on the window's own thread; when one of those requests was
+  slow, the window stopped responding and Windows closed it, without leaving a crash log.
+- **Autoplay** (Settings → Playback, off by default): when your music ends, keep playing similar
+  songs: YouTube Music radio in YTSpot, sonically similar tracks in PLEXSpot (random tracks from
+  your library if the server hasn't analysed it), random songs for local files.
+- **Close to tray** (Settings → Window, off by default): the close button hides the window and
+  music keeps playing. A tray icon (always shown) has Show, Play/Pause, Previous, Next and Quit;
+  clicking it shows or hides the window.
+- **Playlist folders and custom order**: create folders in Your Library, drag playlists into them,
+  and drag to reorder; the sort button cycles Recents / Alphabetical / Custom order.
+- **Full search results**: the Songs, Albums, Artists and Playlists chips show complete result
+  lists instead of the top few.
+- **Local files in search and artist pages**: songs and albums from your local folders whose
+  metadata matches appear inside search results, Popular and Discography.
+- **Spotify playlists via Soundiiz**: Import now walks you through Soundiiz, which copies Spotify
+  playlists to YouTube Music or Plex; no Spotify developer setup.
+- Publisher shown as マッキニー マイヤ in Windows (Apps list, installer) and at the bottom of Settings.
+- Android (preview, not released yet): background playback with a media notification and lock
+  screen controls. The APK is built in CI only.
+
+## Also in 1.0.2
+- Settings dropdowns drawn by the app instead of native Windows popups.
 - **Safe mode**: if the app didn't close properly, the next launch turns off the web view's GPU
-  acceleration automatically and tells you. You can switch it back on under Settings → Performance →
-  Hardware acceleration (or turn it off yourself if scrolling freezes).
-- **Lighter rendering**: removed the live blur behind the top bar and the full-screen blur, both
-  expensive for some graphics drivers.
+  acceleration automatically and tells you (Settings → Performance → Hardware acceleration).
+- Removed the live blur behind the top bar and the full-screen blur.
 - **YouTube Music songs, not music videos**: music videos play their YouTube Music song version and
   show its title, album art and official artist; search leaves music videos out of song results.
   Titles of videos without a song version drop tags like "(Official Music Video)", "[Lyric Video]",
   "【MV】" or "- Official Audio", without touching words in the real title.
-- **Spotify import with just a sign-in**: when the release is built with the project's Spotify app
-  Client ID, Import shows "Sign in with Spotify" with no developer steps. Without it, the
-  own-Client-ID option still works.
-- Android groundwork (same code as desktop): phone layout and an APK build in CI (preview, not
-  released yet).
 
 ## Also in 1.0.1
 - **Crash fix (scrolling, opening pages, settings)**: artwork is now served by a small local web server
@@ -73,7 +88,7 @@ videos, and one-click Spotify import.
 - App playlists (SQLite, separate from Plex/Plexamp), YTSpot permanent hide with no-undo confirmation
 - Your Library: save albums (⊕ on album pages) and follow artists (Follow on artist pages); they appear
   under Albums / Artists in the sidebar. Saved in the app only, never changed on Plex or YouTube
-- Local files, Plex downloads page, Spotify import with report, Last.fm settings, English/日本語,
+- Local files, Plex downloads page, Spotify playlist transfer via Soundiiz, Last.fm settings, English/日本語,
   kana→romaji for lyrics and titles, artist names in your language (MusicBrainz aliases), accessibility (text size, reduced motion, contrast, keyboard), TV mode with
   Xbox/DS4/Switch controller navigation and "Launch at startup in TV mode"
 
@@ -90,8 +105,8 @@ videos, and one-click Spotify import.
 6. **Mini player**: resize, controls, closing it doesn't stop music.
 7. **Fullscreen + lyrics**: synced highlighting, click a line to seek, Esc exits.
 8. **Downloads (Plex)**: song/album/playlist downloads, cancel, retry, offline playback after restart.
-9. **Spotify import**: Client ID + redirect `http://127.0.0.1:43117/callback`, the report, and adding
-   "needs review" rows.
+9. **Spotify transfer**: Your Library → Transfer playlists opens Soundiiz; after the transfer, Sync
+   now shows the playlists.
 10. **Last.fm**: connect, now playing, scrobble after half the track / 4 minutes, no duplicates.
 11. **Local files**: add folder, rescan, missing files.
 12. **Saving**: save an album and follow an artist, check the sidebar filters, restart, unsave.
@@ -103,6 +118,15 @@ videos, and one-click Spotify import.
     LB/RB (previous/next), LT/RT (seek), Start (play/pause). Turn on "Launch at startup in TV mode",
     sign out of Windows and back in: the app should open fullscreen in TV mode.
 15. **Install/uninstall**: install both apps side by side, uninstall one, the other keeps working.
+
+16. **Settings** (1.0.3 fix): click through every switch, dropdown and slider, scroll long
+    lists and pages. If the app still closes, attach `crash.log` and, from Event Viewer → Windows
+    Logs → Application, any error from YTSpot/PLEXSpot or msedgewebview2.
+17. **Autoplay**: turn it on, play the last song of an album; similar songs follow (crossfade and
+    gapless included). Turn it off: playback stops at the end.
+18. **Close to tray**: turn it on, close the window; music keeps playing, the tray icon brings the
+    window back, its menu controls playback and Quit exits.
+19. **Playlist folders**: create, rename, drag in/out, reorder; restart keeps the order.
 
 ## Known gaps / not finished
 - Nothing has been verified against real accounts (no Plex server or Google account in CI).

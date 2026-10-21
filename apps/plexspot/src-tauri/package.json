@@ -1,0 +1,8 @@
+{
+  "name": "plexspot-tauri",
+  "private": true,
+  "description": "Runs the Tauri CLI from ui/ so the generated Android project can call it back with 'npm run tauri'.",
+  "scripts": {
+    "tauri": "node ../../../ui/node_modules/@tauri-apps/cli/tauri.js"
+  }
+}

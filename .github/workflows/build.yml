@@ -158,8 +158,9 @@ jobs:
         working-directory: apps/${{ matrix.app }}/src-tauri
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          ../../../ui/node_modules/.bin/tauri android init --ci
-          ../../../ui/node_modules/.bin/tauri android build --apk true --target aarch64 --ci
+          # Through npm, so the generated Gradle project calls the CLI back as 'npm run tauri'.
+          npm run tauri -- android init --ci
+          npm run tauri -- android build --apk true --target aarch64 --ci
       - name: Sign APK
         working-directory: apps/${{ matrix.app }}/src-tauri
         env:
