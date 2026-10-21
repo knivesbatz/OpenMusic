@@ -174,6 +174,9 @@ pub enum Stream {
     /// A URL an `<audio>` element can play (HTTP stream or asset-protocol file).
     #[serde(rename_all = "camelCase")]
     Url { url: String, quality: String, offline: bool },
+    /// A file on disk (local library or offline download), played via the asset protocol.
+    #[serde(rename_all = "camelCase")]
+    File { path: String, quality: String, offline: bool },
     /// Played through the official YouTube IFrame Player API.
     #[serde(rename_all = "camelCase")]
     Youtube { video_id: String },
