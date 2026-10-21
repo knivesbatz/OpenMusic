@@ -4,6 +4,7 @@ import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { TvNav } from "./components/TvNav";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfilePicker } from "./components/ProfilePicker";
@@ -76,6 +77,19 @@ export function App() {
     scroll.current?.scrollTo(0, 0);
   }, [pos]);
 
+  // TV mode: keep the focused card in view as the D-pad moves along a row or down the page.
+  useEffect(() => {
+    if (!htpc) return;
+    const onFocus = (e: FocusEvent) => {
+      const el = e.target as HTMLElement;
+      if (!el.closest?.(".shelf-row, .shortcuts, .tv-hero")) return;
+      const smooth = !useSettings.getState().reducedMotion;
+      el.scrollIntoView({ block: "nearest", inline: "center", behavior: smooth ? "smooth" : "auto" });
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => document.removeEventListener("focusin", onFocus);
+  }, [htpc]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
@@ -114,9 +128,9 @@ export function App() {
         <Login />
       ) : (
         <div className={cls("layout", queueOpen && "with-queue")}>
-          <Sidebar />
+          {!htpc && <Sidebar />}
           <main id="main" className="main" ref={scroll} tabIndex={-1}>
-            <TopBar />
+            {htpc ? <TvNav /> : <TopBar />}
             <ScrollCtx.Provider value={scroll}>
               <ErrorBoundary resetKey={pos}>
                 <Suspense fallback={<Loading />}>

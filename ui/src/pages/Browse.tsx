@@ -1,14 +1,15 @@
 // Home, Search and the Library grid.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { albumMenu, artistMenu, playlistMenu, trackMenu } from "../actions";
-import { api, errorMessage, inTauri } from "../api";
+import { api, artUrl, errorMessage, inTauri } from "../api";
 import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, openItem, useAsync } from "../components/common";
 import { TrackList } from "../components/TrackList";
 import { shelfTitle, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
 import { useSettings } from "../store/settings";
-import { navigate, openMenu, toast } from "../store/ui";
+import { navigate, openMenu, toast, useUi } from "../store/ui";
+import { useDisplayTrack } from "../store/songmeta";
 import type { HomeData, MediaItem, PlayContext, SearchResults, Track } from "../types";
 import { cls } from "../util";
 
@@ -51,6 +52,7 @@ export function Home() {
   const [data, setData] = useState<HomeData | null>(homeCache.data);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "music" | "podcasts">("all");
+  const htpc = useSettings((s) => s.htpc);
 
   const load = (refresh: boolean) => {
     if (!inTauri) return setData({ shelves: [], recent: [], contexts: [], topTracks: [], stale: false });
@@ -100,8 +102,21 @@ export function Home() {
   const playCtx = (c: PlayContext) =>
     playItem(c.kind === "album" ? ({ type: "album", id: c.id, title: c.title, artist: "" } as MediaItem) : c.kind === "artist" ? ({ type: "artist", id: c.id, name: c.title } as MediaItem) : ({ type: "playlist", id: c.id, title: c.title, local: c.id.startsWith("app:") } as MediaItem));
 
+  const firstShortcut = shortcuts[0];
   return (
     <div className="page home">
+      {htpc && (
+        <TvHero
+          featured={
+            firstShortcut && {
+              title: firstShortcut.title,
+              artwork: firstShortcut.artwork,
+              open: () => openCtx(firstShortcut.ctx),
+              play: () => playCtx(firstShortcut.ctx),
+            }
+          }
+        />
+      )}
       {info?.capabilities.podcasts && (
         <div className="chips">
           {(["all", "music", "podcasts"] as const).map((f) => (
@@ -155,6 +170,55 @@ export function Home() {
       )}
       {!error && !shortcuts.length && !shelves.length && !data?.recent.length && <p className="muted center">{t("homeEmpty")}</p>}
     </div>
+  );
+}
+
+/**
+ * TV mode banner (Android TV / Google TV style): the playing track, or the first "jump back in"
+ * item, large with its artwork behind it.
+ */
+function TvHero({ featured }: { featured?: { title: string; artwork?: string | null; open: () => void; play: () => void } }) {
+  const t = useT();
+  const cur = P.usePlayer((s) => s.queue.items[s.queue.index]?.track ?? null);
+  const playing = P.usePlayer((s) => s.playing);
+  const track = useDisplayTrack(cur);
+  const hero = track
+    ? {
+        eyebrow: t("nowPlaying"),
+        title: track.title,
+        subtitle: track.artist,
+        artwork: track.artwork,
+        primary: { label: playing ? t("pause") : t("play"), run: P.toggle },
+        secondary: { label: t("fullscreen"), run: () => useUi.setState({ fullscreen: true }) },
+      }
+    : featured
+      ? {
+          eyebrow: t("jumpBackIn"),
+          title: featured.title,
+          subtitle: null,
+          artwork: featured.artwork,
+          primary: { label: t("play"), run: featured.play },
+          secondary: { label: t("showAll"), run: featured.open },
+        }
+      : null;
+  if (!hero) return null;
+  const art = artUrl(hero.artwork, 600);
+  return (
+    <section className="tv-hero" style={art ? { backgroundImage: `url("${art}")` } : undefined}>
+      <div className="tv-hero-text">
+        <div className="tv-eyebrow">{hero.eyebrow}</div>
+        <h1>{hero.title}</h1>
+        {hero.subtitle && <div className="tv-hero-sub">{hero.subtitle}</div>}
+        <div className="row gap">
+          <button className="pill primary" onClick={hero.primary.run}>
+            {hero.primary.label}
+          </button>
+          <button className="pill ghost" onClick={hero.secondary.run}>
+            {hero.secondary.label}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

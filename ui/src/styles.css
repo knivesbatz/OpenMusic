@@ -399,11 +399,40 @@ p { margin: 0 0 8px; }
 .report-table { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
 .report-table td { padding: 6px 8px; border-bottom: 1px solid #ffffff12; }
 
-/* ---- HTPC / TV mode ------------------------------------------------------------------------ */
+/* ---- HTPC / TV mode (Android TV / Google TV style) ------------------------------------------ */
+/* Top tab bar instead of the sidebar, a banner on Home, horizontal rows of large cards that grow
+   when focused, and 5% side margins for TV overscan. */
 .htpc { font-size: 1.25em; }
-.htpc :focus-visible, .htpc :focus { outline: 3px solid var(--green); outline-offset: 3px; }
-.htpc .sidebar { width: 340px; }
-.htpc .card { padding: 16px; }
+.htpc :focus-visible, .htpc :focus { outline: 3px solid var(--text); outline-offset: 3px; }
+.htpc .layout { grid-template-columns: 1fr; grid-template-areas: "main" "player"; padding: 0; gap: 0; }
+.htpc .layout.with-queue { grid-template-columns: 1fr 440px; grid-template-areas: "main queue" "player player"; }
+.htpc .main { border-radius: 0; background: var(--bg); }
+.htpc .page { padding: 8px 5vw 48px; }
+.htpc .greeting { display: none; }
+.tv-nav { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 32px; padding: 24px 5vw 20px; background: linear-gradient(180deg, #000000f0 40%, #00000000); }
+.tv-brand { font-weight: 800; font-size: 1.35em; letter-spacing: -0.01em; }
+.tv-tabs { display: flex; gap: 8px; }
+.tv-tab { display: flex; align-items: center; gap: 10px; padding: 10px 22px; border-radius: 999px; color: var(--muted); font-weight: 700; font-size: 1em; }
+.tv-tab.on { color: var(--text); background: #ffffff1f; }
+.htpc .tv-tab:focus, .htpc .tv-tab:focus-visible, .tv-tab:hover { background: var(--text); color: #000; outline: none; }
+.tv-search { flex: 1; max-width: 680px; padding: 14px 22px; border-radius: 999px; border: 2px solid transparent; background: var(--surface-3); color: var(--text); font: inherit; }
+.htpc .tv-search:focus { border-color: var(--text); outline: none; }
+.tv-clock { margin-left: auto; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+.tv-hero { position: relative; display: flex; align-items: flex-end; min-height: 44vh; margin: -8px -5vw 24px; padding: 48px 5vw; background: var(--surface) right center / auto 100% no-repeat; }
+.tv-hero::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, var(--bg) 30%, #121212cc 55%, #12121200 85%), linear-gradient(0deg, var(--bg) 0, #12121200 40%); }
+.tv-hero-text { position: relative; max-width: 55%; }
+.tv-eyebrow { color: var(--green); font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.8em; }
+.tv-hero h1 { font-size: 3em; line-height: 1.1; margin: 8px 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tv-hero-sub { color: var(--muted); font-size: 1.15em; margin-bottom: 20px; }
+.htpc .tv-hero .pill:focus { outline: none; box-shadow: 0 0 0 4px var(--text); transform: scale(1.05); }
+.htpc .shelf { margin: 28px 0 0; }
+.htpc .shelf-row { grid-auto-columns: 230px; gap: 8px; margin: 0 -12px; padding: 16px 12px 36px; scroll-snap-type: x proximity; scrollbar-width: none; }
+.htpc .shelf-row::-webkit-scrollbar, .htpc .shortcuts::-webkit-scrollbar { display: none; }
+.htpc .card { padding: 12px; border-radius: 12px; scroll-snap-align: center; transition: transform 0.15s ease-out, background 0.15s, box-shadow 0.15s; }
+.htpc .card:focus, .htpc .card:focus-visible { transform: scale(1.08); background: var(--surface-3); outline: none; box-shadow: 0 0 0 3px var(--text), 0 16px 40px #000000b3; z-index: 1; }
+.htpc .shortcuts { display: grid; grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 380px; overflow-x: auto; padding: 12px; margin: 0 -12px; scrollbar-width: none; }
+.htpc .shortcut { transition: transform 0.15s ease-out; }
+.htpc .shortcut:focus, .htpc .shortcut:focus-visible { transform: scale(1.05); outline: none; box-shadow: 0 0 0 3px var(--text); }
 
 /* ---- phone layout (Android, narrow windows) ------------------------------------------------ */
 .pb-mobile, .mobile-tabs { display: none; }

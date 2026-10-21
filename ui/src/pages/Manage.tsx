@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+
+const LASTFM_API = "https://www.last.fm/api/account/create";
 import { api, errorMessage, inTauri } from "../api";
 import { Loading, Select, useAsync } from "../components/common";
 import * as I from "../components/Icons";
@@ -421,6 +423,9 @@ export function SettingsPage() {
         {lfm && !lfm.hasKeys && (
           <div className="form">
             <p className="muted small">{t("lastfmKeys")}</p>
+            <button className="pill ghost small" onClick={() => (inTauri ? openUrl(LASTFM_API) : window.open(LASTFM_API, "_blank"))}>
+              {t("lastfmGetKey")}
+            </button>
             <input placeholder={t("apiKey")} aria-label={t("apiKey")} value={keys.key} onChange={(e) => setKeys({ ...keys, key: e.target.value })} />
             <input placeholder={t("sharedSecret")} aria-label={t("sharedSecret")} type="password" value={keys.secret} onChange={(e) => setKeys({ ...keys, secret: e.target.value })} />
             <button className="pill ghost small" disabled={!keys.key || !keys.secret} onClick={() => api.lastfmSetKeys(keys.key.trim(), keys.secret.trim()).then(() => api.lastfmStatus().then(setLfm)).catch((e) => toast(errorMessage(e)))}>
