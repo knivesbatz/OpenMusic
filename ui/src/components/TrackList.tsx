@@ -7,7 +7,8 @@ import { usePlayer } from "../player/engine";
 import * as P from "../player/engine";
 import { select } from "../player/queue";
 import { useApp } from "../store/app";
-import { openMenu } from "../store/ui";
+import { useDisplayTrack } from "../store/songmeta";
+import { navigate, openMenu } from "../store/ui";
 import type { PlayContext, Track } from "../types";
 import { cls, fmtMs } from "../util";
 import { Art, ArtistName, JpText } from "./common";
@@ -160,7 +161,7 @@ interface RowProps {
 
 const Row = memo(function Row(p: RowProps) {
   const t = useT();
-  const tr = p.track;
+  const tr = useDisplayTrack(p.track);
   const isCurrent = usePlayer((s) => s.queue.items[s.queue.index]?.track.id === tr.id);
   const offline = useApp((s) => s.online) === false && tr.source !== "local";
   return (
@@ -200,7 +201,17 @@ const Row = memo(function Row(p: RowProps) {
           <span className="sub">
             {tr.explicit && <span className="badge">{t("explicit")}</span>}
             {tr.source === "local" && <span className="badge">{t("localFile")}</span>}
-            <ArtistName name={tr.artist} />
+            {tr.artistId ? (
+              <button
+                className="link inline"
+                tabIndex={-1}
+                onClick={(e) => (e.stopPropagation(), navigate({ name: "artist", id: tr.artistId! }))}
+              >
+                <ArtistName name={tr.artist} />
+              </button>
+            ) : (
+              <ArtistName name={tr.artist} />
+            )}
           </span>
         </span>
       </span>

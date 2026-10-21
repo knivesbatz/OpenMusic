@@ -1176,6 +1176,11 @@ pub async fn localized_artist_names(
     let mut out = std::collections::HashMap::new();
     let mut lookups = 0;
     for name in names.into_iter().take(50) {
+        // Only translate across scripts: Japanese names in the English UI and Latin names in the
+        // Japanese UI. An English name in the English UI stays exactly as published.
+        if crate::names::has_japanese(&name) == (locale == "ja") {
+            continue;
+        }
         let key = format!("mbalias:{locale}:{name}");
         // Cached as a string; "" records that MusicBrainz has no alias, so it isn't asked again.
         if let Some(cached) = state.db().cache_get::<String>(&key, false)? {
@@ -1199,6 +1204,90 @@ pub async fn localized_artist_names(
             // Offline or rate limited: stop for now; nothing is cached so it is retried later.
             Err(Error::Offline(_)) => break,
             Err(_) => continue,
+        }
+    }
+    Ok(out)
+}
+
+// ---- YouTube profiles (brand accounts) ------------------------------------------------------
+
+/// Channels the signed-in Google account can use: the personal one and brand accounts.
+#[tauri::command]
+pub async fn yt_accounts(app: AppHandle, state: S<'_>) -> Result<Vec<YtAccount>> {
+    if state.flavor != Flavor::YouTube {
+        return Err(Error::Unsupported("YouTube profiles".into()));
+    }
+    let mut list = yt_call!(app, state, |y| y.accounts())?;
+    // The list marks the identity of the browser session; ours is whatever was picked here.
+    let current = state.ytm().await.page_id;
+    for a in &mut list {
+        a.selected = a.page_id == current;
+    }
+    Ok(list)
+}
+
+/// Act as the given channel (`None` = the personal account). Cached library data from the
+/// previous profile is dropped.
+#[tauri::command]
+pub async fn yt_select_account(app: AppHandle, state: S<'_>, page_id: Option<String>, name: String) -> Result<()> {
+    state.ytm.write().await.page_id = page_id.clone();
+    {
+        let db = state.db();
+        match &page_id {
+            Some(id) => db.kv_set("yt.pageId", id)?,
+            None => db.kv_delete("yt.pageId")?,
+        }
+        db.kv_set("yt.account", &name)?;
+        db.cache_clear()?;
+    }
+    let _ = app.emit("auth-changed", ());
+    Ok(())
+}
+
+/// Square album art and the official artist/album for YouTube music videos (from the video's
+/// song counterpart), cached for 30 days. At most 12 uncached lookups per call, 4 at a time.
+#[tauri::command]
+pub async fn yt_song_meta(
+    app: AppHandle,
+    state: S<'_>,
+    video_ids: Vec<String>,
+) -> Result<std::collections::HashMap<String, SongMeta>> {
+    let mut out = std::collections::HashMap::new();
+    let mut todo = Vec::new();
+    for vid in video_ids.into_iter().take(100) {
+        match state.db().cache_get::<SongMeta>(&format!("songmeta:{vid}"), false)? {
+            Some(m) => {
+                out.insert(vid, m);
+            }
+            None if todo.len() < 12 => todo.push(vid),
+            None => {}
+        }
+    }
+    let y = state.ytm().await;
+    let results = futures_util::future::join_all(todo.chunks(4).map(|chunk| {
+        let y = y.clone();
+        let chunk = chunk.to_vec();
+        async move {
+            let mut r = Vec::new();
+            for vid in chunk {
+                r.push((vid.clone(), y.song_meta(&vid).await));
+            }
+            r
+        }
+    }))
+    .await;
+    for (vid, res) in results.into_iter().flatten() {
+        match res {
+            Ok(m) => {
+                let m = m.unwrap_or_default();
+                state.db().cache_put(&format!("songmeta:{vid}"), &m, 30 * 86400)?;
+                out.insert(vid, m);
+            }
+            Err(Error::AuthExpired) => {
+                let _ = app.emit("auth-expired", ());
+                break;
+            }
+            Err(_) => {}
         }
     }
     Ok(out)

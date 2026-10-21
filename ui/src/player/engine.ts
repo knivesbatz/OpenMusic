@@ -7,6 +7,7 @@ import { useSettings } from "../store/settings";
 import { toast } from "../store/ui";
 import * as Q from "./queue";
 import { YouTubeOutput } from "./youtube";
+import { displayTrack } from "../store/songmeta";
 
 export interface PlayerState {
   queue: Q.QueueState;
@@ -504,7 +505,8 @@ export function initMediaSession() {
   ms.setActionHandler("seekto", (d) => d.seekTime != null && seek(d.seekTime));
   let lastId = "";
   usePlayer.subscribe((s) => {
-    const t = Q.current(s.queue)?.track;
+    const cur = Q.current(s.queue)?.track;
+    const t = cur && displayTrack(cur);
     ms.playbackState = s.playing ? "playing" : "paused";
     if (!t || t.id === lastId) return;
     lastId = t.id;

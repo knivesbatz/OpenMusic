@@ -6,6 +6,7 @@ import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { useApp } from "../store/app";
+import { useDisplayTrack } from "../store/songmeta";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import { cls, fmtTime } from "../util";
@@ -137,12 +138,13 @@ export function SaveButton() {
 export function PlayerBar() {
   const t = useT();
   const item = usePlayer((s) => s.queue.items[s.queue.index]);
+  const shown = useDisplayTrack(item?.track);
   const quality = usePlayer((s) => s.quality);
   const offline = usePlayer((s) => s.offline);
   const queueOpen = useUi((s) => s.queueOpen);
   const lyricsOpen = useUi((s) => s.lyricsOpen);
   const [pip, setPip] = useState(false);
-  const tr = item?.track;
+  const tr = shown;
 
   useEffect(() => {
     if (!inTauri) return;

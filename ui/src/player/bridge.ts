@@ -5,6 +5,7 @@ import { inTauri } from "../api";
 import * as P from "./engine";
 import { usePlayer } from "./engine";
 import type { Track } from "../types";
+import { displayTrack, useSongMeta } from "../store/songmeta";
 
 export interface Snapshot {
   track: Track | null;
@@ -22,7 +23,8 @@ export function startBroadcast() {
   const send = () => {
     last = Date.now();
     const s = usePlayer.getState();
-    const snap: Snapshot = { track: s.queue.items[s.queue.index]?.track ?? null, playing: s.playing, position: s.position, duration: s.duration };
+    const cur = s.queue.items[s.queue.index]?.track;
+    const snap: Snapshot = { track: cur ? displayTrack(cur) : null, playing: s.playing, position: s.position, duration: s.duration };
     emit("player-state", snap).catch(() => {});
   };
   usePlayer.subscribe((s, prev) => {
@@ -33,6 +35,8 @@ export function startBroadcast() {
     else timer = setTimeout(send, 1000);
   });
   listen("pip-ready", send);
+  // Album art for a playing music video may arrive after the track started.
+  useSongMeta.subscribe(() => send());
   listen<Command>("player-cmd", (e) => {
     const c = e.payload;
     if (c === "toggle") P.toggle();

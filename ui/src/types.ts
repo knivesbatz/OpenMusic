@@ -213,3 +213,21 @@ export interface LastFmStatus {
   user?: string | null;
   pending: number;
 }
+
+export interface YtAccount {
+  name: string;
+  handle?: string | null;
+  photo?: string | null;
+  /** Brand-account page id; null for the primary account. */
+  pageId?: string | null;
+  selected: boolean;
+}
+
+export interface SongMeta {
+  artwork?: string | null;
+  artist?: string | null;
+  artistId?: string | null;
+  album?: string | null;
+  albumId?: string | null;
+}
+

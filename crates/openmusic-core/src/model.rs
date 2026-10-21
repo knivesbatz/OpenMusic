@@ -194,3 +194,29 @@ pub struct Capabilities {
     pub gapless: bool,
     pub favorites: bool,
 }
+
+/// A YouTube identity the signed-in Google account can act as: the personal channel or a
+/// brand-account channel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct YtAccount {
+    pub name: String,
+    pub handle: Option<String>,
+    pub photo: Option<String>,
+    /// Brand-account page id; `None` for the primary account.
+    pub page_id: Option<String>,
+    pub selected: bool,
+}
+
+/// Song (audio track) metadata for a YouTube music video: square album art and the official
+/// artist/album, taken from the video's song counterpart.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SongMeta {
+    pub artwork: Option<String>,
+    pub artist: Option<String>,
+    pub artist_id: Option<String>,
+    pub album: Option<String>,
+    pub album_id: Option<String>,
+}
+

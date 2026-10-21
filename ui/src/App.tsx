@@ -4,6 +4,8 @@ import { QueuePanel } from "./components/QueuePanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ProfilePicker } from "./components/ProfilePicker";
 import { Loading } from "./components/common";
 import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
@@ -66,6 +68,7 @@ export function App() {
   const fullscreen = useUi((s) => s.fullscreen);
   const pos = useUi((s) => s.pos);
   const htpc = useSettings((s) => s.htpc);
+  const profilePicker = useApp((s) => s.profilePicker);
   const scroll = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -114,9 +117,11 @@ export function App() {
           <main id="main" className="main" ref={scroll} tabIndex={-1}>
             <TopBar />
             <ScrollCtx.Provider value={scroll}>
-              <Suspense fallback={<Loading />}>
-                <Page />
-              </Suspense>
+              <ErrorBoundary resetKey={pos}>
+                <Suspense fallback={<Loading />}>
+                  <Page />
+                </Suspense>
+              </ErrorBoundary>
             </ScrollCtx.Provider>
           </main>
           {queueOpen && !fullscreen && <QueuePanel />}
@@ -124,10 +129,15 @@ export function App() {
         </div>
       )}
       {fullscreen && (
-        <Suspense fallback={null}>
-          <Fullscreen />
-        </Suspense>
+        <div className="fullscreen-host">
+          <ErrorBoundary onClose={() => useUi.setState({ fullscreen: false })}>
+            <Suspense fallback={null}>
+              <Fullscreen />
+            </Suspense>
+          </ErrorBoundary>
+        </div>
       )}
+      {profilePicker && <ProfilePicker />}
       <ContextMenu />
       <DialogHost />
       <InfoDialog />

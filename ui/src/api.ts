@@ -61,6 +61,9 @@ export const api = {
   markPlayed: (track: T.Track) => call<void>("mark_played", { track }),
   rate: (track: T.Track, liked: boolean) => call<void>("rate", { track, liked }),
   likedIds: () => call<string[]>("liked_ids"),
+  ytAccounts: () => call<T.YtAccount[]>("yt_accounts"),
+  ytSelectAccount: (pageId: string | null, name: string) => call<void>("yt_select_account", { pageId, name }),
+  ytSongMeta: (videoIds: string[]) => call<Record<string, T.SongMeta>>("yt_song_meta", { videoIds }),
   localizedArtistNames: (names: string[], locale: string) =>
     call<Record<string, string>>("localized_artist_names", { names, locale }),
   savedList: () => call<T.Library>("saved_list"),

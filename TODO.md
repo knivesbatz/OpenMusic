@@ -74,6 +74,16 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   20 s, then uninstalls and checks removal. Releases only publish when it passes
 - ✅ Install, upgrade, uninstall, data locations and troubleshooting documented (`docs/INSTALL.md`)
 
+## Fixed after beta testing (real YouTube account)
+- ✅ Profile (brand-account channel) picker for YTSpot (`account/accounts_list`, `onBehalfOfUser`)
+- ✅ Album cover parsed from the header's own `thumbnail` (not `straplineThumbnail`)
+- ✅ Play counts never parsed as artist names; album tracks inherit the album artist
+- ✅ Music videos display their song counterpart's album art and official artist (`next` endpoint,
+  cached 30 days)
+- ✅ MusicBrainz aliases only across scripts; search hints ignored (the "MCR" bug)
+- 🟡 Fullscreen crash: OS fullscreen no longer automatic; error boundary + native crash log. Root
+  cause not reproduced (no Windows desktop here); confirm on the user's machine
+
 ## Known issues
 - YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
   with a toast.

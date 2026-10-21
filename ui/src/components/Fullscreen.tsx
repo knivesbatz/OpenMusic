@@ -6,6 +6,7 @@ import { useT } from "../i18n";
 import { usePlayer } from "../player/engine";
 import * as P from "../player/engine";
 import { useSettings } from "../store/settings";
+import { useDisplayTrack } from "../store/songmeta";
 import { useUi } from "../store/ui";
 import type { Lyrics, Track } from "../types";
 import { cls } from "../util";
@@ -81,21 +82,38 @@ export function LyricsView({ track }: { track: Track }) {
 export function Fullscreen() {
   const t = useT();
   const item = usePlayer((s) => s.queue.items[s.queue.index]);
+  const shown = useDisplayTrack(item?.track);
   const context = usePlayer((s) => s.context);
   const lyricsOpen = useUi((s) => s.lyricsOpen);
   const queueOpen = useUi((s) => s.queueOpen);
-  const tr = item?.track;
+  const tr = shown;
   const ref = useRef<HTMLDivElement>(null);
+
+  const [osFull, setOsFull] = useState(false);
 
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
     ref.current?.focus();
-    if (inTauri) getCurrentWindow().setFullscreen(true).catch(() => {});
-    return () => {
-      if (inTauri) getCurrentWindow().setFullscreen(false).catch(() => {});
-      prev?.focus();
-    };
+    return () => prev?.focus();
   }, []);
+
+  // The player fills the app window; switching the OS window to fullscreen is a separate,
+  // explicit action, and it is always undone when the player closes.
+  async function toggleOsFullscreen() {
+    if (!inTauri) return;
+    try {
+      const w = getCurrentWindow();
+      const next = !(await w.isFullscreen());
+      await w.setFullscreen(next);
+      setOsFull(next);
+    } catch (e) {
+      console.error("fullscreen", e);
+    }
+  }
+  useEffect(() => {
+    if (!osFull || !inTauri) return;
+    return () => void getCurrentWindow().setFullscreen(false).catch(() => {});
+  }, [osFull]);
 
   const exit = () => useUi.setState({ fullscreen: false });
   return (
@@ -110,6 +128,11 @@ export function Fullscreen() {
           <button className={cls("icon-btn", queueOpen && "on")} aria-pressed={queueOpen} aria-label={t("queue")} title={t("queue")} onClick={() => useUi.setState({ queueOpen: !queueOpen })}>
             <I.IQueue size={20} />
           </button>
+          {inTauri && (
+            <button className={cls("icon-btn", osFull && "on")} aria-pressed={osFull} aria-label={t("fullscreenWindow")} title={t("fullscreenWindow")} onClick={toggleOsFullscreen}>
+              <I.IFullscreen size={20} />
+            </button>
+          )}
           <button className="icon-btn" aria-label={t("exitFullscreen")} title={t("exitFullscreen")} onClick={exit}>
             <I.IExitFullscreen size={20} />
           </button>

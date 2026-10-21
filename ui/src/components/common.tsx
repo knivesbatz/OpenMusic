@@ -5,7 +5,8 @@ import { displayText } from "../romaji";
 import { useArtistAlias } from "../store/names";
 import { useSettings } from "../store/settings";
 import { navigate } from "../store/ui";
-import type { MediaItem } from "../types";
+import type { MediaItem, Track } from "../types";
+import { useDisplayTrack } from "../store/songmeta";
 import { cls } from "../util";
 import { IMusic, IPlay } from "./Icons";
 
@@ -83,6 +84,8 @@ export const Card = memo(function Card({
   onContext?: (e: React.MouseEvent) => void;
 }) {
   const t = useT();
+  const patched = useDisplayTrack(item.type === "track" ? item : null);
+  if (item.type === "track" && patched) item = { ...patched, type: "track" };
   const title = item.type === "artist" ? item.name : item.title;
   return (
     <div
@@ -205,3 +208,9 @@ export const ArtistName = memo(function ArtistName({ name }: { name: string | nu
     </span>
   );
 });
+
+/** Artwork for a track, using album art instead of a YouTube video thumbnail when known. */
+export function TrackArt({ track, size, className }: { track: Track; size?: number; className?: string }) {
+  const tr = useDisplayTrack(track);
+  return <Art src={tr.artwork} size={size} className={className} />;
+}
