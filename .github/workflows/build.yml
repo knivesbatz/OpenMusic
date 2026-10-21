@@ -167,6 +167,8 @@ jobs:
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           # Through npm, so the generated Gradle project calls the CLI back as 'npm run tauri'.
           npm run tauri -- android init --ci
+          # The generated project starts with Tauri's placeholder launcher icons.
+          npm run tauri -- icon ../../../assets/icons/${{ matrix.app }}.png
           npm run tauri -- android build --apk true --target aarch64 --ci
       - name: Sign APK
         working-directory: apps/${{ matrix.app }}/src-tauri

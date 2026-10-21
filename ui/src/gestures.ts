@@ -75,7 +75,7 @@ export function initGestures() {
         const s = useUi.getState();
         if (target.closest(".menu") && s.menu) useUi.setState({ menu: null });
         else if (!top) return;
-        else if (target.closest(".queue-panel") && s.queueOpen) useUi.setState({ queueOpen: false });
+        else if (target.closest(".queue-panel, .pq-sheet") && s.queueOpen) useUi.setState({ queueOpen: false });
         else if (target.closest(".fullscreen-host") && s.fullscreen) useUi.setState({ fullscreen: false });
       }
     },

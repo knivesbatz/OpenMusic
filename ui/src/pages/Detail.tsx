@@ -15,8 +15,12 @@ import { cls, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
 
 function Hero({ art, kind, title, meta, round }: { art?: string | null; kind: string; title: string; meta: React.ReactNode; round?: boolean }) {
+  // A color wash from the cover behind the header (Spotify style): the cover blown up so far
+  // that only its colors show; no blur filter, which some GPUs choke on.
+  const wash = artUrl(art, 60);
   return (
     <header className="hero">
+      {wash && <div className="hero-wash" aria-hidden="true" style={{ backgroundImage: `url("${wash}")` }} />}
       <Art src={art} size={480} round={round} className="hero-art" />
       <div className="hero-text">
         <span className="small">{kind}</span>
@@ -27,6 +31,13 @@ function Hero({ art, kind, title, meta, round }: { art?: string | null; kind: st
       </div>
     </header>
   );
+}
+
+/** "2 h 26 min" / "48 min", like Spotify's playlist header. */
+function fmtLong(t: ReturnType<typeof useT>, sec: number): string {
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  return h ? t("hoursMinutes", { h, m }) : t("minutesOnly", { m });
 }
 
 function ActionBar({ tracks, ctx, onMore, extra }: { tracks: Track[]; ctx: PlayContext; onMore?: (e: React.MouseEvent) => void; extra?: React.ReactNode }) {
@@ -43,7 +54,7 @@ function ActionBar({ tracks, ctx, onMore, extra }: { tracks: Track[]; ctx: PlayC
       ) : (
         <PlayFab big label={t("play")} onClick={() => P.playTracks(tracks, 0, ctx)} />
       )}
-      <button className={cls("icon-btn lg", shuffle && "on")} aria-pressed={shuffle} aria-label={t("shuffle")} title={t("shuffle")} onClick={() => P.setShuffle(!shuffle)}>
+      <button className={cls("icon-btn lg ab-shuffle", shuffle && "on")} aria-pressed={shuffle} aria-label={t("shuffle")} title={t("shuffle")} onClick={() => P.setShuffle(!shuffle)}>
         <I.IShuffle size={26} />
       </button>
       {caps?.downloads && tracks.some((x) => x.source === "plex") && (
@@ -193,7 +204,6 @@ function DiscChips({ disc, setDisc, hasAppears }: { disc: Disc; setDisc: (d: Dis
 
 export function PlaylistPage({ id }: { id: string }) {
   const t = useT();
-  const flavor = useApp((s) => s.info?.flavor);
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
   const [busy, setBusy] = useState(false);
   if (loading && !data) return <Loading />;
@@ -219,13 +229,22 @@ export function PlaylistPage({ id }: { id: string }) {
     <div className="page detail">
       <Hero
         art={playlist.artwork ?? tracks[0]?.artwork}
-        kind={playlist.local ? t("appPlaylist") : t("remotePlaylist", { provider: flavor === "plex" ? "Plex" : "YouTube Music" })}
+        kind={t("playlist")}
         title={playlist.title}
         meta={
           <>
-            {playlist.description && <p className="muted">{playlist.description}</p>}
-            {playlist.owner && <strong>{playlist.owner} • </strong>}
-            {t("songsCount", { n: tracks.length })}, {fmtTime(totalDuration(tracks))}
+            {playlist.description && <p className="muted hero-desc">{playlist.description}</p>}
+            {playlist.owner && (
+              <span className="hero-owner">
+                <span className="avatar" aria-hidden="true">
+                  {playlist.owner.slice(0, 1).toUpperCase()}
+                </span>
+                <strong>{playlist.owner}</strong>
+              </span>
+            )}
+            <span className="hero-stats">
+              {t("songsCount", { n: tracks.length })} • {fmtLong(t, totalDuration(tracks))}
+            </span>
           </>
         }
       />

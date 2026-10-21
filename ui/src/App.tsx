@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { PlayerBar } from "./components/PlayerBar";
 import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
@@ -18,7 +18,7 @@ import { navigate, useUi } from "./store/ui";
 import { Home, LibraryPage, Search } from "./pages/Browse";
 import { AlbumPage, ArtistPage, PlaylistPage } from "./pages/Detail";
 import { Login } from "./pages/Login";
-import { cls } from "./util";
+import { cls, isTouch } from "./util";
 
 // Rarely used pages load on demand to keep startup light.
 const Manage = () => import("./pages/Manage");
@@ -27,6 +27,20 @@ const DownloadsPage = lazy(() => Manage().then((m) => ({ default: m.DownloadsPag
 const ImportPage = lazy(() => Manage().then((m) => ({ default: m.ImportPage })));
 const SettingsPage = lazy(() => Manage().then((m) => ({ default: m.SettingsPage })));
 const Fullscreen = lazy(() => import("./components/Fullscreen").then((m) => ({ default: m.Fullscreen })));
+const PhonePlayer = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhonePlayer })));
+const PhoneQueue = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhoneQueue })));
+
+/** The phone app, or a narrow touch screen: Spotify mobile-style song screen and queue sheet. */
+function usePhoneLayout() {
+  const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const m = matchMedia("(max-width: 760px)");
+    const on = () => setNarrow(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return isMobileApp() || (narrow && isTouch());
+}
 
 function Page() {
   const r = useUi((s) => s.stack[s.pos]);
@@ -72,6 +86,7 @@ export function App() {
   // TV mode is a desktop (HTPC) feature; the phone app never uses it.
   const htpc = useSettings((s) => s.htpc) && !isMobileApp();
   const profilePicker = useApp((s) => s.profilePicker);
+  const phone = usePhoneLayout();
   const scroll = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -140,7 +155,7 @@ export function App() {
               </ErrorBoundary>
             </ScrollCtx.Provider>
           </main>
-          {queueOpen && !fullscreen && <QueuePanel />}
+          {queueOpen && !fullscreen && (phone ? <Suspense fallback={null}><PhoneQueue /></Suspense> : <QueuePanel />)}
           <PlayerBar />
           <MobileTabs />
         </div>
@@ -148,9 +163,7 @@ export function App() {
       {fullscreen && (
         <div className="fullscreen-host">
           <ErrorBoundary onClose={() => useUi.setState({ fullscreen: false })}>
-            <Suspense fallback={null}>
-              <Fullscreen />
-            </Suspense>
+            <Suspense fallback={null}>{phone ? <PhonePlayer /> : <Fullscreen />}</Suspense>
           </ErrorBoundary>
         </div>
       )}

@@ -114,11 +114,9 @@ pub async fn auth_status(state: S<'_>) -> Result<AuthStatus> {
 }
 
 #[tauri::command]
-pub async fn plex_pin_start(app: AppHandle, state: S<'_>) -> Result<plex::Pin> {
-    let pin = state.plex.pin_create().await?;
-    use tauri_plugin_opener::OpenerExt;
-    let _ = app.opener().open_url(&pin.auth_url, None::<&str>);
-    Ok(pin)
+/// The UI opens `auth_url` (the browser on desktop, the app's own webview on Android).
+pub async fn plex_pin_start(state: S<'_>) -> Result<plex::Pin> {
+    state.plex.pin_create().await
 }
 
 /// Returns true once the PIN was approved and the token stored.
