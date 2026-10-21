@@ -16,6 +16,8 @@ export interface Settings {
   reducedMotion: boolean;
   highContrast: boolean;
   jpMode: JpMode;
+  /** Show MusicBrainz aliases of artist names in the UI language. */
+  translateNames: boolean;
   scrobble: boolean;
   sidebarCollapsed: boolean;
   htpc: boolean;
@@ -33,6 +35,7 @@ export const defaults: Settings = {
   reducedMotion: false,
   highContrast: false,
   jpMode: "original",
+  translateNames: true,
   scrobble: true,
   sidebarCollapsed: false,
   htpc: false,

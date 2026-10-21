@@ -375,6 +375,11 @@ impl Plex {
         out
     }
 
+    /// Ids of tracks the user has liked (rated) on this server.
+    pub async fn liked_track_ids(&self, sess: &Session) -> Vec<String> {
+        self.per_section(sess, "type=10&userRating>>=5", |v| to_track(v).map(|t| t.id)).await
+    }
+
     /// A cheap fingerprint of library content. When it is unchanged, cached library listings are
     /// still valid and no full re-sync is needed.
     pub async fn library_fingerprint(&self, sess: &Session) -> Result<String> {

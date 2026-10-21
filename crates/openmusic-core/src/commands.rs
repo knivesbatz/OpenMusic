@@ -1089,3 +1089,118 @@ pub fn focus_main(app: AppHandle) {
         let _ = w.set_focus();
     }
 }
+
+// ---- HTPC mode ------------------------------------------------------------------------------
+
+/// Argument the OS passes when the app is launched at sign-in for TV mode.
+pub const HTPC_ARG: &str = "--htpc";
+
+/// True when this process was started by the "launch at startup" entry (TV mode).
+#[tauri::command]
+pub fn htpc_launch() -> bool {
+    std::env::args().any(|a| a == HTPC_ARG)
+}
+
+#[tauri::command]
+pub fn htpc_autostart_get(app: AppHandle) -> Result<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| Error::Invalid(e.to_string()))
+}
+
+#[tauri::command]
+pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    let r = if enabled { al.enable() } else { al.disable() };
+    r.map_err(|e| Error::Invalid(e.to_string()))
+}
+
+// ---- likes ----------------------------------------------------------------------------------
+
+/// Track ids the user has liked on the provider, so the UI can show the like state.
+#[tauri::command]
+pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
+    match state.flavor {
+        Flavor::Plex => {
+            let sess = state.plex_session().await?;
+            Ok(state.plex.liked_track_ids(&sess).await)
+        }
+        Flavor::YouTube => {
+            // "LM" is the account's Liked Music playlist.
+            let page = yt_call!(app, state, |y| y.playlist("yt:LM"))?;
+            Ok(page.tracks.into_iter().map(|t| t.id).collect())
+        }
+    }
+}
+
+// ---- saved albums / artists ("Your Library") -----------------------------------------------
+
+/// Albums and artists the user saved in this app. Stored locally only, so saving never changes
+/// the Plex server or the YouTube account.
+#[tauri::command]
+pub fn saved_list(state: S) -> Result<Library> {
+    let db = state.db();
+    Ok(Library { albums: db.saved_items("album")?, artists: db.saved_items("artist")?, ..Default::default() })
+}
+
+#[tauri::command]
+pub fn save_album(app: AppHandle, state: S, album: Album, saved: bool) -> Result<()> {
+    let db = state.db();
+    if saved { db.save_item("album", &album.id, &album)? } else { db.unsave_item(&album.id)? }
+    let _ = app.emit("saved-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_artist(app: AppHandle, state: S, artist: Artist, saved: bool) -> Result<()> {
+    let db = state.db();
+    if saved { db.save_item("artist", &artist.id, &artist)? } else { db.unsave_item(&artist.id)? }
+    let _ = app.emit("saved-changed", ());
+    Ok(())
+}
+
+// ---- localized names ------------------------------------------------------------------------
+
+/// Localized aliases for artist names (MusicBrainz), cached for 30 days. Names without an alias
+/// are left out of the result. At most 8 uncached names are looked up per call, because
+/// MusicBrainz allows one request per second.
+#[tauri::command]
+pub async fn localized_artist_names(
+    state: S<'_>,
+    names: Vec<String>,
+    locale: String,
+) -> Result<std::collections::HashMap<String, String>> {
+    if locale != "ja" && locale != "en" {
+        return Err(Error::Invalid(format!("unsupported locale {locale}")));
+    }
+    let mut out = std::collections::HashMap::new();
+    let mut lookups = 0;
+    for name in names.into_iter().take(50) {
+        let key = format!("mbalias:{locale}:{name}");
+        // Cached as a string; "" records that MusicBrainz has no alias, so it isn't asked again.
+        if let Some(cached) = state.db().cache_get::<String>(&key, false)? {
+            if !cached.is_empty() {
+                out.insert(name, cached);
+            }
+            continue;
+        }
+        if lookups >= 8 {
+            continue;
+        }
+        lookups += 1;
+        match crate::names::artist_alias(&state.http, &name, &locale).await {
+            Ok(alias) => {
+                let ttl = if alias.is_some() { 30 * 86400 } else { 7 * 86400 };
+                state.db().cache_put(&key, &alias.clone().unwrap_or_default(), ttl)?;
+                if let Some(a) = alias {
+                    out.insert(name, a);
+                }
+            }
+            // Offline or rate limited: stop for now; nothing is cached so it is retried later.
+            Err(Error::Offline(_)) => break,
+            Err(_) => continue,
+        }
+    }
+    Ok(out)
+}
+

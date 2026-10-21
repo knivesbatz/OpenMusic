@@ -12,6 +12,7 @@ pub mod local;
 pub mod lyrics;
 pub mod matching;
 pub mod model;
+pub mod names;
 pub mod plex;
 pub mod secrets;
 pub mod spotify;
@@ -91,6 +92,10 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 let _ = w.set_focus();
             }
         }))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec![commands::HTPC_ARG]),
+        ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("art", move |_ctx, request, responder| {
@@ -135,12 +140,16 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
         .on_window_event(|window, event| {
             // Closing the main window quits the app (and the mini player with it); closing the
             // mini player only closes the mini player. Playback lives in the main window.
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                if window.label() == "main" {
+            match event {
+                tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => {
                     if let Some(p) = window.app_handle().get_webview_window("pip") {
                         let _ = p.close();
                     }
                 }
+                tauri::WindowEvent::Destroyed if window.label() == "pip" => {
+                    let _ = window.app_handle().emit("pip-closed", ());
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -204,6 +213,14 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::clear_cache,
             commands::pip_toggle,
             commands::focus_main,
+            commands::liked_ids,
+            commands::localized_artist_names,
+            commands::saved_list,
+            commands::save_album,
+            commands::save_artist,
+            commands::htpc_launch,
+            commands::htpc_autostart_get,
+            commands::htpc_autostart_set,
         ])
         .run(context)
         .expect("error while running application");

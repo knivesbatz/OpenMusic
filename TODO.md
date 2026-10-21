@@ -7,10 +7,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ SQLite with versioned migrations (unit-tested)
 - ✅ Credential-store secrets with chunking for large values
 - ✅ GitHub repo + CI workflow (tests + NSIS installers for both apps)
-- 🟡 First local Windows release build of both installers
+- 🟡 Windows installers built by CI and published as GitHub pre-releases (`workflow_dispatch` with `release_tag`; the session's git proxy can't push tags)
 
 ## Phase 2: Shared UI
-- 🟡 App shell: sidebar, top bar with history navigation, main view, bottom player bar
+- 🟡 App shell: sidebar (filters, in-library search, sort, collapse), top bar with history navigation, main view, bottom player bar. Renders correctly with a mock backend (docs/screenshots)
 - 🟡 Home, Search, Library, Artist, Album, Playlist pages
 - 🟡 Track list (virtualised) with context menu and add-to-playlist
 - 🟡 Settings page (language, quality, crossfade, gapless, automix, accessibility, storage, accounts)
@@ -26,13 +26,17 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Crossfade 0–12 s, near-gapless preload, Automix (audio element sources)
 - 🟡 YouTube IFrame output
 - 🟡 Media keys (navigator.mediaSession)
-- ⬜ Engine unit tests for queue operations (vitest), partly done
+- ✅ Queue operations are pure (`ui/src/player/queue.ts`) and unit-tested: enqueue/play next, consume manual items, remove, multi-move, repeat, shuffle restore, Shift/Ctrl selection
 
 ## Phase 5: Library and import
 - ✅ App playlists CRUD + reorder in SQLite (unit-tested)
 - 🟡 Local files: folder add, incremental scan (unit-tested), playback via asset protocol
 - 🟡 Spotify import with PKCE, conservative matcher (unit-tested), report UI
 - 🟡 YTSpot permanent hide playlist (DB tested; UI confirm dialog)
+- 🟡 Save albums / follow artists to "Your Library" (local SQLite, migration v2, DB tested): save
+  button on album pages, Follow on artist pages, context menus, sidebar Albums/Artists filters.
+  Never written to Plex or YouTube
+- 🟡 Like state loaded from the provider (Plex rated tracks, YouTube Liked Music)
 
 ## Phase 6: Advanced player
 - 🟡 Fullscreen player with synced lyrics (LRCLIB)
@@ -46,18 +50,31 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 ## Phase 8: Integrations
 - 🟡 Last.fm auth/now-playing/scrobble queue (threshold + dedupe unit-tested)
 - 🟡 English/Japanese UI
-- ⬜ Kanji → romaji (needs a dictionary such as lindera/ipadic, about 20 MB; evaluate size)
-- ⬜ Translated artist/album names (needs a licensed metadata source, e.g. MusicBrainz aliases)
+- 🟡 Kana → romaji for lyrics and titles/artists (tested); kanji still need a dictionary (lindera/ipadic or kuromoji, ~15–20 MB; evaluate size)
+- 🟡 Translated artist names: MusicBrainz aliases in the UI language (CC0 data, exact-match only, 1 req/s,
+  30-day SQLite cache, tested alias picking); original kept as tooltip; setting to turn off.
+  Album titles: MusicBrainz rarely has localized release titles, so albums stay as published
 
 ## Phase 9: Polish
-- ⬜ HTPC/TV mode: launch at startup + Gamepad API (Xbox/DS4/Switch) navigation
-- ⬜ Sleep timer, "View credits", "Share" menu items
-- ⬜ Playwright/WebDriver UI tests
-- ⬜ Measure startup and memory on a 50k-track library
+- 🟡 HTPC/TV mode: launch at startup (autostart plugin, `--htpc` opens fullscreen in TV mode), Gamepad API spatial navigation (A/B/X/Y, LB/RB, LT/RT, Start)
+- 🟡 Sleep timer, "View credits", "Share" (copy title/link) menu items
+- ✅ Playwright UI smoke tests against the production build with a mock backend (`npm run e2e`, CI job
+  `e2e`): home, search, Shift-click queue range + Delete, album context menu + save, artist follow,
+  fullscreen lyrics + Escape, language switch, 50k-track list
+- 🟡 Large-list measurement (mock data, headless Chromium): 50,000-track playlist renders first rows in
+  ~0.7–0.9 s, jump-scroll to row 40,000 in ~85 ms, 16 rows in the DOM, ~60–70 MB JS heap. Not yet
+  measured inside WebView2 on Windows or against a real 50k Plex library
 
 ## Phase 10: Release
-- ⬜ Code signing (needs a certificate)
-- ⬜ Upgrade-install test
+- 🟡 Code signing wired in CI: set repository secrets `WINDOWS_CERTIFICATE` (base64 .pfx) and
+  `WINDOWS_CERTIFICATE_PASSWORD` and the installers are Authenticode-signed with timestamping. No
+  certificate yet, so releases are unsigned
+- 🟡 CI `install-test` job per app on windows-latest: installs the latest published release, upgrades it
+  with the new build (silent), checks the version, launches the app and checks it's still running after
+  20 s, then uninstalls and checks removal. Releases only publish when it passes
+- ✅ Install, upgrade, uninstall, data locations and troubleshooting documented (`docs/INSTALL.md`)
 
 ## Known issues
-- (none recorded yet)
+- YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
+  with a toast.
+- Rust tests need GTK/WebKit dev packages on Linux (see CLAUDE.md); CI runs them on Windows.

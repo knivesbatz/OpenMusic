@@ -6,13 +6,19 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a GitHub release with this tag (e.g. v0.1.0-alpha.2). Empty = artifacts only."
+        required: false
+        default: ""
 
 permissions:
   contents: write
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  # Queue rather than cancel: a run that is validating a fix should finish.
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -44,8 +50,29 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace -- -D clippy::correctness
 
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: UI build
+        run: |
+          npm ci
+          npm run build
+        working-directory: ui
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ui
+      - name: UI smoke tests (mock backend)
+        run: npm run e2e
+        working-directory: ui
+
   bundle:
-    needs: test
+    needs: [test, e2e]
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -68,15 +95,111 @@ jobs:
           npm run build
         working-directory: ui
       - name: Bundle ${{ matrix.app }} installer
-        run: ../../../ui/node_modules/.bin/tauri build
+        shell: pwsh
+        env:
+          # Optional Authenticode signing: base64 .pfx and its password as repository secrets.
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          $extra = @()
+          if ($env:WINDOWS_CERTIFICATE) {
+            $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+            $pw = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $pw
+            Remove-Item $pfx
+            $cfg = Join-Path $env:RUNNER_TEMP 'signing.json'
+            @{ bundle = @{ windows = @{ certificateThumbprint = $cert.Thumbprint; digestAlgorithm = 'sha256'; timestampUrl = 'http://timestamp.digicert.com' } } } |
+              ConvertTo-Json -Depth 5 | Set-Content $cfg
+            $extra = @('--config', $cfg)
+            Write-Host "Signing with $($cert.Subject)"
+          } else {
+            Write-Host "No signing certificate configured: building unsigned installers"
+          }
+          ../../../ui/node_modules/.bin/tauri build @extra
         working-directory: apps/${{ matrix.app }}/src-tauri
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.app }}-windows
           path: target/release/bundle/nsis/*.exe
           if-no-files-found: error
-      - name: Attach to release
-        if: startsWith(github.ref, 'refs/tags/v')
+
+  install-test:
+    needs: bundle
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [ytspot, plexspot]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.app }}-windows
+          path: new
+      - name: Upgrade install, launch and uninstall
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $conf = Get-Content "apps/${{ matrix.app }}/src-tauri/tauri.conf.json" | ConvertFrom-Json
+          $name = $conf.productName
+          $dir = Join-Path $env:LOCALAPPDATA $name
+          $exe = Join-Path $dir "$($conf.mainBinaryName).exe"
+
+          # 1. Install the newest published release first (if any) so the new build is an upgrade.
+          $tag = gh release list --repo $env:GITHUB_REPOSITORY --limit 1 --json tagName --jq '.[0].tagName'
+          if ($tag -and $tag -ne 'null') {
+            gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern "${name}_*-setup.exe" --dir old
+            $old = Get-ChildItem old -Filter *.exe | Select-Object -First 1
+            if ($old) {
+              Write-Host "Installing previous release $tag ($($old.Name))"
+              Start-Process $old.FullName -ArgumentList '/S' -Wait
+              if (!(Test-Path $exe)) { throw "previous release did not install to $exe" }
+            }
+          } else { Write-Host "No previous release; clean install only" }
+
+          # 2. Install the new build over it.
+          $new = Get-ChildItem new -Filter *.exe | Select-Object -First 1
+          Start-Process $new.FullName -ArgumentList '/S' -Wait
+          if (!(Test-Path $exe)) { throw "not installed: $exe" }
+          $ver = (Get-Item $exe).VersionInfo.ProductVersion
+          Write-Host "Installed $name $ver"
+          if (-not $ver.StartsWith($conf.version)) { throw "expected version $($conf.version), got $ver" }
+
+          # 3. The app must start and keep running (WebView2 is preinstalled on the runner).
+          $p = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 20
+          if ($p.HasExited) { throw "$name exited during startup with code $($p.ExitCode)" }
+          Write-Host "Running after 20 s: $([math]::Round($p.WorkingSet64 / 1MB)) MB working set (main process)"
+          Stop-Process -Id $p.Id -Force
+          Start-Sleep -Seconds 3
+
+          # 4. Uninstall cleanly.
+          # NSIS uninstallers re-launch from a temp copy, so poll for the removal.
+          Start-Process (Join-Path $dir 'uninstall.exe') -ArgumentList '/S' -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $exe) { throw "uninstall left $exe behind" }
+          Write-Host "Uninstalled"
+
+  release:
+    needs: [bundle, install-test]
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: target/release/bundle/nsis/*.exe
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ inputs.release_tag || github.ref_name }}
+          files: installers/*.exe
+          body_path: RELEASE_NOTES.md
+          prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
+          fail_on_unmatched_files: true

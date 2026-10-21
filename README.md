@@ -6,3 +6,9 @@ Two Spotify-style Windows desktop music clients sharing one Rust + Tauri 2 core 
 - **PLEXSpot** — Plex Music client (`apps/plexspot`)
 
 Work in progress. See `TODO.md` and `docs/ARCHITECTURE.md`.
+
+## Screenshots
+
+![PLEXSpot home](docs/screenshots/home.png)
+
+More in [docs/screenshots](docs/screenshots/README.md) (rendered with sample data).
