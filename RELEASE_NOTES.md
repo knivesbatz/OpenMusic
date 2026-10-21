@@ -14,6 +14,23 @@ troubleshooting: [docs/INSTALL.md](https://github.com/knivesbatz/OpenMusic/blob/
 They install per user, side by side, with separate data and credentials. If WebView2 is missing, the
 installer downloads it.
 
+## Fixed since 0.1.0-beta.1 (from beta testing)
+- **YTSpot profiles**: Google accounts with several YouTube channels (brand accounts) can pick which
+  channel's library to use: asked once after sign-in, and any time from Settings → Account →
+  Switch profile or by clicking your name in the top bar.
+- **Album art instead of video thumbnails**: YouTube music videos now show their song's square album
+  art (and official artist/album) everywhere, including the player bar, fullscreen and mini player.
+- **Correct artist names**: artist names are no longer replaced by abbreviations (e.g.
+  "My Chemical Romance" showing as "MCR"); translated names only apply across scripts (Japanese ↔
+  Latin) and never use MusicBrainz search hints. Music videos use the official artist.
+- **Album pages**: show the album cover (not the artist photo); track rows show the artist (linked to
+  the artist page) instead of the play count.
+- **Fullscreen player**: no longer switches Windows into fullscreen automatically (the crash report);
+  the player fills the app window, with a separate "Fill the screen" button. A display error now
+  shows a message with Retry/Close instead of taking down the app, and native crashes are written
+  to `crash.log` in the app data folder.
+- Upgrading clears cached YouTube metadata once so the fixes show immediately.
+
 ## What's in this build
 - Spotify-style shell: library sidebar (filters, search, sort, collapse), top bar with back/forward and
   search, home, search, artist (popular, discography filters, fans also like, appears on), album and
@@ -36,7 +53,8 @@ installer downloads it.
 
 ## Please test
 1. **PLEXSpot sign-in**: Plex PIN sign-in, server list, server selection, reconnect after restart.
-2. **YTSpot sign-in**: Google sign-in window closes by itself and the library loads.
+2. **YTSpot sign-in**: Google sign-in window closes by itself, the profile picker appears if your
+   account has several channels, and the chosen channel's library loads.
 3. **Playback**: Plex streams at each quality; YouTube IFrame playback (some videos block embedding);
    local files; next/previous, seek, repeat and shuffle.
 4. **Crossfade, gapless, Automix** on Plex/local tracks.

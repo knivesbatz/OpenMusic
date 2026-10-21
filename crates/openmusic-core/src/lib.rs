@@ -63,11 +63,16 @@ fn init_state(app: &tauri::AppHandle, flavor: Flavor) -> Result<Arc<AppState>, B
     let yt_cookie = if flavor == Flavor::YouTube { secrets.get_large("yt.cookie").ok().flatten() } else { None };
     let plex_session = if flavor == Flavor::Plex { secrets.get_json::<plex::Session>("plex.session").ok().flatten() } else { None };
 
+    let mut ytm = ytm::Ytm::new(http.clone(), yt_cookie, &language);
+    if flavor == Flavor::YouTube {
+        ytm.page_id = db.kv_get::<String>("yt.pageId")?;
+    }
+
     Ok(Arc::new(AppState {
         flavor,
         db: Mutex::new(db),
         plex: plex::Plex::new(http.clone(), client_id),
-        ytm: RwLock::new(ytm::Ytm::new(http.clone(), yt_cookie, &language)),
+        ytm: RwLock::new(ytm),
         http,
         secrets,
         dirs,
@@ -78,6 +83,22 @@ fn init_state(app: &tauri::AppHandle, flavor: Flavor) -> Result<Arc<AppState>, B
         scanning: AtomicBool::new(false),
         last_yt_refresh: Mutex::new(None),
     }))
+}
+
+/// Append panics to `crash.log` in the app data folder (shown in Settings) so a crash on a user's
+/// machine leaves something to diagnose. The default hook still runs.
+fn install_crash_log(app: &tauri::AppHandle) {
+    let Ok(dir) = app.path().app_data_dir() else { return };
+    let path = dir.join("crash.log");
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            use std::io::Write;
+            let _ = writeln!(f, "[{}] v{} panic: {info}", db::now(), env!("CARGO_PKG_VERSION"));
+        }
+        default(info);
+    }));
 }
 
 pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
@@ -110,6 +131,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            install_crash_log(&handle);
             let state = init_state(&handle, flavor)?;
             *state_slot.lock().unwrap() = Some(state.clone());
             app.manage(state.clone());
@@ -215,6 +237,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::focus_main,
             commands::liked_ids,
             commands::localized_artist_names,
+            commands::yt_accounts,
+            commands::yt_select_account,
+            commands::yt_song_meta,
             commands::saved_list,
             commands::save_album,
             commands::save_artist,

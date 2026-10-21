@@ -31,6 +31,8 @@ pub struct Ytm {
     pub cookie: Option<String>,
     pub hl: String,
     pub client_version: String,
+    /// Brand-account channel to act as (InnerTube `onBehalfOfUser`); `None` = primary account.
+    pub page_id: Option<String>,
 }
 
 pub fn sapisid(cookie: &str) -> Option<&str> {
@@ -107,7 +109,10 @@ pub fn upscale_thumb(url: &str) -> String {
 }
 
 fn thumbnail(v: &Value) -> Option<String> {
-    let thumbs = find_first(v, "thumbnails")?.as_array()?;
+    // Headers also carry `straplineThumbnail` (the artist's avatar), which a plain search could
+    // find first; the object's own `thumbnail` is the cover.
+    let src = v.get("thumbnail").unwrap_or(v);
+    let thumbs = find_first(src, "thumbnails")?.as_array()?;
     let url = thumbs.last()?.get("url")?.as_str()?;
     let url = if url.starts_with("//") { format!("https:{url}") } else { url.to_string() };
     Some(format!("art://url/{}", urlencoding::encode(&upscale_thumb(&url))))
@@ -138,6 +143,22 @@ struct Sub {
     plain: Vec<String>,
 }
 
+/// Play/view counts shown in list rows ("1.2M plays", "4.5K views", "123万回再生").
+fn is_count(t: &str) -> bool {
+    let lower = t.to_lowercase();
+    let suffix = ["plays", "play", "views", "view", "回再生", "回視聴", "回"]
+        .iter()
+        .find_map(|s| lower.strip_suffix(s).map(|r| r.trim().to_string()));
+    match suffix {
+        Some(num) => {
+            !num.is_empty()
+                && num.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                && num.chars().all(|c| c.is_ascii_digit() || ".,KMBkmb万億千 ".contains(c))
+        }
+        None => false,
+    }
+}
+
 fn parse_sub(rs: &[&Value]) -> Sub {
     let mut sub = Sub::default();
     for r in rs {
@@ -161,6 +182,8 @@ fn parse_sub(rs: &[&Value]) -> Sub {
             sub.year = t.parse().ok();
         } else if TYPE_WORDS.contains(&t) {
             sub.kind = Some(t.to_string());
+        } else if is_count(t) {
+            // "123M plays", "4.5K views", "1.2億回再生": never an artist name.
         } else {
             sub.plain.push(t.to_string());
         }
@@ -454,6 +477,60 @@ fn page_tracks(v: &Value) -> Vec<Track> {
     out
 }
 
+/// Identities from `account/accounts_list`.
+pub fn parse_accounts(v: &Value) -> Vec<YtAccount> {
+    let mut items = Vec::new();
+    find_all(v, "accountItem", &mut items);
+    items
+        .into_iter()
+        .filter_map(|a| {
+            let name = text(a.get("accountName"));
+            if name.is_empty() {
+                return None;
+            }
+            let page_id = a
+                .get("serviceEndpoint")
+                .and_then(|e| find_first(e, "pageIdToken"))
+                .and_then(|t| t.get("pageId"))
+                .and_then(|p| p.as_str())
+                .map(String::from);
+            Some(YtAccount {
+                name,
+                handle: Some(text(a.get("channelHandle"))).filter(|h| !h.is_empty()),
+                photo: a.get("accountPhoto").and_then(thumbnail),
+                page_id,
+                selected: a.get("isSelected").and_then(|s| s.as_bool()).unwrap_or(false),
+            })
+        })
+        .collect()
+}
+
+fn is_video_thumb(art: &Option<String>) -> bool {
+    art.as_deref().map(|a| a.contains("ytimg.com")).unwrap_or(false)
+}
+
+/// Song metadata from a `next` response for a video: the song counterpart of a music video
+/// when there is one (square album art, official artist and album), else the item itself.
+pub fn parse_song_meta(v: &Value) -> Option<SongMeta> {
+    let item = match find_first(v, "playlistPanelVideoWrapperRenderer") {
+        Some(w) => w
+            .get("counterpart")
+            .and_then(|c| find_first(c, "playlistPanelVideoRenderer"))
+            .or_else(|| w.get("primaryRenderer").and_then(|p| find_first(p, "playlistPanelVideoRenderer")))?,
+        None => find_first(v, "playlistPanelVideoRenderer")?,
+    };
+    let sub = parse_sub(&runs(item.get("longBylineText")));
+    let art = thumbnail(item);
+    let meta = SongMeta {
+        artwork: art.filter(|a| !is_video_thumb(&Some(a.clone()))),
+        artist: (!sub.artists.is_empty()).then(|| sub.artists.iter().map(|a| a.0.as_str()).collect::<Vec<_>>().join(", ")),
+        artist_id: sub.artists.first().and_then(|a| a.1.clone()).map(|i| format!("yt:{i}")),
+        album: sub.album.as_ref().map(|a| a.0.clone()),
+        album_id: sub.album.as_ref().map(|a| format!("yt:{}", a.1)),
+    };
+    Some(meta)
+}
+
 fn continuation_token(v: &Value) -> Option<(String, bool)> {
     if let Some(t) = find_first(v, "continuationCommand").and_then(|c| c.get("token")).and_then(|t| t.as_str()) {
         return Some((t.to_string(), true));
@@ -466,7 +543,7 @@ fn continuation_token(v: &Value) -> Option<(String, bool)> {
 
 impl Ytm {
     pub fn new(http: reqwest::Client, cookie: Option<String>, hl: &str) -> Self {
-        Ytm { http, cookie, hl: hl.to_string(), client_version: DEFAULT_CLIENT_VERSION.into() }
+        Ytm { http, cookie, hl: hl.to_string(), client_version: DEFAULT_CLIENT_VERSION.into(), page_id: None }
     }
 
     pub fn signed_in(&self) -> bool {
@@ -477,7 +554,10 @@ impl Ytm {
         let gl = if self.hl == "ja" { "JP" } else { "US" };
         body["context"] = json!({
             "client": { "clientName": CLIENT_NAME, "clientVersion": self.client_version, "hl": self.hl, "gl": gl },
-            "user": {}
+            "user": match &self.page_id {
+                Some(id) => json!({ "onBehalfOfUser": id }),
+                None => json!({}),
+            }
         });
         let mut rb = self
             .http
@@ -535,6 +615,17 @@ impl Ytm {
     pub async fn account_name(&self) -> Result<String> {
         let v = self.post("account/account_menu", json!({}), "").await?;
         Ok(find_first(&v, "accountName").map(|a| text(Some(a))).unwrap_or_default())
+    }
+
+    /// The personal channel and any brand-account channels of the signed-in Google account.
+    pub async fn accounts(&self) -> Result<Vec<YtAccount>> {
+        let v = self.post("account/accounts_list", json!({}), "").await?;
+        Ok(parse_accounts(&v))
+    }
+
+    pub async fn song_meta(&self, video_id: &str) -> Result<Option<SongMeta>> {
+        let v = self.post("next", json!({ "videoId": video_id, "isAudioOnly": true, "enablePersistentPlaylistPanel": true }), "").await?;
+        Ok(parse_song_meta(&v))
     }
 
     pub async fn home(&self) -> Result<Vec<Shelf>> {
@@ -646,7 +737,7 @@ impl Ytm {
                 t.album = Some(album.title.clone());
                 t.album_id = Some(album.id.clone());
             }
-            if t.artist.is_empty() {
+            if t.artist.is_empty() || (t.artist_id.is_none() && album.artist_id.is_some() && t.artist == album.artist) {
                 t.artist = album.artist.clone();
                 t.artist_id = album.artist_id.clone();
             }
@@ -799,6 +890,70 @@ mod tests {
         let h = sapisid_hash("abc", 1700000000);
         assert!(h.starts_with("SAPISIDHASH 1700000000_"));
         assert_eq!(h.len(), "SAPISIDHASH 1700000000_".len() + 40);
+    }
+
+    #[test]
+    fn counts_are_not_artists() {
+        for t in ["1.2M plays", "4.5K views", "123 plays", "1.2億回再生", "350万回再生"] {
+            assert!(is_count(t), "{t}");
+        }
+        for t in ["My Chemical Romance", "Plays", "2 Chainz", "The 1975"] {
+            assert!(!is_count(t), "{t}");
+        }
+        let rs = [json!({"text": "123M plays"})];
+        let sub = parse_sub(&rs.iter().collect::<Vec<_>>());
+        assert!(sub.plain.is_empty());
+    }
+
+    #[test]
+    fn header_cover_is_not_the_artist_avatar() {
+        let h = json!({
+            "straplineThumbnail": { "musicThumbnailRenderer": { "thumbnail": { "thumbnails": [ { "url": "https://lh3.googleusercontent.com/avatar=w60-h60" } ] } } },
+            "thumbnail": { "musicThumbnailRenderer": { "thumbnail": { "thumbnails": [ { "url": "https://lh3.googleusercontent.com/cover=w544-h544" } ] } } }
+        });
+        assert!(thumbnail(&h).unwrap().contains("cover"));
+    }
+
+    #[test]
+    fn parses_brand_accounts() {
+        let v = json!({ "contents": [ { "accountSectionListRenderer": { "contents": [ { "accountItemSectionRenderer": { "contents": [
+            { "accountItem": { "accountName": { "runs": [ { "text": "Maya" } ] }, "isSelected": true,
+                "accountPhoto": { "thumbnails": [ { "url": "https://yt3.ggpht.com/a=s88" } ] },
+                "channelHandle": { "runs": [ { "text": "@maya" } ] },
+                "serviceEndpoint": { "selectActiveIdentityEndpoint": { "supportedTokens": [ { "accountStateToken": { "hasChannel": true } } ] } } } },
+            { "accountItem": { "accountName": { "runs": [ { "text": "Maya Music" } ] }, "isSelected": false,
+                "serviceEndpoint": { "selectActiveIdentityEndpoint": { "supportedTokens": [ { "pageIdToken": { "pageId": "112233445566778899000" } } ] } } } }
+        ] } } ] } } ] });
+        let a = parse_accounts(&v);
+        assert_eq!(a.len(), 2);
+        assert_eq!((a[0].name.as_str(), a[0].selected, a[0].page_id.as_deref()), ("Maya", true, None));
+        assert_eq!(a[0].handle.as_deref(), Some("@maya"));
+        assert_eq!(a[1].page_id.as_deref(), Some("112233445566778899000"));
+    }
+
+    #[test]
+    fn song_meta_prefers_song_counterpart() {
+        let byline = |artist: &str, album: Option<&str>| {
+            let mut r = vec![json!({ "text": artist, "navigationEndpoint": { "browseEndpoint": { "browseId": "UCmcr" } } })];
+            if let Some(al) = album {
+                r.push(json!({ "text": " • " }));
+                r.push(json!({ "text": al, "navigationEndpoint": { "browseEndpoint": { "browseId": "MPREb_black" } } }));
+            }
+            json!({ "runs": r })
+        };
+        let v = json!({ "playlistPanelVideoWrapperRenderer": {
+            "primaryRenderer": { "playlistPanelVideoRenderer": {
+                "thumbnail": { "thumbnails": [ { "url": "https://i.ytimg.com/vi/x/hqdefault.jpg" } ] },
+                "longBylineText": byline("mcr", None) } },
+            "counterpart": [ { "counterpartRenderer": { "playlistPanelVideoRenderer": {
+                "thumbnail": { "thumbnails": [ { "url": "https://lh3.googleusercontent.com/black=w544-h544" } ] },
+                "longBylineText": byline("My Chemical Romance", Some("The Black Parade")) } } } ]
+        } });
+        let m = parse_song_meta(&v).unwrap();
+        assert_eq!(m.artist.as_deref(), Some("My Chemical Romance"));
+        assert_eq!(m.album.as_deref(), Some("The Black Parade"));
+        assert_eq!(m.album_id.as_deref(), Some("yt:MPREb_black"));
+        assert!(m.artwork.unwrap().contains("googleusercontent"));
     }
 
     #[test]

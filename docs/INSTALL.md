@@ -71,6 +71,12 @@ developer app, add the redirect URI `http://127.0.0.1:43117/callback` exactly, t
 (whichever comes first), and only tracks longer than 30 s. Scrobbles made while offline are queued and
 sent later. Settings → Last.fm shows how many are waiting.
 
+**The app closed unexpectedly.** Native crashes are recorded in
+`%APPDATA%\app.openmusic.<app>\crash.log`; please attach it when reporting the problem.
+
+**YTSpot shows the wrong library.** If your Google account has several YouTube channels, pick the right
+one under Settings → Account → Switch profile (or click your name in the top bar).
+
 **Controller does nothing.** Press any button once while the app is focused; browsers only expose a
 gamepad after its first input.
 

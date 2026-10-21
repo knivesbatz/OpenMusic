@@ -19,6 +19,8 @@ interface AppStore {
   liked: Set<string>;
   /** Albums and artists saved to "Your Library" in this app. */
   saved: { albums: Album[]; artists: Artist[] };
+  /** YTSpot profile (channel) picker is open. */
+  profilePicker: boolean;
 }
 
 export const useApp = create<AppStore>(() => ({
@@ -31,7 +33,25 @@ export const useApp = create<AppStore>(() => ({
   playlists: [],
   liked: new Set(),
   saved: { albums: [], artists: [] },
+  profilePicker: false,
 }));
+
+export const openProfilePicker = () => useApp.setState({ profilePicker: true });
+export const closeProfilePicker = () => useApp.setState({ profilePicker: false });
+
+/** After a YouTube sign-in, ask once which channel to use when the account has several. */
+async function maybeAskProfile() {
+  const s = useApp.getState();
+  if (s.info?.flavor !== "youtube" || !s.auth?.signedIn) return;
+  if (await api.kvGet<boolean>("yt.profileChosen").catch(() => true)) return;
+  try {
+    const list = await api.ytAccounts();
+    if (list.length > 1) openProfilePicker();
+    else await api.kvSet("yt.profileChosen", true);
+  } catch {
+    /* ask again next time */
+  }
+}
 
 const browserInfo: AppInfo = {
   flavor: "plex",
@@ -58,10 +78,12 @@ export async function boot() {
   refreshSaved();
   listen("saved-changed", refreshSaved);
   if (auth?.signedIn && !auth.needsServer) refreshLibrary(false);
+  maybeAskProfile();
   listen("auth-changed", async () => {
     const auth = await api.authStatus().catch(() => null);
     useApp.setState({ auth });
     if (auth?.signedIn && !auth.needsServer) refreshLibrary(false);
+    maybeAskProfile();
   });
   listen("auth-expired", () => {
     useApp.setState((s) => ({ auth: s.auth ? { ...s.auth, signedIn: false } : s.auth }));

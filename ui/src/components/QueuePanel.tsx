@@ -9,7 +9,9 @@ import { usePlayer } from "../player/engine";
 import { select, type QItem } from "../player/queue";
 import { openMenu, useUi } from "../store/ui";
 import { cls } from "../util";
-import { Art, ArtistName, JpText } from "./common";
+import { ArtistName, JpText, TrackArt } from "./common";
+import { useDisplayTrack } from "../store/songmeta";
+import type { Track } from "../types";
 import * as I from "./Icons";
 
 type Entry = { kind: "head"; label: string; clear?: boolean } | { kind: "item"; item: QItem; index: number; current: boolean };
@@ -147,22 +149,14 @@ export function QueuePanel() {
                 onDrop={drop}
               >
                 <div className="q-art">
-                  <Art src={tr.artwork} size={80} className="sm" />
+                  <TrackArt track={tr} size={80} className="sm" />
                   {!current && (
                     <button className="icon-btn q-play" aria-label={t("play")} onClick={(e) => (e.stopPropagation(), P.playUid(item.uid))}>
                       <I.IPlay size={16} />
                     </button>
                   )}
                 </div>
-                <div className="q-text">
-                  <span className="name">
-                    <JpText text={tr.title} />
-                  </span>
-                  <span className="sub">
-                    {tr.explicit && <span className="badge">{t("explicit")}</span>}
-                    <ArtistName name={tr.artist} />
-                  </span>
-                </div>
+                <QueueText track={tr} explicitLabel={t("explicit")} />
                 <button className="icon-btn more" aria-label={t("more")} title={t("more")} onClick={(e) => (e.stopPropagation(), openMenu(e, trackMenu(tr, { queueUid: current ? undefined : item.uid })))}>
                   <I.IMore size={16} />
                 </button>
@@ -177,5 +171,20 @@ export function QueuePanel() {
         </div>
       </div>
     </aside>
+  );
+}
+
+function QueueText({ track, explicitLabel }: { track: Track; explicitLabel: string }) {
+  const tr = useDisplayTrack(track);
+  return (
+    <div className="q-text">
+      <span className="name">
+        <JpText text={tr.title} />
+      </span>
+      <span className="sub">
+        {tr.explicit && <span className="badge">{explicitLabel}</span>}
+        <ArtistName name={tr.artist} />
+      </span>
+    </div>
   );
 }

@@ -65,6 +65,12 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX saved_kind ON saved(kind, saved_at);
     "#,
+    // v3: YouTube parsing fixes (album covers, play counts, artist aliases) invalidate cached
+    // responses. Only the metadata cache is cleared; playlists, downloads and settings stay.
+    r#"
+    DELETE FROM cache;
+    DELETE FROM kv WHERE key = 'plex.library';
+    "#,
 ];
 
 pub fn now() -> i64 {

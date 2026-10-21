@@ -9,7 +9,7 @@ import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
-import { refreshPlaylists, setLocalOnly, useApp } from "../store/app";
+import { openProfilePicker, refreshPlaylists, setLocalOnly, useApp } from "../store/app";
 import { useSettings, type Quality } from "../store/settings";
 import { confirmDialog, navigate, toast } from "../store/ui";
 import type { DownloadInfo, ImportReport, LastFmStatus, ScanReport, SpotifyPlaylist, Track } from "../types";
@@ -380,6 +380,7 @@ export function SettingsPage() {
   async function signOut() {
     if (!(await confirmDialog({ title: t("signOut"), body: t("signOutBody"), confirm: t("signOut") }))) return;
     await api.signOut().catch(() => {});
+    await api.kvSet("yt.profileChosen", false).catch(() => {});
     await setLocalOnly(false);
     useApp.setState({ auth: await api.authStatus(), library: null });
   }
@@ -398,6 +399,11 @@ export function SettingsPage() {
               {!yt && (
                 <button className="pill ghost small" onClick={() => useApp.setState({ auth: { ...auth, needsServer: true } })}>
                   {t("changeServer")}
+                </button>
+              )}
+              {yt && (
+                <button className="pill ghost small" onClick={openProfilePicker}>
+                  {t("switchProfile")}
                 </button>
               )}
               <button className="pill ghost small" onClick={signOut}>

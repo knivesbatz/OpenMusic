@@ -49,6 +49,11 @@ pub async fn artist_alias(http: &reqwest::Client, name: &str, locale: &str) -> R
     Ok(pick_alias(&v, name, locale))
 }
 
+/// True when the text contains kana or CJK ideographs.
+pub fn has_japanese(s: &str) -> bool {
+    s.chars().any(|c| matches!(c as u32, 0x3040..=0x30FF | 0x31F0..=0x31FF | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xFF66..=0xFF9F))
+}
+
 fn norm(s: &str) -> String {
     s.trim().to_lowercase()
 }
@@ -72,6 +77,8 @@ pub fn pick_alias(v: &Value, name: &str, locale: &str) -> Option<String> {
     let aliases = artist.get("aliases")?.as_array()?;
     let of_locale = |primary_only: bool| {
         aliases.iter().find(|x| {
+            // Search hints are misspellings and abbreviations ("MCR"), never display names.
+            x.get("type").and_then(|t| t.as_str()) != Some("Search hint") &&
             x.get("locale").and_then(|l| l.as_str()).map(|l| l == locale || l.starts_with(&format!("{locale}_"))).unwrap_or(false)
                 && (!primary_only || x.get("primary").and_then(|p| p.as_bool()).unwrap_or(false))
         })
@@ -111,6 +118,14 @@ mod tests {
         assert_eq!(pick_alias(&sample(), "宇多田ヒカル", "ja"), None);
         // Matching through an alias name is accepted.
         assert_eq!(pick_alias(&sample(), "Hikki", "en").as_deref(), Some("Utada Hikaru"));
+    }
+
+    #[test]
+    fn skips_search_hints() {
+        let v = serde_json::json!({ "artists": [ { "score": 100, "name": "My Chemical Romance",
+            "aliases": [ { "name": "MCR", "locale": "en", "primary": null, "type": "Search hint" } ] } ] });
+        assert_eq!(pick_alias(&v, "My Chemical Romance", "en"), None);
+        assert!(has_japanese("宇多田ヒカル") && !has_japanese("My Chemical Romance"));
     }
 
     #[test]

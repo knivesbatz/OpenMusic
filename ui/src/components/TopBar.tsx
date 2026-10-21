@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useT } from "../i18n";
-import { useApp } from "../store/app";
+import { openProfilePicker, useApp } from "../store/app";
 import { back, forward, navigate, useUi } from "../store/ui";
 import * as I from "./Icons";
 
@@ -11,6 +11,7 @@ export function TopBar() {
   const cur = useUi((s) => s.stack[s.pos]);
   const online = useApp((s) => s.online);
   const auth = useApp((s) => s.auth);
+  const flavor = useApp((s) => s.info?.flavor);
   const input = useRef<HTMLInputElement>(null);
   const q = cur.name === "search" ? cur.q ?? "" : "";
 
@@ -53,7 +54,14 @@ export function TopBar() {
       </div>
       <div className="row gap">
         {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
-        {auth?.account && <span className="muted small account">{auth.account}</span>}
+        {auth?.account &&
+          (flavor === "youtube" ? (
+            <button className="link small account" title={t("switchProfile")} onClick={openProfilePicker}>
+              {auth.account}
+            </button>
+          ) : (
+            <span className="muted small account">{auth.account}</span>
+          ))}
         <button className="round-btn" aria-label={t("importSpotify")} title={t("importSpotify")} onClick={() => navigate({ name: "import" })}>
           <I.IImport size={18} />
         </button>
