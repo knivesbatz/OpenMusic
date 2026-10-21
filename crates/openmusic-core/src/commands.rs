@@ -54,7 +54,7 @@ pub fn app_info(app: AppHandle, state: S) -> AppInfo {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_get(state: S) -> Result<Value> {
     Ok(state.db().kv_get::<Value>("settings")?.unwrap_or(Value::Object(Default::default())))
 }
@@ -67,12 +67,12 @@ pub async fn settings_set(state: S<'_>, settings: Value) -> Result<()> {
     state.db().kv_set("settings", &settings)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn kv_get(state: S, key: String) -> Result<Option<Value>> {
     state.db().kv_get(&format!("ui.{key}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn kv_set(state: S, key: String, value: Value) -> Result<()> {
     state.db().kv_set(&format!("ui.{key}"), &value)
 }
@@ -772,12 +772,12 @@ pub async fn rate(state: S<'_>, track: Track, liked: bool) -> Result<()> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_save(state: S, queue: Value) -> Result<()> {
     state.db().kv_set("queue", &queue)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_load(state: S) -> Result<Option<Value>> {
     state.db().kv_get("queue")
 }
@@ -795,12 +795,12 @@ pub async fn get_lyrics(state: S<'_>, track: Track) -> Result<Option<lyrics::Lyr
 
 // ---- app playlists --------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_list(state: S) -> Result<Vec<Playlist>> {
     state.db().playlists()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_create(app: AppHandle, state: S, name: String, tracks: Option<Vec<Track>>) -> Result<Playlist> {
     let mut db = state.db();
     let p = db.playlist_create(name.trim())?;
@@ -811,35 +811,35 @@ pub fn pl_create(app: AppHandle, state: S, name: String, tracks: Option<Vec<Trac
     Ok(p)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_update(app: AppHandle, state: S, id: String, name: String, description: Option<String>) -> Result<()> {
     state.db().playlist_update(&id, name.trim(), description.as_deref())?;
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_delete(app: AppHandle, state: S, id: String) -> Result<()> {
     state.db().playlist_delete(&id)?;
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_add(app: AppHandle, state: S, id: String, tracks: Vec<Track>) -> Result<usize> {
     let n = state.db().playlist_add(&id, &tracks)?;
     let _ = app.emit("playlists-changed", ());
     Ok(n)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_reorder(app: AppHandle, state: S, id: String, order: Vec<usize>) -> Result<()> {
     state.db().playlist_reorder(&id, &order)?;
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn hide_playlist(app: AppHandle, state: S, id: String, title: String) -> Result<()> {
     if id.starts_with("app:") {
         return Err(Error::Invalid("app playlists can be deleted instead".into()));
@@ -853,7 +853,7 @@ pub fn hide_playlist(app: AppHandle, state: S, id: String, title: String) -> Res
 
 // ---- local files ----------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn local_folders(state: S) -> Result<Vec<String>> {
     let db = state.db();
     let mut st = db.conn.prepare("SELECT path FROM local_folders ORDER BY path")?;
@@ -905,7 +905,7 @@ pub struct LocalLibrary {
     artists: Vec<Artist>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn local_library(state: S) -> Result<LocalLibrary> {
     let db = state.db();
     Ok(LocalLibrary { tracks: local::tracks(&db)?, albums: local::albums(&db)?, artists: local::artists(&db)? })
@@ -927,7 +927,7 @@ fn lastfm_client(state: &AppState) -> Result<lastfm::LastFm> {
     Ok(lastfm::LastFm::new(state.http.clone(), keys))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lastfm_status(state: S) -> Result<LastFmStatus> {
     Ok(LastFmStatus {
         has_keys: state.secrets.get_large("lastfm.keys")?.is_some(),
@@ -937,7 +937,7 @@ pub fn lastfm_status(state: S) -> Result<LastFmStatus> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lastfm_set_keys(state: S, api_key: String, secret: String) -> Result<()> {
     state.secrets.set_json("lastfm.keys", &lastfm::Keys { api_key: api_key.trim().into(), secret: secret.trim().into() })
 }
@@ -958,7 +958,7 @@ pub async fn lastfm_connect_finish(state: S<'_>, token: String) -> Result<String
     Ok(user)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lastfm_disconnect(state: S) -> Result<()> {
     state.secrets.delete("lastfm.sk")?;
     state.db().kv_delete("lastfm.user")
@@ -1034,14 +1034,14 @@ pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
 
 // ---- downloads / storage --------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn download_tracks(app: AppHandle, state: S, tracks: Vec<Track>) -> Result<usize> {
     let n = downloads::enqueue(app.clone(), state.inner().clone(), tracks)?;
     let _ = app.emit("downloads-changed", ());
     Ok(n)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn download_list(state: S) -> Result<Vec<downloads::DownloadInfo>> {
     downloads::list(&state)
 }
@@ -1051,7 +1051,7 @@ pub fn download_cancel(state: S, id: String) {
     downloads::cancel(&state, &id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn download_remove(app: AppHandle, state: S, id: String) -> Result<()> {
     downloads::remove(&state, &id)?;
     let _ = app.emit("downloads-changed", ());
@@ -1141,14 +1141,14 @@ pub fn htpc_launch() -> bool {
 }
 
 #[cfg(desktop)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_get(app: AppHandle) -> Result<bool> {
     use tauri_plugin_autostart::ManagerExt;
     app.autolaunch().is_enabled().map_err(|e| Error::Invalid(e.to_string()))
 }
 
 #[cfg(desktop)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
     use tauri_plugin_autostart::ManagerExt;
     let al = app.autolaunch();
@@ -1157,13 +1157,13 @@ pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
 }
 
 #[cfg(mobile)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_get(_app: AppHandle) -> Result<bool> {
     Err(Error::Unsupported("launch at startup".into()))
 }
 
 #[cfg(mobile)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_set(_app: AppHandle, _enabled: bool) -> Result<()> {
     Err(Error::Unsupported("launch at startup".into()))
 }
@@ -1190,13 +1190,13 @@ pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
 
 /// Albums and artists the user saved in this app. Stored locally only, so saving never changes
 /// the Plex server or the YouTube account.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn saved_list(state: S) -> Result<Library> {
     let db = state.db();
     Ok(Library { albums: db.saved_items("album")?, artists: db.saved_items("artist")?, ..Default::default() })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_album(app: AppHandle, state: S, album: Album, saved: bool) -> Result<()> {
     let db = state.db();
     if saved { db.save_item("album", &album.id, &album)? } else { db.unsave_item(&album.id)? }
@@ -1204,7 +1204,7 @@ pub fn save_album(app: AppHandle, state: S, album: Album, saved: bool) -> Result
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_artist(app: AppHandle, state: S, artist: Artist, saved: bool) -> Result<()> {
     let db = state.db();
     if saved { db.save_item("artist", &artist.id, &artist)? } else { db.unsave_item(&artist.id)? }
@@ -1347,7 +1347,7 @@ pub async fn yt_song_meta(
 }
 
 /// UI errors (uncaught exceptions, render errors) go to the same crash.log as native panics.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn log_ui_error(state: S, message: String) -> Result<()> {
     use std::io::Write;
     let path = state.dirs.data.join("crash.log");
@@ -1439,7 +1439,7 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
 }
 
 /// Turn the webview's GPU acceleration on or off; takes effect after a restart.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn gpu_set(state: S, enabled: bool) -> Result<()> {
     crate::safe_mode::set_gpu(&state.dirs.data, enabled)?;
     Ok(())

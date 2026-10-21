@@ -159,7 +159,7 @@ jobs:
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           ../../../ui/node_modules/.bin/tauri android init --ci
-          ../../../ui/node_modules/.bin/tauri android build --apk --target aarch64 --ci
+          ../../../ui/node_modules/.bin/tauri android build --apk true --target aarch64 --ci
       - name: Sign APK
         working-directory: apps/${{ matrix.app }}/src-tauri
         env:
