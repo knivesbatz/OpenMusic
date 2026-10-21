@@ -82,6 +82,9 @@ export interface ArtistPage {
   singles: Album[];
   appearsOn: Album[];
   related: Artist[];
+  /** Local files by an artist with the same name. */
+  localTracks?: Track[];
+  localAlbums?: Album[];
 }
 
 export interface AlbumPage {

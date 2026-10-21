@@ -218,6 +218,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::sign_out,
             commands::home,
             commands::search,
+            commands::search_kind,
             commands::artist,
             commands::album,
             commands::playlist,

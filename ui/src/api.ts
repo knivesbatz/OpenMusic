@@ -57,6 +57,7 @@ export const api = {
 
   home: (refresh: boolean) => call<T.HomeData>("home", { refresh }),
   search: (query: string) => call<T.SearchResults>("search", { query }),
+  searchKind: (query: string, kind: string) => call<T.SearchResults>("search_kind", { query, kind }),
   artist: (id: string) => call<T.ArtistPage>("artist", { id }),
   album: (id: string) => call<T.AlbumPage>("album", { id }),
   playlist: (id: string) => call<T.PlaylistPage>("playlist", { id }),

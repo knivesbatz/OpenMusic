@@ -483,10 +483,15 @@ impl Plex {
     }
 
     pub async fn search(&self, sess: &Session, q: &str) -> Result<SearchResults> {
+        self.search_limit(sess, q, 20).await
+    }
+
+    /// Search with a per-type result limit (`limit` items per hub).
+    pub async fn search_limit(&self, sess: &Session, q: &str, limit: u32) -> Result<SearchResults> {
         let mut out = SearchResults::default();
         let q = urlencoding::encode(q);
         for sid in &sess.sections {
-            let v = self.get(sess, &format!("/hubs/search?query={q}&limit=20&sectionId={sid}")).await?;
+            let v = self.get(sess, &format!("/hubs/search?query={q}&limit={limit}&sectionId={sid}")).await?;
             let hubs = v.get("MediaContainer").and_then(|m| m.get("Hub")).and_then(|h| h.as_array()).cloned();
             for hub in hubs.unwrap_or_default() {
                 let list = hub.get("Metadata").and_then(|m| m.as_array()).cloned().unwrap_or_default();

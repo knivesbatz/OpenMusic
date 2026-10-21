@@ -721,6 +721,47 @@ impl Ytm {
         Ok(pages.iter().flat_map(parse_shelves).collect())
     }
 
+    /// Search one result type (the YouTube Music filter chips), following continuations, for the
+    /// full list behind a filter. `kind`: songs, albums, artists, playlists, podcasts, episodes.
+    pub async fn search_kind(&self, q: &str, kind: &str) -> Result<SearchResults> {
+        // Filter params as sent by the web client (ytmusicapi's get_search_params).
+        let params = match kind {
+            "songs" => "EgWKAQIIAWoMEA4QChADEAQQCRAF",
+            "albums" => "EgWKAQIYAWoMEA4QChADEAQQCRAF",
+            "artists" => "EgWKAQIgAWoMEA4QChADEAQQCRAF",
+            "playlists" => "EgeKAQQoAEABagwQDhAKEAMQBBAJEAU%3D",
+            "podcasts" => "EgWKAQJQAWoMEA4QChADEAQQCRAF",
+            "episodes" => "EgWKAQJIAWoMEA4QChADEAQQCRAF",
+            _ => return Err(Error::Invalid(format!("unknown search kind {kind}"))),
+        };
+        let mut pages = vec![self.post("search", json!({ "query": q, "params": params }), "").await?];
+        while pages.len() < 3 {
+            let Some((token, command)) = continuation_token(pages.last().unwrap()) else { break };
+            let next = if command {
+                self.post("search", json!({ "continuation": token }), "").await
+            } else {
+                let t = urlencoding::encode(&token).into_owned();
+                self.post("search", json!({}), &format!("&ctoken={t}&continuation={t}&type=next")).await
+            };
+            match next {
+                Ok(v) => pages.push(v),
+                Err(_) => break,
+            }
+        }
+        let mut out = SearchResults::default();
+        for p in &pages {
+            split_by_kind(all_items(p), &mut out);
+        }
+        dedupe(&mut out.tracks, |t| t.id.clone());
+        dedupe(&mut out.albums, |t| t.id.clone());
+        dedupe(&mut out.artists, |t| t.id.clone());
+        dedupe(&mut out.playlists, |t| t.id.clone());
+        if kind == "songs" && out.tracks.iter().any(|t| !is_video_thumb(&t.artwork)) {
+            out.tracks.retain(|t| !is_video_thumb(&t.artwork));
+        }
+        Ok(out)
+    }
+
     pub async fn search(&self, q: &str) -> Result<SearchResults> {
         let v = self.post("search", json!({ "query": q }), "").await?;
         let mut out = SearchResults::default();

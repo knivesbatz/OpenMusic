@@ -491,13 +491,68 @@ pub async fn search(app: AppHandle, state: S<'_>, query: String) -> Result<Searc
     };
     let hidden = state.db().hidden_playlists()?;
     res.playlists.retain(|p| !hidden.contains(&p.id));
-    // Local files and app playlists are searched too.
-    let local = local::search(&state.db(), q, 20)?;
-    res.tracks.extend(local);
+    // Local files and app playlists are searched too (the UI shows local tracks in their own
+    // section, since provider songs come first).
+    {
+        let db = state.db();
+        res.tracks.extend(local::search(&db, q, 20)?);
+        res.albums.extend(local::search_albums(&db, q)?);
+        res.artists.extend(local::search_artists(&db, q)?);
+    }
     let ql = q.to_lowercase();
     let app_pls: Vec<Playlist> = state.db().playlists()?.into_iter().filter(|p| p.title.to_lowercase().contains(&ql)).collect();
     res.playlists.splice(0..0, app_pls);
     Ok(res)
+}
+
+/// Full results for one type (the filter chips on the search page).
+#[tauri::command]
+pub async fn search_kind(app: AppHandle, state: S<'_>, query: String, kind: String) -> Result<SearchResults> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(SearchResults::default());
+    }
+    let key = format!("search:{kind}:{}", q.to_lowercase());
+    let cached = state.db().cache_get::<SearchResults>(&key, false)?;
+    let mut res = match cached {
+        Some(r) => r,
+        None => {
+            let r = match state.flavor {
+                Flavor::Plex => {
+                    let sess = state.plex_session().await?;
+                    state.plex.search_limit(&sess, q, 100).await?
+                }
+                Flavor::YouTube => yt_call!(app, state, |y| y.search_kind(q, &kind))?,
+            };
+            state.db().cache_put(&key, &r, 10 * 60)?;
+            r
+        }
+    };
+    let hidden = state.db().hidden_playlists()?;
+    res.playlists.retain(|p| !hidden.contains(&p.id));
+    let db = state.db();
+    match kind.as_str() {
+        "songs" => res.tracks.extend(local::search(&db, q, 200)?),
+        "albums" => res.albums.extend(local::search_albums(&db, q)?),
+        "artists" => res.artists.extend(local::search_artists(&db, q)?),
+        "playlists" => {
+            let ql = q.to_lowercase();
+            let app_pls: Vec<Playlist> = db.playlists()?.into_iter().filter(|p| p.title.to_lowercase().contains(&ql)).collect();
+            res.playlists.splice(0..0, app_pls);
+        }
+        _ => {}
+    }
+    Ok(res)
+}
+
+/// Add local files by the same artist name to a provider artist page.
+fn with_local(state: &AppState, mut page: ArtistPage) -> Result<ArtistPage> {
+    if let Some(name) = page.artist.as_ref().map(|a| a.name.clone()).filter(|n| !n.trim().is_empty()) {
+        let db = state.db();
+        page.local_tracks = local::tracks_by_artist_name(&db, &name)?;
+        page.local_albums = local::albums_by_artist_name(&db, &name)?;
+    }
+    Ok(page)
 }
 
 #[tauri::command]
@@ -515,8 +570,9 @@ pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPa
         });
     }
     let key = format!("artist:{id}");
-    if let Some(p) = state.db().cache_get(&key, false)? {
-        return Ok(p);
+    let cached = state.db().cache_get::<ArtistPage>(&key, false)?;
+    if let Some(p) = cached {
+        return with_local(&state, p);
     }
     let page = match state.flavor {
         Flavor::Plex => {
@@ -526,7 +582,7 @@ pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPa
         Flavor::YouTube => yt_call!(app, state, |y| y.artist(&id))?,
     };
     state.db().cache_put(&key, &page, 6 * 3600)?;
-    Ok(page)
+    with_local(&state, page)
 }
 
 #[tauri::command]

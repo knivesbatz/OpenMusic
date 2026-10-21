@@ -106,6 +106,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Spotify import replaced by a Soundiiz transfer guide
 - ✅ Playlist folders (any playlist, local to the app) and Recents / Alphabetical / Custom order with
   drag and drop in the sidebar (store unit-tested, e2e)
+- ✅ Search filter chips load the full list for that type (YouTube filtered search + 2 continuation
+  pages; Plex up to 100 per type)
+- ✅ Local files in search ("On this computer" section, local albums/artists) and on provider artist
+  pages when the artist name matches (case-insensitive; tested)
 
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library

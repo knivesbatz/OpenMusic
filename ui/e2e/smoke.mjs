@@ -43,6 +43,10 @@ await test("search shows top result and songs", async (p) => {
   await p.waitForSelector(".top-result .top-name");
   assert.equal((await p.locator(".top-result .top-name").textContent()).trim(), "Aster Vale");
   assert.ok((await p.locator(".top-songs .tl-row:not(.tl-head)").count()) > 0);
+  // Local files get their own section; the Songs filter loads the full list.
+  await p.locator("h2", { hasText: "On this computer" }).waitFor();
+  await p.click('.chips button:has-text("Songs")');
+  await p.locator(".tl-row .name", { hasText: "(more)" }).first().waitFor();
 });
 
 await test("queue: shift-click range selection and bulk remove", async (p) => {
@@ -77,6 +81,7 @@ await test("artist page: follow toggles", async (p) => {
   await p.waitForSelector(".hero-meta .link");
   await p.click(".hero-meta .link");
   await p.waitForSelector(".artist-hero");
+  await p.locator("h2", { hasText: "On this computer" }).waitFor();
   await p.click("button.follow");
   await p.waitForSelector('button.follow[aria-pressed="true"]');
   assert.equal((await p.locator("button.follow").textContent()).trim(), "Following");

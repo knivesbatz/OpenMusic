@@ -142,6 +142,11 @@ pub struct ArtistPage {
     pub singles: Vec<Album>,
     pub appears_on: Vec<Album>,
     pub related: Vec<Artist>,
+    /// Local files whose artist matches this artist's name (not cached with the provider page).
+    #[serde(default)]
+    pub local_tracks: Vec<Track>,
+    #[serde(default)]
+    pub local_albums: Vec<Album>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

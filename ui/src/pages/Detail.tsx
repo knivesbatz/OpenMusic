@@ -154,6 +154,13 @@ export function ArtistPage({ id }: { id: string }) {
           <Grid items={discItems.slice(0, 12).map((a) => ({ type: "album" as const, ...a }))} />
         </section>
       )}
+      {(data.localTracks?.length ?? 0) > 0 && (
+        <section>
+          <h2>{t("onThisComputer")}</h2>
+          <TrackList tracks={data.localTracks!} context={{ kind: "artist-local", id, title: name }} showAlbum />
+        </section>
+      )}
+      <CardShelf title={t("localAlbums")} items={(data.localAlbums ?? []).map((a) => ({ type: "album" as const, ...a }))} />
       <CardShelf title={t("fansAlsoLike")} items={data.related.map((a) => ({ type: "artist" as const, ...a }))} />
       {disc !== "appears" && <CardShelf title={t("appearsOn")} items={data.appearsOn.map((a) => ({ type: "album" as const, ...a }))} />}
       {data.description && (
