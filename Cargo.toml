@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/openmusic-core", "apps/ytspot/src-tauri", "apps/plexspot/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+opt-level = 3
+
+[profile.dev.package."*"]
+opt-level = 1

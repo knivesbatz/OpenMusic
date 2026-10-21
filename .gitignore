@@ -1,0 +1,8 @@
+target/
+node_modules/
+ui/dist/
+src code ref/
+*.docx
+*.pdf
+apps/*/src-tauri/gen/
+release/

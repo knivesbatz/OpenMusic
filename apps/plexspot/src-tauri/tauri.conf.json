@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PLEXSpot",
+  "mainBinaryName": "PLEXSpot",
+  "version": "0.1.0",
+  "identifier": "app.openmusic.plexspot",
+  "build": {
+    "frontendDist": "../../../ui/dist",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "PLEXSpot",
+        "width": 1320,
+        "height": 840,
+        "minWidth": 820,
+        "minHeight": 560,
+        "backgroundColor": "#121212",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": { "enable": true, "scope": [] }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "OpenMusic",
+    "shortDescription": "PLEXSpot music player",
+    "longDescription": "PLEXSpot - a Spotify-style desktop music client.",
+    "category": "Music",
+    "copyright": "OpenMusic contributors",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}
