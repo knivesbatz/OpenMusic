@@ -60,6 +60,9 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
 
   override fun load(webView: WebView) {
     this.webView = webView
+    // wry asks for a user gesture before media plays; the player starts the next song and the
+    // crossfade's second player on its own, so allow it.
+    webView.settings.mediaPlaybackRequiresUserGesture = false
   }
 
   @Command

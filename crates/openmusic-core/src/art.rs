@@ -103,13 +103,12 @@ fn route(url: &str, prefix: &str) -> Option<(String, String)> {
 
 /// The first artwork download that fails in a session goes to crash.log (server and path only,
 /// never the query, which carries the Plex token), so "covers don't load" reports have a cause.
-fn note_failure(state: &AppState, upstream: &str, why: &str) -> Option<Vec<u8>> {
+fn note_failure(state: &AppState, upstream: &str, why: &str) {
     static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         let shown = upstream.split('?').next().unwrap_or_default();
         crate::watchdog::append(state, &format!("artwork download failed ({why}): {shown}"));
     }
-    None
 }
 
 fn cache_file(state: &AppState, path: &str, size: u32) -> PathBuf {
@@ -157,14 +156,17 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
         return Some(b);
     }
 
-    let upstream = if let Some(thumb) = path.strip_prefix("/plex") {
+    // Plex: the photo transcoder (exact size) with the stored image as fallback; on phones the
+    // stored image only, since slow transcodes leave covers blank there.
+    let upstreams: Vec<String> = if let Some(thumb) = path.strip_prefix("/plex") {
         match state.plex_session.read().await.as_ref() {
-            Some(sess) => state.plex.art_url(sess, thumb, size),
+            Some(sess) if cfg!(mobile) => vec![state.plex.thumb_url(sess, thumb)],
+            Some(sess) => vec![state.plex.art_url(sess, thumb, size), state.plex.thumb_url(sess, thumb)],
             None => return None,
         }
     } else if let Some(enc) = path.strip_prefix("/url/") {
         match urlencoding::decode(enc) {
-            Ok(u) if u.starts_with("https://") || u.starts_with("http://") => u.into_owned(),
+            Ok(u) if u.starts_with("https://") || u.starts_with("http://") => vec![u.into_owned()],
             _ => return None,
         }
     } else {
@@ -172,14 +174,22 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
     };
 
     let _permit = state.art_slots.acquire().await;
-    let bytes = match state.http.get(&upstream).timeout(std::time::Duration::from_secs(20)).send().await {
-        Ok(r) if r.status().is_success() => match r.bytes().await {
-            Ok(b) => b.to_vec(),
-            Err(e) => return note_failure(&state, &upstream, &e.to_string()),
-        },
-        Ok(r) => return note_failure(&state, &upstream, &format!("HTTP {}", r.status())),
-        Err(e) => return note_failure(&state, &upstream, &e.to_string()),
-    };
+    let mut bytes = None;
+    for (i, upstream) in upstreams.iter().enumerate() {
+        let timeout = std::time::Duration::from_secs(if i + 1 < upstreams.len() { 8 } else { 20 });
+        match state.http.get(upstream).timeout(timeout).send().await {
+            Ok(r) if r.status().is_success() => match r.bytes().await {
+                Ok(b) => {
+                    bytes = Some(b.to_vec());
+                    break;
+                }
+                Err(e) => note_failure(&state, upstream, &e.to_string()),
+            },
+            Ok(r) => note_failure(&state, upstream, &format!("HTTP {}", r.status())),
+            Err(e) => note_failure(&state, upstream, &e.to_string()),
+        };
+    }
+    let bytes = bytes?;
     if mime(&bytes).starts_with("image/") {
         if let Some(dir) = file.parent() {
             let _ = tokio::fs::create_dir_all(dir).await;

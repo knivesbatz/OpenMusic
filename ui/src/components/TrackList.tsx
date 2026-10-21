@@ -1,7 +1,7 @@
 // Virtualized track table used by albums, playlists, artist pages, search, local files and liked.
 import { createContext, memo, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { trackMenu, type TrackMenuOpts } from "../actions";
+import { toggleLike, trackMenu, type TrackMenuOpts } from "../actions";
 import { useT } from "../i18n";
 import { usePlayer } from "../player/engine";
 import * as P from "../player/engine";
@@ -12,7 +12,7 @@ import { navigate, openMenu } from "../store/ui";
 import type { PlayContext, Track } from "../types";
 import { cls, fmtMs, isTouch } from "../util";
 import { Art, ArtistName, JpText } from "./common";
-import { IClock, IMore, IPlay } from "./Icons";
+import { IClock, IHeart, IHeartFill, IMore, IPlay } from "./Icons";
 
 /** The main view's scroll container; lists virtualize against it. */
 export const ScrollCtx = createContext<React.RefObject<HTMLElement>>({ current: null });
@@ -86,14 +86,17 @@ export function TrackList({ tracks, context, showAlbum = true, showArt = true, n
 
   return (
     <div className="tracklist" role="grid" aria-rowcount={list.length} onKeyDown={onKey}>
-      <div className={cls("tl-row tl-head", !showAlbum && "no-album")} role="row">
-        <span className="tl-num">#</span>
-        <span>{t("title")}</span>
-        {showAlbum && <span>{t("album")}</span>}
-        <span className="tl-dur" aria-label={t("duration")}>
-          <IClock size={16} />
-        </span>
-      </div>
+      {/* Short excerpts (an artist's Popular, search's Songs) have no column header, like Spotify. */}
+      {!limit && (
+        <div className={cls("tl-row tl-head", !showAlbum && "no-album")} role="row">
+          <span className="tl-num">#</span>
+          <span>{t("title")}</span>
+          {showAlbum && <span>{t("album")}</span>}
+          <span className="tl-dur" aria-label={t("duration")}>
+            <IClock size={16} />
+          </span>
+        </div>
+      )}
       <div ref={listRef} style={{ height: v.getTotalSize(), position: "relative" }}>
         {v.getVirtualItems().map((vi) => {
           const i = vi.index;
@@ -221,6 +224,7 @@ const Row = memo(function Row(p: RowProps) {
         </span>
       )}
       <span className="tl-dur">
+        <LikeHeart track={tr} />
         <span className="d">{fmtMs(tr.durationMs)}</span>
         <button className="icon-btn more" aria-label={t("more")} title={t("more")} onClick={(e) => (e.stopPropagation(), p.onContext(e))}>
           <IMore size={16} />
@@ -229,3 +233,22 @@ const Row = memo(function Row(p: RowProps) {
     </div>
   );
 });
+
+/** Spotify's row heart: green when liked, shown on hover otherwise. */
+function LikeHeart({ track }: { track: Track }) {
+  const t = useT();
+  const liked = useApp((s) => s.liked.has(track.id));
+  const can = useApp((s) => !!s.info?.capabilities.favorites) && track.source !== "local";
+  if (!can) return null;
+  return (
+    <button
+      className={cls("icon-btn like", liked && "on")}
+      aria-pressed={liked}
+      aria-label={liked ? t("unlike") : t("like")}
+      title={liked ? t("unlike") : t("like")}
+      onClick={(e) => (e.stopPropagation(), toggleLike(track))}
+    >
+      {liked ? <IHeartFill size={16} /> : <IHeart size={16} />}
+    </button>
+  );
+}

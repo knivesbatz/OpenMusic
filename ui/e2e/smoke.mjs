@@ -183,6 +183,23 @@ await test("50,000-track playlist stays virtualized and responsive", async (p) =
 });
 
 await test(
+  "YouTube podcast: show page, follow, save an episode to Your Episodes",
+  async (p) => {
+    await p.locator(".sidebar").getByText("Conspiracy Theories").first().click();
+    await p.waitForSelector(".podcast-page .ep-row", { timeout: 5000 });
+    assert.equal(await p.locator(".ep-row").count(), 3);
+    await p.click(".podcast-page .follow");
+    await p.waitForFunction(() => document.querySelector(".podcast-page .follow")?.getAttribute("aria-pressed") === "true");
+    await p.locator(".ep-row").first().locator("button[aria-pressed]").click();
+    await p.locator(".sidebar").getByText("Your Episodes").first().click();
+    await p.waitForSelector(".podcast-page .ep-row");
+    assert.equal(await p.locator(".ep-row").count(), 1);
+    assert.match(await p.locator(".ep-row .ep-title").first().textContent(), /Lost Tomb Pt\. 1/);
+  },
+  { youtube: true },
+);
+
+await test(
   "in-app self-test (--self-test, used on Windows CI) reaches the end",
   async (p) => {
     await p.waitForFunction(() => window.__SELFTEST_EXIT, null, { timeout: 90000 });

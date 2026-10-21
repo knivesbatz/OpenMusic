@@ -1,8 +1,8 @@
 // Artist, album and playlist pages.
 import { useState } from "react";
-import { albumMenu, downloadTracks, playlistMenu, toggleSaved } from "../actions";
+import { albumMenu, changeCover, downloadTracks, playlistMenu, toggleSaved, trackMenu } from "../actions";
 import { api, artUrl, errorMessage } from "../api";
-import { Art, ArtistName, ErrorBox, JpText, Loading, PlayFab, useAsync } from "../components/common";
+import { Art, ArtistName, ErrorBox, JpText, Loading, PlayFab, useAsync, usePageTitle } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT } from "../i18n";
@@ -14,14 +14,23 @@ import type { Album, Artist, PlayContext, Track } from "../types";
 import { cls, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
 
-function Hero({ art, kind, title, meta, round }: { art?: string | null; kind: string; title: string; meta: React.ReactNode; round?: boolean }) {
+function Hero({ art, kind, title, meta, round, onArt }: { art?: string | null; kind: string; title: string; meta: React.ReactNode; round?: boolean; onArt?: () => void }) {
   // A color wash from the cover behind the header (Spotify style): the cover blown up so far
   // that only its colors show; no blur filter, which some GPUs choke on.
   const wash = artUrl(art, 60);
   return (
     <header className="hero">
       {wash && <div className="hero-wash" aria-hidden="true" style={{ backgroundImage: `url("${wash}")` }} />}
-      <Art src={art} size={480} round={round} className="hero-art" />
+      {onArt ? (
+        <button className="hero-art-btn" onClick={onArt} aria-label={kind}>
+          <Art src={art} size={480} round={round} className="hero-art" />
+          <span className="hero-art-edit">
+            <I.IEdit size={36} />
+          </span>
+        </button>
+      ) : (
+        <Art src={art} size={480} round={round} className="hero-art" />
+      )}
       <div className="hero-text">
         <span className="small">{kind}</span>
         <h1 className={cls(title.length > 28 && "long")}>
@@ -75,6 +84,7 @@ function ActionBar({ tracks, ctx, onMore, extra }: { tracks: Track[]; ctx: PlayC
 export function AlbumPage({ id }: { id: string }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.album(id), [id]);
+  usePageTitle(data?.album.title, () => data && P.playTracks(data.tracks, 0, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }));
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const { album, tracks } = data;
@@ -112,6 +122,7 @@ type Disc = "popular" | "albums" | "singles" | "appears";
 export function ArtistPage({ id }: { id: string }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.artist(id), [id]);
+  usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }));
   const [more, setMore] = useState(false);
   const [disc, setDisc] = useState<Disc>("popular");
   const [showAll, setShowAll] = useState(false);
@@ -205,6 +216,7 @@ function DiscChips({ disc, setDisc, hasAppears }: { disc: Disc; setDisc: (d: Dis
 export function PlaylistPage({ id }: { id: string }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
+  usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }));
   const [busy, setBusy] = useState(false);
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
@@ -230,6 +242,7 @@ export function PlaylistPage({ id }: { id: string }) {
       <Hero
         art={playlist.artwork ?? tracks[0]?.artwork}
         kind={t("playlist")}
+        onArt={editable ? () => changeCover(playlist, reload) : undefined}
         title={playlist.title}
         meta={
           <>
@@ -281,5 +294,99 @@ function FollowButton({ artist }: { artist: Artist }) {
     <button className={cls("pill ghost small follow", saved && "on")} aria-pressed={saved} onClick={() => toggleSaved({ kind: "artist", v: artist })}>
       {saved ? t("following") : t("follow")}
     </button>
+  );
+}
+
+// ---- podcasts (YouTube Music) ------------------------------------------------------------------
+
+function EpisodeRow({ ep, onPlay }: { ep: Track; onPlay: () => void }) {
+  const t = useT();
+  const current = usePlayer((s) => s.queue.items[s.queue.index]?.track.id === ep.id);
+  const playing = usePlayer((s) => s.playing) && current;
+  const saved = useApp((s) => s.saved.episodes.some((e) => e.id === ep.id));
+  return (
+    <div className={cls("ep-row", current && "current")} onContextMenu={(e) => openMenu(e, trackMenuFor(ep))}>
+      <Art src={ep.artwork} size={240} className="ep-art" />
+      <div className="ep-body">
+        <div className="ep-title">
+          <JpText text={ep.title} />
+        </div>
+        {ep.description && <div className="ep-desc">{ep.description}</div>}
+        <div className="ep-actions">
+          <button className="ep-play" aria-label={playing ? t("pause") : t("play")} onClick={playing ? P.pause : onPlay}>
+            {playing ? <I.IPause size={18} /> : <I.IPlay size={18} />}
+          </button>
+          <span className="muted small">{[ep.published, ep.durationMs ? fmtLong(t, ep.durationMs / 1000) : null].filter(Boolean).join(" • ")}</span>
+          <span className="grow" />
+          <button className={cls("icon-btn", saved && "on")} aria-pressed={saved} aria-label={saved ? t("removeFromYourEpisodes") : t("saveToYourEpisodes")} title={saved ? t("removeFromYourEpisodes") : t("saveToYourEpisodes")} onClick={() => toggleSaved({ kind: "episode", v: ep })}>
+            {saved ? <I.IChecked size={22} /> : <I.IAddCircle size={22} />}
+          </button>
+          <button className="icon-btn" aria-label={t("more")} onClick={(e) => openMenu(e, trackMenuFor(ep))}>
+            <I.IMore size={20} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const trackMenuFor = (ep: Track) => trackMenu(ep, {});
+
+/** A show, laid out like Spotify's: header, Follow, the episode list and About. */
+export function PodcastPage({ id }: { id: string }) {
+  const t = useT();
+  const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
+  usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }));
+  const following = useApp((s) => s.saved.podcasts.some((p) => p.id === id));
+  if (loading && !data) return <Loading />;
+  if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
+  const { playlist, tracks } = data;
+  const ctx: PlayContext = { kind: "playlist", id, title: playlist.title, artwork: playlist.artwork };
+  const podcast = { id, title: playlist.title, author: playlist.owner ?? null, artwork: playlist.artwork ?? null };
+  return (
+    <div className="page detail podcast-page">
+      <Hero art={playlist.artwork} kind={t("podcast")} title={playlist.title} meta={playlist.owner && <strong>{playlist.owner}</strong>} />
+      <div className="action-bar">
+        <button className={cls("pill ghost follow", following && "on")} aria-pressed={following} onClick={() => toggleSaved({ kind: "podcast", v: podcast })}>
+          {following ? t("following") : t("follow")}
+        </button>
+        <span className="grow" />
+        {tracks.length > 0 && <PlayFab big label={t("play")} onClick={() => P.playTracks(tracks, 0, ctx)} />}
+      </div>
+      <div className="podcast-cols">
+        <section className="podcast-eps">
+          <h2>{t("allEpisodes")}</h2>
+          {tracks.length ? tracks.map((ep, i) => <EpisodeRow key={ep.id} ep={ep} onPlay={() => P.playTracks(tracks, i, ctx)} />) : <p className="muted">{t("empty")}</p>}
+        </section>
+        {playlist.description && (
+          <aside className="podcast-about">
+            <h2>{t("about")}</h2>
+            <p className="muted">{playlist.description}</p>
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** "Your Episodes": episodes saved in the app. */
+export function EpisodesPage() {
+  const t = useT();
+  const eps = useApp((s) => s.saved.episodes);
+  const ctx: PlayContext = { kind: "playlist", id: "episodes", title: t("yourEpisodes") };
+  return (
+    <div className="page detail podcast-page">
+      <header className="hero">
+        <div className="art hero-art grad-episodes" aria-hidden="true">
+          <I.IBookmark size={96} />
+        </div>
+        <div className="hero-text">
+          <span className="small">{t("playlist")}</span>
+          <h1>{t("yourEpisodes")}</h1>
+          <div className="hero-meta">{t("episodesCount", { n: eps.length })}</div>
+        </div>
+      </header>
+      {eps.length ? eps.map((ep, i) => <EpisodeRow key={ep.id} ep={ep} onPlay={() => P.playTracks(eps, i, ctx)} />) : <p className="muted pad">{t("yourEpisodesEmpty")}</p>}
+    </div>
   );
 }

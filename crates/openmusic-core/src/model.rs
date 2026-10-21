@@ -43,6 +43,11 @@ pub struct Track {
     /// Podcast episode rather than music.
     #[serde(default)]
     pub episode: bool,
+    /// Episodes: the show notes' first lines and the release date as shown ("Oct 26").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -170,6 +175,9 @@ pub struct Library {
     pub albums: Vec<Album>,
     pub playlists: Vec<Playlist>,
     pub podcasts: Vec<Podcast>,
+    /// "Your Episodes": podcast episodes saved in the app.
+    #[serde(default)]
+    pub episodes: Vec<Track>,
 }
 
 /// How the UI should play a resolved track.

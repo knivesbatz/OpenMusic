@@ -1,6 +1,6 @@
 // Home, Search and the Library grid.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, playlistMenu, trackMenu } from "../actions";
+import { albumMenu, artistMenu, playlistMenu, podcastMenu, trackMenu } from "../actions";
 import { api, artUrl, errorMessage, inTauri } from "../api";
 import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, openItem, useAsync } from "../components/common";
 import { TrackList } from "../components/TrackList";
@@ -39,6 +39,7 @@ export function cardMenu(e: React.MouseEvent, item: MediaItem) {
   if (item.type === "album") return openMenu(e, albumMenu(item, async () => (await api.album(item.id)).tracks));
   if (item.type === "playlist") return openMenu(e, playlistMenu(item, async () => (await api.playlist(item.id)).tracks));
   if (item.type === "artist") return openMenu(e, artistMenu(item));
+  if (item.type === "podcast") return openMenu(e, podcastMenu(item));
 }
 
 const homeCache: { data: HomeData | null } = { data: null };
@@ -415,7 +416,7 @@ export function LibraryPage() {
         ? dedupe([...saved.albums, ...(lib?.albums ?? [])]).map((a) => ({ type: "album" as const, ...a }))
         : tab === "artists"
           ? dedupe([...saved.artists, ...(lib?.artists ?? [])]).map((a) => ({ type: "artist" as const, ...a }))
-          : (lib?.podcasts ?? []).map((a) => ({ type: "podcast" as const, ...a }));
+          : dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])]).map((a) => ({ type: "podcast" as const, ...a }));
   return (
     <div className="page">
       <div className="row between">

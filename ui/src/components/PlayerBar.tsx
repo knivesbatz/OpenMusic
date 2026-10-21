@@ -121,7 +121,7 @@ export function SaveButton() {
     return (
       <span className="save-group">
         <button className={cls("icon-btn", liked && "on")} aria-pressed={liked} aria-label={liked ? t("unlike") : t("like")} title={liked ? t("unlike") : t("like")} onClick={() => toggleLike(track)}>
-          {liked ? <I.IChecked size={18} /> : <I.IAddCircle size={18} />}
+          {liked ? <I.IHeartFill size={18} /> : <I.IHeart size={18} />}
         </button>
         <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openMenu(e, playlistSubmenu([track]))}>
           <I.IPlus size={18} />
@@ -158,7 +158,12 @@ export function PlayerBar() {
   }, [tr]);
 
   return (
-    <footer className="playerbar" aria-label={t("nowPlaying")}>
+    <footer
+      className="playerbar"
+      aria-label={t("nowPlaying")}
+      // Phone: the whole mini player opens the song screen, except its own buttons.
+      onClick={(e) => tr && isTouch() && !(e.target as HTMLElement).closest("button:not(.pb-art):not(.link), input") && useUi.setState({ fullscreen: true })}
+    >
       <div className="pb-left">
         {tr && (
           <>

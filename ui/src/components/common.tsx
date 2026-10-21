@@ -4,7 +4,7 @@ import { useT } from "../i18n";
 import { displayText } from "../romaji";
 import { useArtistAlias } from "../store/names";
 import { useSettings } from "../store/settings";
-import { navigate, openMenu } from "../store/ui";
+import { navigate, openMenu, useUi } from "../store/ui";
 import type { MediaItem, Track } from "../types";
 import { useDisplayTrack } from "../store/songmeta";
 import { cls } from "../util";
@@ -254,4 +254,15 @@ export function Select<V extends string>({
       <span aria-hidden="true">▾</span>
     </button>
   );
+}
+
+/** Show this page's name (and a play button) in the top bar once it scrolls, like Spotify. */
+export function usePageTitle(title: string | null | undefined, play?: () => void) {
+  const playRef = useRef(play);
+  playRef.current = play;
+  useEffect(() => {
+    if (!title) return;
+    useUi.setState({ pageTitle: { title, play: () => playRef.current?.() } });
+    return () => useUi.setState({ pageTitle: null });
+  }, [title]);
 }

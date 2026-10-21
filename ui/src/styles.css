@@ -99,12 +99,17 @@ p { margin: 0 0 8px; }
 .side-text { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
 .side-text .name, .side-text .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .side-text .sub { color: var(--muted); font-size: 0.8125rem; }
+.grad-episodes { background: linear-gradient(135deg, #056952, #0b8a6a); color: #1ed760; display: grid; place-items: center; }
 .grad-local { background: linear-gradient(135deg, #2d46b9, #1e3264); color: #fff; }
 .grad-dl { background: linear-gradient(135deg, #1db954, #0d5a2a); color: #fff; }
 
 /* ---- top bar ------------------------------------------------------------------------------ */
 /* No backdrop-filter: a live blur over a scrolling area is expensive and some GPU drivers hang on it. */
-.topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; background: #121212f2; }
+.topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; background: #12121200; transition: background 0.2s; }
+.topbar.solid { background: #121212; box-shadow: 0 1px 0 #ffffff0f; }
+.topbar-title { display: flex; align-items: center; gap: 10px; min-width: 0; animation: om-fade 0.15s ease-out; }
+.topbar-title .play-btn { width: 40px; height: 40px; background: var(--green); flex: none; }
+.topbar-title span { font-size: 1.25rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32vw; }
 .round-btn { width: 32px; height: 32px; border-radius: 50%; background: #0009; display: grid; place-items: center; color: var(--text); }
 .round-btn:hover:not(:disabled) { transform: scale(1.04); }
 .round-btn.home { width: 44px; height: 44px; background: var(--surface-3); }
@@ -159,7 +164,7 @@ p { margin: 0 0 8px; }
 .shelf-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 4px; }
 .shelf-head h2 { margin: 0; }
 .shelf-sub { color: var(--muted); font-size: 0.8125rem; }
-.shelf-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(160px, 1fr); overflow-x: auto; margin: 0 -12px; padding-bottom: 4px; scrollbar-width: thin; }
+.shelf-row { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(150px, 15vw, 196px); justify-content: start; overflow-x: auto; margin: 0 -12px; padding-bottom: 4px; scrollbar-width: thin; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); margin: 0 -12px; }
 .card { padding: 12px; border-radius: 6px; cursor: pointer; transition: background 0.2s; min-width: 0; }
 .card:hover, .card:focus-visible { background: var(--surface-3); }
@@ -180,6 +185,11 @@ p { margin: 0 0 8px; }
 .shortcut .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 48px; }
 .shortcut .fab { position: absolute; right: 8px; width: 36px; height: 36px; opacity: 0; }
 .shortcut:hover .fab, .shortcut:focus-within .fab { opacity: 1; }
+/* A hidden play button must not catch clicks/taps meant for the card (that opened nothing and
+   started playback instead). Touch screens have no hover: no overlay play buttons there. */
+.card-art .fab, .shortcut .fab { pointer-events: none; }
+.card:hover .fab, .card:focus-within .fab, .shortcut:hover .fab, .shortcut:focus-within .fab { pointer-events: auto; }
+@media (hover: none) { .card-art .fab, .shortcut .fab { display: none; } }
 
 /* ---- search ------------------------------------------------------------------------------- */
 .search-top { display: grid; grid-template-columns: minmax(280px, 2fr) 3fr; gap: 24px; }
@@ -195,6 +205,9 @@ p { margin: 0 0 8px; }
 .hero > :not(.hero-wash) { position: relative; }
 .hero-wash { position: absolute; left: -24px; right: -24px; top: -80px; height: calc(100% + 140px); background: center / 4000% no-repeat; opacity: 0.55; pointer-events: none;
   -webkit-mask-image: linear-gradient(180deg, #000 0, #000 45%, transparent 100%); mask-image: linear-gradient(180deg, #000 0, #000 45%, transparent 100%); }
+.hero-art-btn { position: relative; padding: 0; border-radius: 4px; flex: none; }
+.hero-art-edit { position: absolute; inset: 0; display: grid; place-items: center; background: #000000a0; opacity: 0; transition: opacity 0.15s; border-radius: inherit; }
+.hero-art-btn:hover .hero-art-edit, .hero-art-btn:focus-visible .hero-art-edit { opacity: 1; }
 .hero-owner { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; }
 .hero-owner::after { content: "•"; margin-left: 2px; }
 .hero-owner .avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-3); font-size: 0.7rem; font-weight: 800; }
@@ -233,7 +246,9 @@ p { margin: 0 0 8px; }
 .tl-text .name { color: var(--text); font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tl-text .sub, .tl-album { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tl-dur { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-variant-numeric: tabular-nums; }
-.tl-dur .more { opacity: 0; }
+.tl-dur .more, .tl-dur .like { opacity: 0; }
+.tl-row:hover .like, .tl-row.selected .like, .tl-dur .like.on { opacity: 1; }
+.like.on, .save-group .icon-btn.on, .pp-meta .icon-btn.on { color: var(--green); }
 .tl-row:hover .more, .tl-row:focus-visible .more, .tl-row.selected .more { opacity: 1; }
 
 /* ---- player bar --------------------------------------------------------------------------- */
@@ -506,9 +521,11 @@ p { margin: 0 0 8px; }
   .action-bar .ab-shuffle { order: 9; margin-left: auto; }
   .action-bar .fab.big { order: 10; width: 52px; height: 52px; }
   .detail .tl-head { display: none; }
-  .detail .tl-row, .detail .tl-row.no-album { grid-template-columns: 1fr 40px; padding: 0 2px; }
+  .detail .tl-row, .detail .tl-row.no-album { grid-template-columns: 1fr 76px; padding: 0 2px; }
+  .tl-dur .like:not(.on) { display: none; }
   .detail .tl-num, .tl-dur .d { display: none; }
   .hero-art { width: 60vw; height: 60vw; max-width: 260px; max-height: 260px; align-self: center; }
+  .hero-art-btn { align-self: center; }
   .artist-hero { height: 220px; margin: -56px -16px 0; padding: 0 16px 16px; }
   .search-top { grid-template-columns: 1fr; }
   .setting { flex-wrap: wrap; gap: 8px; }
@@ -571,3 +588,51 @@ p { margin: 0 0 8px; }
 .pq-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 12px; }
 .pq-buttons button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 12px; background: #2a2a2a; font-weight: 700; font-size: 0.8125rem; color: var(--text); }
 .pq-buttons button.on { color: var(--green); }
+
+/* ---- motion: short, opacity/transform only (cheap on any GPU); off with reduced motion -------- */
+@keyframes om-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes om-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes om-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes om-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes om-heart { 0% { transform: scale(1); } 40% { transform: scale(1.3); } 100% { transform: scale(1); } }
+.page { animation: om-fade-up 0.22s ease-out; }
+.art img { animation: om-fade 0.3s ease-out; }
+.fullscreen { animation: om-fade 0.2s ease-out; }
+.pp { animation: om-sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pq-backdrop { animation: om-fade 0.2s ease-out; }
+.pq-sheet { animation: om-sheet-up 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.menu, .dialog { animation: om-pop-in 0.14s ease-out; transform-origin: top left; }
+.card .card-art .art, .shortcut { transition: transform 0.2s ease-out, background 0.2s; }
+.card:hover .card-art .art { transform: translateY(-3px); }
+.play-btn:active, .fab:active, .icon-btn:active, .pill:active, .chip:active, .tv-tab:active, .pq-buttons button:active { transform: scale(0.94); }
+.icon-btn, .pill, .chip { transition: transform 0.1s, color 0.15s, background 0.15s; }
+.like.on svg, .save-group .icon-btn.on svg { animation: om-heart 0.3s ease-out; }
+.tl-row { transition: background 0.12s; }
+
+/* ---- podcast pages (Spotify style) --------------------------------------------------------------- */
+.podcast-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 340px); gap: 40px; align-items: start; }
+.podcast-about { position: sticky; top: 80px; }
+.podcast-about p { line-height: 1.5; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 12; -webkit-box-orient: vertical; overflow: hidden; }
+.ep-row { display: flex; gap: 16px; padding: 16px 12px; border-top: 1px solid #ffffff14; border-radius: 6px; transition: background 0.15s; }
+.ep-row:hover { background: var(--hover); }
+.ep-row.current .ep-title { color: var(--green); }
+.ep-art.art { width: 112px; height: 112px; flex: none; border-radius: 6px; }
+.ep-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.ep-title { font-weight: 700; font-size: 1rem; }
+.ep-desc { color: var(--muted); font-size: 0.875rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ep-actions { display: flex; align-items: center; gap: 12px; margin-top: auto; }
+.ep-play { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--text); color: #000; flex: none; }
+.ep-actions .icon-btn.on { color: var(--green); }
+.grad-episodes.hero-art { width: 232px; height: 232px; }
+.follow.on { border-color: var(--text); }
+@media (max-width: 760px) {
+  .podcast-cols { grid-template-columns: 1fr; gap: 8px; }
+  .podcast-about { position: static; order: -1; }
+  .podcast-about p { -webkit-line-clamp: 3; }
+  .ep-row { padding: 14px 2px; gap: 12px; }
+  .ep-art.art { width: 64px; height: 64px; }
+  .grad-episodes.hero-art { width: 60vw; height: 60vw; max-width: 260px; max-height: 260px; align-self: center; }
+}
+
+.update-banner { position: fixed; right: 16px; bottom: calc(var(--player-h) + 16px); z-index: 65; display: flex; align-items: center; gap: 16px; max-width: min(520px, calc(100vw - 32px)); padding: 14px 16px; border-radius: 10px; background: #282828; box-shadow: 0 12px 32px #000a; animation: om-fade-up 0.25s ease-out; }
+@media (max-width: 760px) { .update-banner { left: 12px; right: 12px; bottom: calc(var(--player-h) + 72px); flex-direction: column; align-items: stretch; } }

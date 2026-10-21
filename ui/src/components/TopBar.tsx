@@ -3,6 +3,7 @@ import { useT } from "../i18n";
 import { openProfilePicker, useApp } from "../store/app";
 import { back, forward, navigate, useUi } from "../store/ui";
 import * as I from "./Icons";
+import { cls } from "../util";
 
 export function TopBar() {
   const t = useT();
@@ -19,8 +20,12 @@ export function TopBar() {
     if (cur.name === "search") input.current?.focus();
   }, [cur.name]);
 
+  const scrolled = useUi((s) => s.scrolled);
+  const pageTitle = useUi((s) => s.pageTitle);
+  const showTitle = scrolled === 2 && pageTitle && cur.name !== "search";
+
   return (
-    <header className="topbar">
+    <header className={cls("topbar", scrolled > 0 && "solid")}>
       <div className="row gap">
         <button className="round-btn" aria-label={t("back")} title={t("back")} disabled={pos === 0} onClick={back}>
           <I.IBack size={18} />
@@ -28,6 +33,16 @@ export function TopBar() {
         <button className="round-btn" aria-label={t("forward")} title={t("forward")} disabled={pos >= len - 1} onClick={forward}>
           <I.IForward size={18} />
         </button>
+        {showTitle && (
+          <div className="topbar-title">
+            {pageTitle.play && (
+              <button className="play-btn" aria-label={t("play")} onClick={pageTitle.play}>
+                <I.IPlay size={16} />
+              </button>
+            )}
+            <span>{pageTitle.title}</span>
+          </div>
+        )}
       </div>
       <div className="search-box">
         <button className="round-btn home" aria-label={t("home")} title={t("home")} onClick={() => navigate({ name: "home" })}>

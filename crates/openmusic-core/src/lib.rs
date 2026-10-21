@@ -18,6 +18,7 @@ pub mod secrets;
 pub mod state;
 #[cfg(desktop)]
 mod tray;
+pub mod updater;
 mod watchdog;
 pub mod ytm;
 
@@ -81,7 +82,7 @@ fn init_state(app: &tauri::AppHandle, flavor: Flavor) -> Result<Arc<AppState>, B
         plex_session: RwLock::new(plex_session),
         downloads: Mutex::new(Default::default()),
         download_slots: Arc::new(Semaphore::new(2)),
-        art_slots: Arc::new(Semaphore::new(6)),
+        art_slots: Arc::new(Semaphore::new(10)),
         art_base: std::sync::OnceLock::new(),
         safe_mode: std::sync::OnceLock::new(),
         scanning: AtomicBool::new(false),
@@ -104,6 +105,9 @@ fn install_crash_log(app: &tauri::AppHandle) {
         default(info);
     }));
 }
+
+#[cfg(target_os = "android")]
+const ANDROID_USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
 
 /// Records each command for the stall detector before dispatching it.
 fn with_watchdog(
@@ -155,7 +159,12 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // The main window is created here (not from config) so safe mode can switch the
             // webview's GPU acceleration off before it starts.
             let main_cfg = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("no main window in config")?;
-            commands::with_browser_args(tauri::WebviewWindowBuilder::from_config(&handle, &main_cfg)?, &state).build()?;
+            let main = commands::with_browser_args(tauri::WebviewWindowBuilder::from_config(&handle, &main_cfg)?, &state);
+            // Android: Google refuses sign-in in anything that identifies as a WebView ("; wv"),
+            // and YouTube sign-in happens in this window there. Present as mobile Chrome.
+            #[cfg(target_os = "android")]
+            let main = main.user_agent(ANDROID_USER_AGENT);
+            main.build()?;
             // Desktop only: Android release builds block plain-HTTP requests from the webview, so
             // there the UI uses the in-process art:// protocol.
             #[cfg(desktop)]
@@ -256,6 +265,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::media_update,
             commands::media_stop,
             commands::self_test_log,
+            commands::update_check,
+            commands::update_download,
+            commands::update_restart,
             commands::self_test_exit,
             commands::resolve_stream,
             commands::record_play,
@@ -268,6 +280,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::pl_create,
             commands::pl_update,
             commands::pl_delete,
+            commands::pl_set_cover,
             commands::pl_add,
             commands::pl_reorder,
             commands::hide_playlist,
@@ -303,6 +316,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::saved_list,
             commands::save_album,
             commands::save_artist,
+            commands::save_podcast,
+            commands::save_episode,
             commands::htpc_launch,
             commands::htpc_autostart_get,
             commands::htpc_autostart_set,
@@ -315,6 +330,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 if let Ok(dir) = app.path().app_data_dir() {
                     safe_mode::clean_exit(&dir);
                 }
+                // A downloaded update installs quietly as the app closes.
+                updater::run_pending(false);
             }
         });
 }

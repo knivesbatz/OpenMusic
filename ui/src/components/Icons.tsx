@@ -54,6 +54,8 @@ export const IDownload = make(<><circle cx="12" cy="12" r="9" /><path d="M12 7v9
 export const IMusic = make(<><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>);
 export const IFolderOpen = make(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v1H7.5a2 2 0 0 0-1.9 1.4L3 19z M3 19l2.6-7.6A2 2 0 0 1 7.5 10H21l-2.6 7.6A2 2 0 0 1 16.5 19z" />);
 export const IFolder = make(<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />);
+export const IEdit = make(<><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></>);
+export const IBookmark = make(<path d="M6 3h12v18l-6-4.5L6 21z" />, true);
 export const IChevronDown = make(<path d="m6 9 6 6 6-6" />);
 export const IShare = make(<><path d="M12 15V3M7 8l5-5 5 5" /><path d="M5 12v8h14v-8" /></>);
 export const IHandle = make(<path d="M4 8h16M4 12h16M4 16h16" />);

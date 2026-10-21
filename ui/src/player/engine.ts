@@ -217,7 +217,7 @@ function startedTrack(item: Q.QItem) {
   const ctx = get().context;
   api.recordPlay(item.track, ctx).catch(() => {});
   // Last.fm gets the official artist/album of YouTube music videos, not the uploader.
-  if (useSettings.getState().scrobble && !item.track.episode) api.lastfmNowPlaying(displayTrack(item.track)).catch(() => {});
+  if (useSettings.getState().lastfmScrobble && !item.track.episode) api.lastfmNowPlaying(displayTrack(item.track)).catch(() => {});
   persistSoon();
 }
 
@@ -442,7 +442,7 @@ function trackScrobble() {
     scrobble.done = true;
     if (inTauri) {
       api.markPlayed(item.track).catch(() => {});
-      if (useSettings.getState().scrobble) api.lastfmScrobble(displayTrack(item.track), scrobble.startedAt).catch(() => {});
+      if (useSettings.getState().lastfmScrobble) api.lastfmScrobble(displayTrack(item.track), scrobble.startedAt).catch(() => {});
     }
   }
 }

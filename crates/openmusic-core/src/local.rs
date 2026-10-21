@@ -57,6 +57,18 @@ pub struct FileMeta {
     pub picture: Option<Vec<u8>>,
 }
 
+/// Lyrics that come with a local file: a .lrc file next to it (same name), else the lyrics tag.
+pub fn embedded_lyrics(path: &Path) -> Option<String> {
+    if let Ok(text) = std::fs::read_to_string(path.with_extension("lrc")) {
+        if !text.trim().is_empty() {
+            return Some(text);
+        }
+    }
+    let tagged = lofty::read_from_path(path).ok()?;
+    let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+    tag.get_string(&lofty::tag::ItemKey::Lyrics).map(str::to_string).filter(|s| !s.trim().is_empty())
+}
+
 pub fn read_meta(path: &Path) -> Option<FileMeta> {
     let stem = path.file_stem()?.to_string_lossy().to_string();
     let tagged = match lofty::read_from_path(path) {
@@ -242,6 +254,8 @@ fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         track_number: r.get(8)?,
         explicit: false,
         episode: false,
+        description: None,
+        published: None,
     })
 }
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { checkForUpdates } from "../store/update";
 
 const LASTFM_API = "https://www.last.fm/api/account/create";
 import { api, errorMessage, inTauri } from "../api";
@@ -247,7 +248,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplaySimilar" | "closeToTray" | "reducedMotion" | "highContrast" | "scrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -419,7 +420,7 @@ export function SettingsPage() {
 
       <section>
         <h2>{t("lastfm")}</h2>
-        <Toggle k="scrobble" label={t("lastfmScrobble")} />
+        <Toggle k="lastfmScrobble" label={t("lastfmScrobble")} hint={lfm?.connected ? undefined : t("lastfmConnectFirst")} disabled={!lfm?.connected} />
         {lfm && !lfm.hasKeys && (
           <div className="form">
             <p className="muted small">{t("lastfmKeys")}</p>
@@ -440,7 +441,7 @@ export function SettingsPage() {
                 {t("lastfmConnect")}
               </button>
             ) : (
-              <button className="pill primary small" onClick={() => api.lastfmConnectFinish(lfmToken).then(() => (setLfmToken(null), api.lastfmStatus().then(setLfm))).catch((e) => toast(errorMessage(e)))}>
+              <button className="pill primary small" onClick={() => api.lastfmConnectFinish(lfmToken).then(() => (setLfmToken(null), s.set({ lastfmScrobble: true }), api.lastfmStatus().then(setLfm))).catch((e) => toast(errorMessage(e)))}>
                 {t("lastfmFinish")}
               </button>
             )}
@@ -468,6 +469,20 @@ export function SettingsPage() {
         <button className="pill ghost small" onClick={() => api.clearCache().then(() => (toast(t("cacheCleared")), usage.reload())).catch((e) => toast(errorMessage(e)))}>
           {t("clearCache")}
         </button>
+      </section>
+
+      <section>
+        <h2>{t("aboutApp")}</h2>
+        <div className="setting">
+          <div className="grow">
+            <div>{info && t("version", { v: info.version })}</div>
+            <div className="muted small">{t("updatesHint")}</div>
+          </div>
+          <button className="pill ghost small" onClick={() => checkForUpdates(true)}>
+            {t("checkForUpdates")}
+          </button>
+        </div>
+        {!isMobileApp() && <Toggle k="autoUpdate" label={t("autoUpdate")} hint={t("autoUpdateHint")} />}
       </section>
 
       <footer className="credits">

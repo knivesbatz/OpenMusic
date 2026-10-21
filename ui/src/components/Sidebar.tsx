@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { albumMenu, artistMenu, createPlaylist, folderMenu, newFolder, playlistMenu } from "../actions";
+import { albumMenu, artistMenu, createPlaylist, folderMenu, newFolder, playlistMenu, podcastMenu } from "../actions";
 import { api } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
@@ -8,7 +8,7 @@ import { arrange, folderKey, moveEntry, putInFolder, setSort, toggleFolder, useF
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi, type Route } from "../store/ui";
 import type { Album, Artist, Playlist, Podcast } from "../types";
-import { cls } from "../util";
+import { cls, isTouch } from "../util";
 import { Art } from "./common";
 import * as I from "./Icons";
 
@@ -33,6 +33,7 @@ export function Sidebar() {
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const org = useFolders();
+  const savedEpisodes = useApp((s) => s.saved.episodes.length);
   const [drag, setDrag] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ key: string; mode: "before" | "after" | "into" } | null>(null);
   const needle = q.trim().toLowerCase();
@@ -76,7 +77,7 @@ export function Sidebar() {
       for (const a of uniq([...saved.albums, ...(provider ? lib?.albums ?? [] : [])])) out.push({ k: "album", v: a });
     if (filter === "all" || filter === "artists")
       for (const a of uniq([...saved.artists, ...(provider ? lib?.artists ?? [] : [])])) out.push({ k: "artist", v: a });
-    if (filter === "all" || filter === "podcasts") for (const p of lib?.podcasts ?? []) out.push({ k: "podcast", v: p });
+    if (filter === "all" || filter === "podcasts") for (const p of uniq([...saved.podcasts, ...(lib?.podcasts ?? [])])) out.push({ k: "podcast", v: p });
     const name = (e: Entry) => (e.k === "artist" ? e.v.name : e.k === "folder" ? e.v.name : e.v.title);
     if (needle) return out.filter((e) => name(e).toLowerCase().includes(needle));
     if (org.sort !== "alpha") return out;
@@ -221,6 +222,16 @@ export function Sidebar() {
             icon={<div className="art sm grad-local"><I.IFolder size={20} /></div>}
             onClick={() => navigate({ name: "local" })}
           />
+          {caps?.podcasts && (
+            <SideItem
+              active={is({ name: "episodes" })}
+              collapsed={collapsed}
+              title={t("yourEpisodes")}
+              sub={t("episodesCount", { n: savedEpisodes })}
+              icon={<div className="art sm grad-episodes"><I.IBookmark size={20} /></div>}
+              onClick={() => navigate({ name: "episodes" })}
+            />
+          )}
           {caps?.downloads && (
             <SideItem
               active={is({ name: "downloads" })}
@@ -253,7 +264,7 @@ export function Sidebar() {
               active={cur.name !== "home" && "id" in cur && cur.id === e.v.id}
               collapsed={collapsed}
               title={e.k === "artist" ? e.v.name : e.v.title}
-              sub={sub(e, t, flavor)}
+              sub={sub(e, t)}
               icon={<Art src={e.v.artwork} size={96} round={e.k === "artist"} className="sm" />}
               onClick={() => open(e)}
               onContext={
@@ -263,7 +274,9 @@ export function Sidebar() {
                     ? (ev) => openMenu(ev, albumMenu(e.v as Album, async () => (await api.album(e.v.id)).tracks))
                     : e.k === "artist"
                       ? (ev) => openMenu(ev, artistMenu(e.v as Artist))
-                      : undefined
+                      : e.k === "podcast"
+                        ? (ev) => openMenu(ev, podcastMenu(e.v as Podcast))
+                        : undefined
               }
               onPlay={
                 e.k === "playlist"
@@ -287,10 +300,11 @@ export function Sidebar() {
   );
 }
 
-function sub(e: Exclude<Entry, { k: "folder" }>, t: ReturnType<typeof useT>, flavor?: string): string {
+function sub(e: Exclude<Entry, { k: "folder" }>, t: ReturnType<typeof useT>): string {
   switch (e.k) {
     case "playlist":
-      return [e.v.local ? t("appPlaylist") : t("remotePlaylist", { provider: flavor === "plex" ? "Plex" : "YouTube Music" }), e.v.trackCount != null ? t("songsCount", { n: e.v.trackCount }) : null]
+      // Like Spotify: "Playlist • owner" (or the song count), never where it syncs from.
+      return [t("playlist"), e.v.owner ?? (e.v.trackCount != null ? t("songsCount", { n: e.v.trackCount }) : null)]
         .filter(Boolean)
         .join(" • ");
     case "album":
@@ -328,7 +342,7 @@ function SideItem(p: {
       aria-expanded={p.expanded}
       title={p.collapsed ? p.title : undefined}
       onClick={p.onClick}
-      onDoubleClick={p.onPlay}
+      onDoubleClick={isTouch() ? undefined : p.onPlay}
       onKeyDown={(e) => e.key === "Enter" && p.onClick()}
       onContextMenu={p.onContext}
       draggable={p.draggable}

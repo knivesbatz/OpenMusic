@@ -16,6 +16,9 @@ export interface Track {
   trackNumber?: number | null;
   explicit?: boolean;
   episode?: boolean;
+  /** Episodes: show notes and release date as shown ("Oct 26"). */
+  description?: string | null;
+  published?: string | null;
 }
 
 export interface Album {
@@ -102,6 +105,8 @@ export interface Library {
   albums: Album[];
   playlists: Playlist[];
   podcasts: Podcast[];
+  /** "Your Episodes" (saved in the app). */
+  episodes?: Track[];
 }
 
 export type Stream =

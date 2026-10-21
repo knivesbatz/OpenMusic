@@ -71,6 +71,12 @@ const MIGRATIONS: &[&str] = &[
     DELETE FROM cache;
     DELETE FROM kv WHERE key = 'plex.library';
     "#,
+    // v4: a custom cover for app playlists (art:// reference); none = the first track's art.
+    // Cached artist pages are dropped so they load the full discography.
+    r#"
+    ALTER TABLE playlists ADD COLUMN cover TEXT;
+    DELETE FROM cache WHERE key LIKE 'artist:%';
+    "#,
 ];
 
 pub fn now() -> i64 {
@@ -184,8 +190,8 @@ impl Db {
         let mut st = self.conn.prepare(
             "SELECT p.id, p.name, p.description,
                     (SELECT COUNT(*) FROM playlist_items i WHERE i.playlist_id=p.id),
-                    (SELECT json_extract(track_json,'$.artwork') FROM playlist_items i
-                      WHERE i.playlist_id=p.id ORDER BY position LIMIT 1)
+                    COALESCE(p.cover, (SELECT json_extract(track_json,'$.artwork') FROM playlist_items i
+                      WHERE i.playlist_id=p.id ORDER BY position LIMIT 1))
              FROM playlists p ORDER BY p.updated_at DESC",
         )?;
         let rows = st.query_map([], |r| {
@@ -225,6 +231,11 @@ impl Db {
             "UPDATE playlists SET name=?2, description=?3, updated_at=?4 WHERE id=?1",
             params![id, name, description, now()],
         )?;
+        Ok(())
+    }
+
+    pub fn playlist_set_cover(&self, id: &str, cover: Option<&str>) -> Result<()> {
+        self.conn.execute("UPDATE playlists SET cover=?2, updated_at=?3 WHERE id=?1", params![id, cover, now()])?;
         Ok(())
     }
 
@@ -478,6 +489,8 @@ mod tests {
             track_number: None,
             explicit: false,
             episode: false,
+            description: None,
+            published: None,
         }
     }
 
