@@ -231,6 +231,8 @@ p { margin: 0 0 8px; }
 .hero-text h1.long { font-size: clamp(1.75rem, 3.5vw, 3rem); }
 .hero-meta { font-size: 0.875rem; }
 .artist-hero { height: 320px; margin: -72px -24px 0; padding: 0 24px 24px; display: flex; align-items: flex-end; background: linear-gradient(transparent 30%, #000a), var(--hero, linear-gradient(135deg, #3a3a3a, #121212)) center 25% / cover; }
+.artist-hero-text { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.artist-followers { margin: 0; font-size: 1rem; font-weight: 500; text-shadow: 0 1px 8px #0008; }
 .artist-hero h1 { font-size: clamp(2.5rem, 7vw, 6rem); text-shadow: 0 2px 12px #0008; margin: 0; }
 .action-bar { display: flex; align-items: center; gap: 16px; padding: 20px 0; }
 .fab.static { position: static; opacity: 1; transform: none; }

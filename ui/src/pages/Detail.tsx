@@ -152,9 +152,12 @@ export function ArtistPage({ id }: { id: string }) {
   return (
     <div className="page detail">
       <header className="artist-hero" style={data.artist?.artwork ? { ["--hero" as string]: `url(${JSON.stringify(artBg(data.artist.artwork))})` } : undefined}>
-        <h1>
-          <ArtistName name={name} />
-        </h1>
+        <div className="artist-hero-text">
+          <h1>
+            <ArtistName name={name} />
+          </h1>
+          {data.followers && <p className="artist-followers">{t("followersCount", { n: data.followers })}</p>}
+        </div>
       </header>
       <ActionBar tracks={popular} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
       {popular.length > 0 && (

@@ -147,6 +147,9 @@ pub struct ArtistPage {
     pub singles: Vec<Album>,
     pub appears_on: Vec<Album>,
     pub related: Vec<Artist>,
+    /// Follower count as the provider words it ("1.2M"); YouTube Music subscribers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub followers: Option<String>,
     /// Local files whose artist matches this artist's name (not cached with the provider page).
     #[serde(default)]
     pub local_tracks: Vec<Track>,

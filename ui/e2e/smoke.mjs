@@ -202,6 +202,17 @@ await test(
 );
 
 await test(
+  "YouTube artist page shows subscribers as followers",
+  async (p) => {
+    await p.click('.sidebar .side-cat:has-text("Artists")');
+    await p.locator(".main .card").first().click();
+    await p.waitForSelector(".artist-hero");
+    assert.equal((await p.locator(".artist-followers").textContent()).trim(), "1.23M followers");
+  },
+  { youtube: true },
+);
+
+await test(
   "in-app self-test (--self-test, used on Windows CI) reaches the end",
   async (p) => {
     await p.waitForFunction(() => window.__SELFTEST_EXIT, null, { timeout: 90000 });

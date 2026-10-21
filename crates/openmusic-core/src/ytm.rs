@@ -540,6 +540,20 @@ fn dedupe<T, K: std::hash::Hash + Eq>(v: &mut Vec<T>, key: impl Fn(&T) -> K) {
     v.retain(|x| seen.insert(key(x)));
 }
 
+/// The artist's subscriber count from the header's subscribe button ("1.23M"), shown as followers.
+fn subscriber_count(header: &Value) -> Option<String> {
+    let button = find_first(header, "subscribeButtonRenderer")?;
+    let short = text(button.get("subscriberCountText"));
+    let n = if short.is_empty() {
+        // Only the long form ("1.23M subscribers"): keep the number part.
+        text(button.get("longSubscriberCountText")).split_whitespace().next().unwrap_or_default().to_string()
+    } else {
+        short
+    };
+    let n = n.trim().to_string();
+    n.chars().any(|c| c.is_ascii_digit()).then_some(n)
+}
+
 fn header_of(v: &Value) -> Option<&Value> {
     for k in [
         "musicResponsiveHeaderRenderer",
@@ -622,6 +636,17 @@ fn drop_videos(shelf: Shelf) -> Option<Shelf> {
 #[cfg(test)]
 mod home_tests {
     use super::*;
+
+    #[test]
+    fn artist_subscribers_become_followers() {
+        let h = json!({ "title": { "runs": [{ "text": "Aster" }] }, "subscriptionButton": { "subscribeButtonRenderer": {
+            "subscriberCountText": { "runs": [{ "text": "1.23M" }] },
+            "longSubscriberCountText": { "runs": [{ "text": "1.23M subscribers" }] } } } });
+        assert_eq!(subscriber_count(&h).as_deref(), Some("1.23M"));
+        let long_only = json!({ "subscriptionButton": { "subscribeButtonRenderer": { "longSubscriberCountText": { "runs": [{ "text": "45.6K subscribers" }] } } } });
+        assert_eq!(subscriber_count(&long_only).as_deref(), Some("45.6K"));
+        assert_eq!(subscriber_count(&json!({ "title": "x" })), None);
+    }
 
     #[test]
     fn carousel_more_link() {
@@ -886,6 +911,7 @@ impl Ytm {
                 artwork: header.and_then(|h| thumbnail(h)),
             }),
             description: header.map(|h| text(h.get("description"))).filter(|d| !d.is_empty()),
+            followers: header.and_then(subscriber_count),
             ..Default::default()
         };
         for shelf in parse_shelves(&v) {

@@ -85,6 +85,8 @@ export interface ArtistPage {
   singles: Album[];
   appearsOn: Album[];
   related: Artist[];
+  /** Follower count as the provider words it ("1.2M"); YouTube Music subscribers. */
+  followers?: string | null;
   /** Local files by an artist with the same name. */
   localTracks?: Track[];
   localAlbums?: Album[];

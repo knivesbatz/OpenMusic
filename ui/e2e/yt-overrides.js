@@ -25,6 +25,9 @@
   d.library = () => ({ ...baseLib, podcasts: [{ id: show.id, title: show.title, author: show.owner, artwork: null }] });
   const basePlaylist = d.playlist;
   d.playlist = (a) => (a.id === show.id ? { playlist: show, tracks: eps } : typeof basePlaylist === "function" ? basePlaylist(a) : basePlaylist);
+  // YouTube Music artists carry a subscriber count, shown as followers.
+  const baseArtist = d.artist;
+  d.artist = (a) => ({ ...(typeof baseArtist === "function" ? baseArtist(a) : baseArtist), followers: "1.23M" });
   const saved = { albums: [], artists: [], playlists: [], podcasts: [], episodes: [] };
   d.saved_list = () => saved;
   d.save_podcast = (a) => ((saved.podcasts = a.saved ? [a.podcast] : []), null);
