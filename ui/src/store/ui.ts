@@ -2,10 +2,13 @@
 import { create } from "zustand";
 import type { Track } from "../types";
 
+/** Library collections, in the classic Spotify "Your Library" order. */
+export type LibraryTab = "recent" | "playlists" | "albums" | "artists" | "podcasts";
+
 export type Route =
   | { name: "home" }
   | { name: "search"; q?: string }
-  | { name: "library" }
+  | { name: "library"; tab?: LibraryTab }
   | { name: "artist"; id: string }
   | { name: "album"; id: string }
   | { name: "playlist"; id: string }
