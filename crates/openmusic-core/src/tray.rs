@@ -11,9 +11,15 @@ fn setting(state: &AppState, key: &str) -> Option<serde_json::Value> {
     state.db().kv_get::<serde_json::Value>("settings").ok().flatten()?.get(key).cloned()
 }
 
-/// Settings → Close to tray (off by default).
+/// Settings → Close to tray (off by default). Runs on the window's thread when it closes, so it
+/// never waits for the database: if it is busy, the window just closes.
 pub fn close_to_tray(state: &AppState) -> bool {
-    setting(state, "closeToTray").and_then(|v| v.as_bool()).unwrap_or(false)
+    let Ok(db) = state.db.try_lock() else { return false };
+    db.kv_get::<serde_json::Value>("settings")
+        .ok()
+        .flatten()
+        .and_then(|s| s.get("closeToTray").and_then(|v| v.as_bool()))
+        .unwrap_or(false)
 }
 
 pub fn show_main(app: &AppHandle) {

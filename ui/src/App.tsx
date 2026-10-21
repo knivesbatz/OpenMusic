@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { PlayerBar } from "./components/PlayerBar";
 import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { TvNav } from "./components/TvNav";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfilePicker } from "./components/ProfilePicker";
@@ -11,13 +12,13 @@ import { Loading } from "./components/common";
 import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
 import * as P from "./player/engine";
-import { useApp } from "./store/app";
+import { isMobileApp, useApp } from "./store/app";
 import { useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
 import { Home, LibraryPage, Search } from "./pages/Browse";
 import { AlbumPage, ArtistPage, PlaylistPage } from "./pages/Detail";
 import { Login } from "./pages/Login";
-import { cls } from "./util";
+import { cls, isTouch } from "./util";
 
 // Rarely used pages load on demand to keep startup light.
 const Manage = () => import("./pages/Manage");
@@ -26,6 +27,20 @@ const DownloadsPage = lazy(() => Manage().then((m) => ({ default: m.DownloadsPag
 const ImportPage = lazy(() => Manage().then((m) => ({ default: m.ImportPage })));
 const SettingsPage = lazy(() => Manage().then((m) => ({ default: m.SettingsPage })));
 const Fullscreen = lazy(() => import("./components/Fullscreen").then((m) => ({ default: m.Fullscreen })));
+const PhonePlayer = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhonePlayer })));
+const PhoneQueue = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhoneQueue })));
+
+/** The phone app, or a narrow touch screen: Spotify mobile-style song screen and queue sheet. */
+function usePhoneLayout() {
+  const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const m = matchMedia("(max-width: 760px)");
+    const on = () => setNarrow(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return isMobileApp() || (narrow && isTouch());
+}
 
 function Page() {
   const r = useUi((s) => s.stack[s.pos]);
@@ -68,13 +83,28 @@ export function App() {
   const queueOpen = useUi((s) => s.queueOpen);
   const fullscreen = useUi((s) => s.fullscreen);
   const pos = useUi((s) => s.pos);
-  const htpc = useSettings((s) => s.htpc);
+  // TV mode is a desktop (HTPC) feature; the phone app never uses it.
+  const htpc = useSettings((s) => s.htpc) && !isMobileApp();
   const profilePicker = useApp((s) => s.profilePicker);
+  const phone = usePhoneLayout();
   const scroll = useRef<HTMLElement>(null);
 
   useEffect(() => {
     scroll.current?.scrollTo(0, 0);
   }, [pos]);
+
+  // TV mode: keep the focused card in view as the D-pad moves along a row or down the page.
+  useEffect(() => {
+    if (!htpc) return;
+    const onFocus = (e: FocusEvent) => {
+      const el = e.target as HTMLElement;
+      if (!el.closest?.(".shelf-row, .shortcuts, .tv-hero")) return;
+      const smooth = !useSettings.getState().reducedMotion;
+      el.scrollIntoView({ block: "nearest", inline: "center", behavior: smooth ? "smooth" : "auto" });
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => document.removeEventListener("focusin", onFocus);
+  }, [htpc]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -114,9 +144,9 @@ export function App() {
         <Login />
       ) : (
         <div className={cls("layout", queueOpen && "with-queue")}>
-          <Sidebar />
+          {!htpc && <Sidebar />}
           <main id="main" className="main" ref={scroll} tabIndex={-1}>
-            <TopBar />
+            {htpc ? <TvNav /> : <TopBar />}
             <ScrollCtx.Provider value={scroll}>
               <ErrorBoundary resetKey={pos}>
                 <Suspense fallback={<Loading />}>
@@ -125,7 +155,7 @@ export function App() {
               </ErrorBoundary>
             </ScrollCtx.Provider>
           </main>
-          {queueOpen && !fullscreen && <QueuePanel />}
+          {queueOpen && !fullscreen && (phone ? <Suspense fallback={null}><PhoneQueue /></Suspense> : <QueuePanel />)}
           <PlayerBar />
           <MobileTabs />
         </div>
@@ -133,9 +163,7 @@ export function App() {
       {fullscreen && (
         <div className="fullscreen-host">
           <ErrorBoundary onClose={() => useUi.setState({ fullscreen: false })}>
-            <Suspense fallback={null}>
-              <Fullscreen />
-            </Suspense>
+            <Suspense fallback={null}>{phone ? <PhonePlayer /> : <Fullscreen />}</Suspense>
           </ErrorBoundary>
         </div>
       )}

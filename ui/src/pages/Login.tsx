@@ -3,7 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorMessage, inTauri } from "../api";
 import { useT } from "../i18n";
-import { setLocalOnly, useApp } from "../store/app";
+import { isMobileApp, setLocalOnly, useApp } from "../store/app";
+
+const PENDING_PIN = "plex.pendingPin";
 import type { PlexServer } from "../types";
 
 export function Login() {
@@ -36,17 +38,53 @@ export function Login() {
     };
   }, [plex]);
 
+  // Android: sign-in happened in this webview and Plex forwarded back here; finish it.
+  useEffect(() => {
+    if (!plex || !inTauri) return;
+    let pending: { id: number; code: string } | null = null;
+    try {
+      pending = JSON.parse(localStorage.getItem(PENDING_PIN) ?? "null");
+      localStorage.removeItem(PENDING_PIN);
+    } catch {
+      /* storage unavailable */
+    }
+    if (pending) {
+      setBusy(true);
+      setCode(pending.code);
+      waitForPin(pending.id);
+    }
+  }, [plex]);
+
   async function signInPlex() {
     setBusy(true);
     setError(null);
     try {
       const pin = await api.plexPinStart();
       setCode(pin.code);
+      if (isMobileApp()) {
+        // No second window on Android: sign in inside the app; Plex sends the webview back here.
+        try {
+          localStorage.setItem(PENDING_PIN, JSON.stringify({ id: pin.id, code: pin.code }));
+        } catch {
+          /* storage unavailable: the user comes back with Back and signs in again */
+        }
+        location.href = pin.authUrl + "&forwardUrl=" + encodeURIComponent(location.href.split("#")[0]);
+        return;
+      }
       await openUrl(pin.authUrl);
+      await waitForPin(pin.id);
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  }
+
+  async function waitForPin(id: number) {
+    try {
       const started = Date.now();
       while (Date.now() - started < 10 * 60_000) {
         await new Promise((r) => setTimeout(r, 2000));
-        if (await api.plexPinPoll(pin.id)) {
+        if (await api.plexPinPoll(id)) {
           const auth = await api.authStatus();
           useApp.setState({ auth });
           setServers(await api.plexServers());

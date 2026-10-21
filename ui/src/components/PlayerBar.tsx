@@ -9,7 +9,7 @@ import { isMobileApp, useApp } from "../store/app";
 import { useDisplayTrack } from "../store/songmeta";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
-import { cls, fmtTime } from "../util";
+import { cls, fmtTime, isTouch } from "../util";
 import { Art, ArtistName, JpText } from "./common";
 import * as I from "./Icons";
 
@@ -166,10 +166,10 @@ export function PlayerBar() {
               <Art src={tr.artwork} size={120} />
             </button>
             <div className="pb-meta" onContextMenu={(e) => openMenu(e, trackMenu(tr, { queueUid: undefined }))}>
-              <button className="link name" onClick={() => tr.albumId && navigate({ name: "album", id: tr.albumId })}>
+              <button className="link name" onClick={() => (isTouch() ? useUi.setState({ fullscreen: true }) : tr.albumId && navigate({ name: "album", id: tr.albumId }))}>
                 <JpText text={tr.title} />
               </button>
-              <button className="link sub" onClick={() => tr.artistId && navigate({ name: "artist", id: tr.artistId })}>
+              <button className="link sub" onClick={() => (isTouch() ? useUi.setState({ fullscreen: true }) : tr.artistId && navigate({ name: "artist", id: tr.artistId }))}>
                 <ArtistName name={tr.artist} />
               </button>
             </div>

@@ -114,11 +114,9 @@ pub async fn auth_status(state: S<'_>) -> Result<AuthStatus> {
 }
 
 #[tauri::command]
-pub async fn plex_pin_start(app: AppHandle, state: S<'_>) -> Result<plex::Pin> {
-    let pin = state.plex.pin_create().await?;
-    use tauri_plugin_opener::OpenerExt;
-    let _ = app.opener().open_url(&pin.auth_url, None::<&str>);
-    Ok(pin)
+/// The UI opens `auth_url` (the browser on desktop, the app's own webview on Android).
+pub async fn plex_pin_start(state: S<'_>) -> Result<plex::Pin> {
+    state.plex.pin_create().await
 }
 
 /// Returns true once the PIN was approved and the token stored.
@@ -128,6 +126,8 @@ pub async fn plex_pin_poll(state: S<'_>, id: u64) -> Result<bool> {
     state.secrets.set("plex.token", &token)?;
     state.secrets.delete("plex.homeToken")?;
     state.db().kv_delete("plex.userUuid")?;
+    // A new sign-in asks for the profile again (the UI stores "ui.plex.profileChosen").
+    state.db().kv_delete("ui.plex.profileChosen")?;
     if let Ok(name) = state.plex.account_name(&token).await {
         state.db().kv_set("plex.account", &name)?;
     }
@@ -207,6 +207,7 @@ const YT_KEEP: &[&str] = &[
     "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC", "SIDCC", "LOGIN_INFO", "PREF",
 ];
 
+#[cfg(desktop)]
 fn youtube_cookie_header(app: &AppHandle, label: &str) -> String {
     let Some(wv) = app.get_webview_window(label) else { return String::new() };
     let Ok(mut cookies) = wv.cookies() else { return String::new() };
@@ -221,6 +222,26 @@ fn youtube_cookie_header(app: &AppHandle, label: &str) -> String {
     jar.into_iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
 }
 
+/// Android: `cookies()` isn't supported there and `cookies_for_url` waits for the main (UI)
+/// thread to answer, so it must be called from a background thread (from the main thread it
+/// deadlocks, which hung the app right after sign-in).
+#[cfg(mobile)]
+async fn read_cookies(app: &AppHandle, label: &'static str) -> String {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(wv) = app.get_webview_window(label) else { return String::new() };
+        let Ok(url) = "https://music.youtube.com/".parse::<tauri::Url>() else { return String::new() };
+        let Ok(cookies) = wv.cookies_for_url(url) else { return String::new() };
+        // The cookies come back for that URL only, without their domain: keep them by name.
+        let jar: std::collections::BTreeMap<String, String> =
+            cookies.iter().filter(|c| YT_KEEP.contains(&c.name())).map(|c| (c.name().to_string(), c.value().to_string())).collect();
+        jar.into_iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
+    })
+    .await
+    .unwrap_or_default()
+}
+
+#[cfg(desktop)]
 async fn read_cookies(app: &AppHandle, label: &'static str) -> String {
     let (tx, rx) = tokio::sync::oneshot::channel();
     let a = app.clone();
@@ -234,6 +255,7 @@ async fn read_cookies(app: &AppHandle, label: &'static str) -> String {
 
 async fn yt_adopt_cookie(app: &AppHandle, state: &AppState, cookie: String) -> Result<()> {
     state.secrets.set_large("yt.cookie", &cookie)?;
+    state.db().kv_delete("ui.yt.profileChosen")?;
     state.ytm.write().await.cookie = Some(cookie);
     let y = state.ytm().await;
     if let Ok(name) = y.account_name().await {
@@ -257,13 +279,20 @@ pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn(async move {
         // Up to 10 minutes to sign in.
+        // Google's pages have no way back to the app: add a small "Back to the app" button.
+        let back_btn = format!(
+            "if(!document.getElementById('om-back')&&document.body){{const a=document.createElement('a');a.id='om-back';a.href={href};a.textContent='\\u2190 {name}';a.style.cssText='position:fixed;left:12px;bottom:12px;z-index:2147483647;padding:12px 18px;border-radius:999px;background:#1ed760;color:#000;font:700 15px sans-serif;text-decoration:none;box-shadow:0 4px 16px #0008';document.body.appendChild(a)}}",
+            href = serde_json::to_string(back.as_str()).unwrap_or_default(),
+            name = app.package_info().name,
+        );
         for _ in 0..600 {
             tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             let on_ytm = w.url().ok().map(|u| u.host_str() == Some("music.youtube.com")).unwrap_or(false);
-            // Back in the app (user pressed Back): give up quietly.
+            // Back in the app (user pressed Back or the button): give up quietly.
             if w.url().ok().map(|u| u.origin() == back.origin()).unwrap_or(true) {
                 return;
             }
+            let _ = w.eval(&back_btn);
             if !on_ytm {
                 continue;
             }
@@ -948,18 +977,39 @@ pub struct LastFmStatus {
     pending: usize,
 }
 
+/// The app's own Last.fm API account, baked in at build time from the LASTFM_API_KEY /
+/// LASTFM_API_SECRET repository secrets so users only press "Connect". Keys a user entered
+/// themselves take precedence.
+fn builtin_lastfm_keys() -> Option<lastfm::Keys> {
+    match (option_env!("LASTFM_API_KEY"), option_env!("LASTFM_API_SECRET")) {
+        (Some(k), Some(s)) if !k.is_empty() && !s.is_empty() => Some(lastfm::Keys { api_key: k.into(), secret: s.into() }),
+        _ => None,
+    }
+}
+
+fn lastfm_keys(state: &AppState) -> Result<Option<lastfm::Keys>> {
+    Ok(state.secrets.get_json("lastfm.keys")?.or_else(builtin_lastfm_keys))
+}
+
 fn lastfm_client(state: &AppState) -> Result<lastfm::LastFm> {
-    let keys: lastfm::Keys = state.secrets.get_json("lastfm.keys")?.ok_or_else(|| Error::Invalid("Last.fm API key not set".into()))?;
+    let keys = lastfm_keys(state)?.ok_or_else(|| Error::Invalid("Last.fm API key not set".into()))?;
     Ok(lastfm::LastFm::new(state.http.clone(), keys))
 }
 
 #[tauri::command(async)]
 pub fn lastfm_status(state: S) -> Result<LastFmStatus> {
+    // One lock, released before returning. Two `state.db()` calls in the struct literal kept the
+    // first guard alive while taking the second: a self-deadlock that froze the window on opening
+    // Settings (1.0.1/1.0.2) and left the database locked for good in 1.0.3.
+    let (user, pending) = {
+        let db = state.db();
+        (db.kv_get("lastfm.user")?, db.scrobble_pending(1000)?.len())
+    };
     Ok(LastFmStatus {
-        has_keys: state.secrets.get_large("lastfm.keys")?.is_some(),
+        has_keys: lastfm_keys(&state)?.is_some(),
         connected: state.secrets.get("lastfm.sk")?.is_some(),
-        user: state.db().kv_get("lastfm.user")?,
-        pending: state.db().scrobble_pending(1000)?.len(),
+        user,
+        pending,
     })
 }
 

@@ -221,7 +221,7 @@ const Row = memo(function Row(p: RowProps) {
         </span>
       )}
       <span className="tl-dur">
-        {fmtMs(tr.durationMs)}
+        <span className="d">{fmtMs(tr.durationMs)}</span>
         <button className="icon-btn more" aria-label={t("more")} title={t("more")} onClick={(e) => (e.stopPropagation(), p.onContext(e))}>
           <IMore size={16} />
         </button>

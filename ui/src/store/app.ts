@@ -48,12 +48,17 @@ async function maybeAskProfile() {
   if (!s.auth?.signedIn || s.auth.needsServer) return;
   const key = s.info?.flavor === "plex" ? "plex.profileChosen" : "yt.profileChosen";
   if (await api.kvGet<boolean>(key).catch(() => true)) return;
-  try {
-    const list = s.info?.flavor === "plex" ? await api.plexHomeUsers() : await api.ytAccounts();
-    if (list.length > 1) openProfilePicker();
-    else await api.kvSet(key, true);
-  } catch {
-    /* ask again next time */
+  // The profile list can fail right after sign-in (server still connecting): try a few times.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const list = s.info?.flavor === "plex" ? await api.plexHomeUsers() : await api.ytAccounts();
+      if (list.length > 1) openProfilePicker();
+      else await api.kvSet(key, true);
+      return;
+    } catch (e) {
+      if (attempt === 2) api.logUiError(`profile list failed: ${errorMessage(e)}`).catch(() => {});
+      else await new Promise((r) => setTimeout(r, 3000));
+    }
   }
 }
 

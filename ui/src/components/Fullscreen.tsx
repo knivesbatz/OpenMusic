@@ -60,8 +60,16 @@ export function LyricsView({ track }: { track: Track }) {
     for (let i = 0; i < lyrics.lines.length; i++) if ((lyrics.lines[i].timeMs ?? 0) <= ms) active = i;
   }
   useEffect(() => {
-    const el = box.current?.querySelector(".active") as HTMLElement | null;
-    el?.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    // Scroll only the lyrics' own container: scrollIntoView would also scroll the page around
+    // it (the phone song screen jumped down to the lyrics card).
+    const sc = box.current;
+    const el = sc?.querySelector(".active") as HTMLElement | null;
+    if (!sc || !el) return;
+    const container = sc.scrollHeight > sc.clientHeight + 1 ? sc : sc.parentElement;
+    if (!container) return;
+    const c = container.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    container.scrollTo({ top: container.scrollTop + r.top - c.top - container.clientHeight / 2 + r.height / 2, behavior: reduced ? "auto" : "smooth" });
   }, [active, reduced]);
   if (loading) return <div className="lyrics muted">{t("loading")}</div>;
   if (!lyrics || !lyrics.lines.length) return <div className="lyrics muted">{t("noLyrics")}</div>;

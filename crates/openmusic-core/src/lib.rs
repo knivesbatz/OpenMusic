@@ -18,6 +18,7 @@ pub mod secrets;
 pub mod state;
 #[cfg(desktop)]
 mod tray;
+mod watchdog;
 pub mod ytm;
 
 use std::sync::atomic::AtomicBool;
@@ -104,6 +105,16 @@ fn install_crash_log(app: &tauri::AppHandle) {
     }));
 }
 
+/// Records each command for the stall detector before dispatching it.
+fn with_watchdog(
+    handler: impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static,
+) -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    move |invoke| {
+        watchdog::record(invoke.message.command());
+        handler(invoke)
+    }
+}
+
 pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
     let state_slot: Arc<Mutex<Option<Arc<AppState>>>> = Arc::new(Mutex::new(None));
     let slot_for_protocol = state_slot.clone();
@@ -156,6 +167,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 Err(e) => log::warn!("artwork server failed to start: {e}"),
             }
             app.manage(state.clone());
+            watchdog::start(handle.clone(), state.clone());
             #[cfg(desktop)]
             if let Err(e) = tray::create(&handle, &state) {
                 log::warn!("tray icon failed: {e}");
@@ -218,7 +230,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 _ => {}
             }
         })
-        .invoke_handler(tauri::generate_handler![
+        .invoke_handler(with_watchdog(tauri::generate_handler![
             commands::app_info,
             commands::settings_get,
             commands::settings_set,
@@ -294,7 +306,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::htpc_launch,
             commands::htpc_autostart_get,
             commands::htpc_autostart_set,
-        ])
+        ]))
         .build(context)
         .expect("error while running application")
         .run(|app, event| {
