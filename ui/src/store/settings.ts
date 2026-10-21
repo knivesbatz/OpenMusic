@@ -10,7 +10,8 @@ export interface Settings {
   crossfade: number; // seconds, 0-12
   gapless: boolean;
   automix: boolean;
-  autoplay: boolean;
+  /** Keep playing similar songs when the queue ends (Spotify's Autoplay). Off by default. */
+  autoplaySimilar: boolean;
   volume: number; // 0-1
   textScale: number; // 0.85 - 1.5
   reducedMotion: boolean;
@@ -29,7 +30,7 @@ export const defaults: Settings = {
   crossfade: 0,
   gapless: true,
   automix: false,
-  autoplay: true,
+  autoplaySimilar: false,
   volume: 0.8,
   textScale: 1,
   reducedMotion: false,

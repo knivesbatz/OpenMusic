@@ -101,6 +101,28 @@ fn route(url: &str, prefix: &str) -> Option<(String, String)> {
     Some((format!("/{rest}"), query.to_string()))
 }
 
+fn cache_file(state: &AppState, path: &str, size: u32) -> PathBuf {
+    let key = hex::encode(Sha1::digest(format!("{path}|{size}").as_bytes()));
+    state.dirs.art.join(&key[..2]).join(&key)
+}
+
+/// Local image file for an `art://` reference or an image URL, fetched into the cache if
+/// needed. For consumers outside the webview, such as the Android media notification.
+pub async fn cached_file(state: Arc<AppState>, art: &str, size: u32) -> Option<PathBuf> {
+    let path = match art.strip_prefix("art://") {
+        Some(rest) => format!("/{rest}"),
+        None if art.starts_with("https://") || art.starts_with("http://") => format!("/url/{}", urlencoding::encode(art)),
+        None => return None,
+    };
+    let size = size.clamp(32, 1200);
+    serve(state.clone(), &path, &format!("s={size}")).await?;
+    let file = match path.strip_prefix("/local/") {
+        Some(name) => state.dirs.local_art.join(name),
+        None => cache_file(&state, &path, size),
+    };
+    file.exists().then_some(file)
+}
+
 /// Resolve an artwork path (`/local/<file>`, `/plex/<thumb>`, `/url/<encoded>`) to image bytes,
 /// from the disk cache or upstream.
 async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>> {
@@ -119,8 +141,7 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
         return tokio::fs::read(state.dirs.local_art.join(name)).await.ok();
     }
 
-    let key = hex::encode(Sha1::digest(format!("{path}|{size}").as_bytes()));
-    let file = state.dirs.art.join(&key[..2]).join(&key);
+    let file = cache_file(&state, &path, size);
     if let Ok(b) = tokio::fs::read(&file).await {
         return Some(b);
     }

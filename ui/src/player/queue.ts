@@ -64,6 +64,17 @@ export function enqueue(q: QueueState, tracks: Track[]): QueueState {
   return { ...q, items: [...q.items.slice(0, at), ...add, ...q.items.slice(at)] };
 }
 
+/** Autoplay: append tracks to the end of the context (not "Next in queue"). */
+export function extend(q: QueueState, tracks: Track[]): QueueState {
+  const add = toItems(tracks);
+  if (!add.length) return q;
+  return {
+    items: [...q.items, ...add],
+    index: q.index < 0 ? q.items.length : q.index,
+    unshuffled: q.unshuffled ? [...q.unshuffled, ...add.map((i) => i.uid)] : null,
+  };
+}
+
 /** "Play next": directly after the current track. */
 export function playNext(q: QueueState, tracks: Track[]): QueueState {
   const add = toItems(tracks, true);

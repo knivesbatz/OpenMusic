@@ -228,3 +228,14 @@ export interface PlexUser {
   selected: boolean;
 }
 
+
+/** Android media notification state (mirrors `NowPlaying` in tauri-plugin-openmusic-media). */
+export interface NowPlaying {
+  title: string;
+  artist: string;
+  album: string | null;
+  artwork: string | null;
+  playing: boolean;
+  positionMs: number;
+  durationMs: number;
+}

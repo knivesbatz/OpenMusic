@@ -1,6 +1,7 @@
 // The single playback engine. Lives only in the main window; the mini player (PiP) mirrors its
 // state over Tauri events and sends commands back, so there is never a second audio session.
 import { create } from "zustand";
+import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage, fileUrl, inTauri } from "../api";
 import type { PlayContext, Stream, Track } from "../types";
 import { useSettings } from "../store/settings";
@@ -242,7 +243,11 @@ function onTime(t: number, d: number) {
   const settings = useSettings.getState();
   const nextI = Q.nextIndex(s.queue, s.repeat, false);
   const nextItem = nextI >= 0 && nextI !== s.queue.index ? s.queue.items[nextI] : undefined;
-  if (!nextItem) return;
+  if (!nextItem) {
+    // Last song: fetch Autoplay songs early so gapless and crossfade work into them too.
+    if (remaining < 30) fetchAutoplay();
+    return;
+  }
   // Blending needs both tracks on the same kind of output (two audio decks or two players).
   const yt = s.output === "youtube";
   if (yt !== (nextItem.track.source === "youtube")) return;
@@ -382,21 +387,45 @@ function onEnded() {
   loadCurrent(true);
 }
 
-async function autoplayRadio() {
+let autoplaySeed = "";
+let autoplayFetch: Promise<boolean> = Promise.resolve(false);
+
+/**
+ * Settings → Autoplay: append songs similar to the last queue item (once per last item).
+ * Resolves true when songs were added.
+ */
+function fetchAutoplay(): Promise<boolean> {
   const s = get();
-  const cur = Q.current(s.queue);
-  set({ playing: false });
-  if (!cur || !useSettings.getState().autoplay || !inTauri) return;
-  try {
-    const more = (await api.radio(cur.track)).filter((t) => t.id !== cur.track.id);
-    if (!more.length) return;
-    const q = get().queue;
-    const items = [...q.items, ...Q.toItems(more)];
-    set({ queue: Q.advance({ ...q, items }, q.items.length) });
-    loadCurrent(true);
-  } catch {
-    /* no radio for this source */
+  const last = s.queue.items[s.queue.items.length - 1];
+  if (!inTauri || !useSettings.getState().autoplaySimilar || !last || s.repeat !== "off") return Promise.resolve(false);
+  if (autoplaySeed === last.uid) return autoplayFetch;
+  autoplaySeed = last.uid;
+  const exclude = s.queue.items.slice(-200).map((i) => i.track.id);
+  autoplayFetch = api
+    .autoplayTracks(last.track, exclude)
+    .then((tracks) => {
+      const q = get().queue;
+      // The queue changed while fetching: leave it alone.
+      if (!tracks?.length || q.items[q.items.length - 1]?.uid !== last.uid) return false;
+      set({ queue: Q.extend(q, tracks) });
+      return true;
+    })
+    .catch(() => false);
+  return autoplayFetch;
+}
+
+/** The queue ran out: continue with Autoplay songs if that's on, otherwise stop. */
+async function autoplayRadio() {
+  set({ loading: true });
+  const added = await fetchAutoplay();
+  const s = get();
+  const i = added ? Q.nextIndex(s.queue, s.repeat, true) : -1;
+  if (i < 0 || i === s.queue.index) {
+    set({ playing: false, loading: false });
+    return;
   }
+  set({ queue: Q.advance(s.queue, i) });
+  loadCurrent(true);
 }
 
 function trackScrobble() {
@@ -617,5 +646,46 @@ export function initMediaSession() {
     if (!t || t.id === lastId) return;
     lastId = t.id;
     ms.metadata = new MediaMetadata({ title: t.title, artist: t.artist, album: t.album ?? "" });
+  });
+}
+
+/**
+ * Android: the webview's Media Session doesn't reach the system there, so mirror the player into
+ * the app's media notification (which also keeps playback alive in the background) and take
+ * its buttons back.
+ */
+export function initAndroidMedia() {
+  if (!inTauri || !/Android/i.test(navigator.userAgent)) return;
+  listen<{ action: string; positionMs?: number }>("media-action", ({ payload }) => {
+    if (payload.action === "play") play();
+    else if (payload.action === "pause") pause();
+    else if (payload.action === "next") next();
+    else if (payload.action === "previous") previous();
+    else if (payload.action === "seek" && payload.positionMs != null) seek(payload.positionMs / 1000);
+  });
+  let sent = { id: "", playing: false, at: 0, position: 0 };
+  usePlayer.subscribe((s) => {
+    const cur = Q.current(s.queue)?.track;
+    if (!cur) {
+      if (sent.id) api.mediaStop().catch(() => {});
+      sent = { id: "", playing: false, at: 0, position: 0 };
+      return;
+    }
+    const t = displayTrack(cur);
+    // Send on track, play/pause or seek changes only; Android advances the position itself.
+    const expected = sent.position + (sent.playing ? (Date.now() - sent.at) / 1000 : 0);
+    if (t.id === sent.id && s.playing === sent.playing && Math.abs(s.position - expected) < 3) return;
+    sent = { id: t.id, playing: s.playing, at: Date.now(), position: s.position };
+    api
+      .mediaUpdate({
+        title: t.title,
+        artist: t.artist,
+        album: t.album ?? null,
+        artwork: t.artwork ?? null,
+        playing: s.playing,
+        positionMs: Math.round(s.position * 1000),
+        durationMs: Math.round(s.duration * 1000),
+      })
+      .catch(() => {});
   });
 }

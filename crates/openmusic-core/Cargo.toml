@@ -23,6 +23,7 @@ url = "2"
 urlencoding = "2"
 thiserror = "2"
 log = "0.4"
+tauri-plugin-openmusic-media = { path = "../tauri-plugin-openmusic-media" }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 uuid = { version = "1", features = ["v4"] }
 

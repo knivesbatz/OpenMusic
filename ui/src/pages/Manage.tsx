@@ -245,7 +245,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplay" | "reducedMotion" | "highContrast" | "scrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplaySimilar" | "reducedMotion" | "highContrast" | "scrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -353,7 +353,7 @@ export function SettingsPage() {
         </label>
         <Toggle k="gapless" label={t("gapless")} hint={t("gaplessHint")} />
         <Toggle k="automix" label={t("automix")} hint={t("automixHint")} />
-        <Toggle k="autoplay" label={t("autoplay")} />
+        <Toggle k="autoplaySimilar" label={t("autoplay")} hint={t("autoplayHint")} />
       </section>
 
       {inTauri && info?.platform === "windows" && (

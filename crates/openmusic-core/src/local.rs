@@ -319,6 +319,16 @@ pub fn tracks_by_artist_name(db: &Db, name: &str) -> Result<Vec<Track>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
+/// Random local tracks for Autoplay, preferring the given artist's other songs first.
+pub fn random_tracks(db: &Db, artist: &str, limit: usize) -> Result<Vec<Track>> {
+    let mut st = db.conn.prepare(&format!(
+        "SELECT {TRACK_COLS} FROM local_tracks WHERE missing=0
+         ORDER BY (artist=?1 COLLATE NOCASE OR album_artist=?1 COLLATE NOCASE) DESC, RANDOM() LIMIT ?2"
+    ))?;
+    let rows = st.query_map(params![artist.trim(), limit as i64], row_to_track)?;
+    Ok(rows.collect::<std::result::Result<_, _>>()?)
+}
+
 pub fn albums_by_artist_name(db: &Db, name: &str) -> Result<Vec<Album>> {
     let n = name.trim().to_lowercase();
     Ok(albums(db)?.into_iter().filter(|a| a.artist.to_lowercase() == n).collect())

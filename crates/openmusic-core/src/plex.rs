@@ -563,6 +563,24 @@ impl Plex {
         Ok(page)
     }
 
+    /// Tracks for Autoplay after `id`: sonically similar ones when the server has analysed the
+    /// library (Plex Pass), otherwise random tracks from the music libraries.
+    pub async fn autoplay(&self, sess: &Session, id: &str) -> Result<Vec<Track>> {
+        let rk = rating_key(id);
+        let similar = self
+            .list(sess, &format!("/library/metadata/{rk}/nearest?limit=50&maxDistance=0.25"))
+            .await
+            .unwrap_or_default();
+        let mut out: Vec<Track> = similar.iter().filter_map(to_track).collect();
+        if out.len() < 10 {
+            for sid in &sess.sections {
+                let random = self.list(sess, &format!("/library/sections/{sid}/all?type=10&sort=random&X-Plex-Container-Size=50")).await?;
+                out.extend(random.iter().filter_map(to_track));
+            }
+        }
+        Ok(out)
+    }
+
     pub async fn album(&self, sess: &Session, id: &str) -> Result<AlbumPage> {
         let rk = rating_key(id);
         let meta = self.list(sess, &format!("/library/metadata/{rk}")).await?;

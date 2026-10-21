@@ -19,3 +19,6 @@ openmusic-core = { path = "../../../crates/openmusic-core" }
 # tauri-build can resolve them; the plugins themselves are initialized by openmusic-core.
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
+# Android media notification and background playback (its Kotlin library is added to the
+# generated Android project through this direct dependency).
+tauri-plugin-openmusic-media = { path = "../../../crates/tauri-plugin-openmusic-media" }

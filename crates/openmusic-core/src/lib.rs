@@ -121,6 +121,10 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             Some(vec![commands::HTPC_ARG]),
         ));
     builder
+        // Android: media notification and background playback; button presses go to the UI.
+        .plugin(tauri_plugin_openmusic_media::init(|app, action| {
+            let _ = app.emit("media-action", action);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("art", move |_ctx, request, responder| {
@@ -145,6 +149,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // webview's GPU acceleration off before it starts.
             let main_cfg = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("no main window in config")?;
             commands::with_browser_args(tauri::WebviewWindowBuilder::from_config(&handle, &main_cfg)?, &state).build()?;
+            // Desktop only: Android release builds block plain-HTTP requests from the webview, so
+            // there the UI uses the in-process art:// protocol.
+            #[cfg(desktop)]
             match art::start_server(state.clone()) {
                 Ok(base) => {
                     let _ = state.art_base.set(base);
@@ -224,6 +231,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::playlist,
             commands::library,
             commands::radio,
+            commands::autoplay_tracks,
+            commands::media_update,
+            commands::media_stop,
             commands::resolve_stream,
             commands::record_play,
             commands::mark_played,

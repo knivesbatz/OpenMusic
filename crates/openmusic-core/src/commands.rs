@@ -12,7 +12,7 @@ use crate::db::PlayContext;
 use crate::error::{Error, Result};
 use crate::model::*;
 use crate::state::{AppState, Flavor};
-use crate::{downloads, lastfm, local, lyrics, plex, ytm};
+use crate::{art, downloads, lastfm, local, lyrics, plex, ytm};
 
 type S<'a> = State<'a, Arc<AppState>>;
 
@@ -678,6 +678,29 @@ pub async fn radio(app: AppHandle, state: S<'_>, track: Track) -> Result<Vec<Tra
         }
         _ => Ok(vec![]),
     }
+}
+
+/// Songs to keep playing when the queue runs out (Settings → Autoplay), seeded by the last
+/// track: YouTube Music radio, Plex sonically similar tracks (random library tracks when the
+/// server has no sonic analysis), or random local files. Skips anything in `exclude`.
+#[tauri::command]
+pub async fn autoplay_tracks(app: AppHandle, state: S<'_>, track: Track, exclude: Vec<String>) -> Result<Vec<Track>> {
+    let mut tracks = match track.source {
+        Source::Youtube => {
+            let vid = track.stream_key.clone().unwrap_or_default();
+            yt_call!(app, state, |y| y.radio(&vid))?
+        }
+        Source::Plex => {
+            let sess = state.plex_session().await?;
+            state.plex.autoplay(&sess, &track.id).await?
+        }
+        _ => local::random_tracks(&state.db(), &track.artist, 50)?,
+    };
+    let mut seen: std::collections::HashSet<String> = exclude.into_iter().collect();
+    seen.insert(track.id.clone());
+    tracks.retain(|t| seen.insert(t.id.clone()));
+    tracks.truncate(25);
+    Ok(tracks)
 }
 
 // ---- playback -------------------------------------------------------------------------------
@@ -1445,3 +1468,25 @@ pub fn gpu_set(state: S, enabled: bool) -> Result<()> {
     Ok(())
 }
 
+
+/// Mirror the player in the Android media notification (no-op on desktop, where the webview's
+/// Media Session already reaches the OS). `artwork` arrives as the track's `art://` reference.
+#[tauri::command]
+pub async fn media_update(app: AppHandle, state: S<'_>, mut now: tauri_plugin_openmusic_media::NowPlaying) -> Result<()> {
+    if cfg!(mobile) {
+        now.artwork = match now.artwork.take() {
+            Some(a) => art::cached_file(state.inner().clone(), &a, 512).await.map(|p| p.to_string_lossy().into_owned()),
+            None => None,
+        };
+        let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::update(&app, &now)).await;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn media_stop(app: AppHandle) -> Result<()> {
+    if cfg!(mobile) {
+        let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
+    }
+    Ok(())
+}
