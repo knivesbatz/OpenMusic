@@ -66,8 +66,13 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   measured inside WebView2 on Windows or against a real 50k Plex library
 
 ## Phase 10: Release
-- ⬜ Code signing (needs a certificate)
-- ⬜ Upgrade-install test
+- 🟡 Code signing wired in CI: set repository secrets `WINDOWS_CERTIFICATE` (base64 .pfx) and
+  `WINDOWS_CERTIFICATE_PASSWORD` and the installers are Authenticode-signed with timestamping. No
+  certificate yet, so releases are unsigned
+- 🟡 CI `install-test` job per app on windows-latest: installs the latest published release, upgrades it
+  with the new build (silent), checks the version, launches the app and checks it's still running after
+  20 s, then uninstalls and checks removal. Releases only publish when it passes
+- ✅ Install, upgrade, uninstall, data locations and troubleshooting documented (`docs/INSTALL.md`)
 
 ## Known issues
 - YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
