@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { PlayerBar } from "./components/PlayerBar";
 import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
@@ -8,7 +8,8 @@ import { TvNav } from "./components/TvNav";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfilePicker } from "./components/ProfilePicker";
-import { Loading } from "./components/common";
+import { UpdateBanner } from "./components/UpdateBanner";
+import { Loading, usePhoneLayout } from "./components/common";
 import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
 import * as P from "./player/engine";
@@ -16,9 +17,9 @@ import { isMobileApp, useApp } from "./store/app";
 import { useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
 import { Home, LibraryPage, Search } from "./pages/Browse";
-import { AlbumPage, ArtistPage, PlaylistPage } from "./pages/Detail";
+import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
 import { Login } from "./pages/Login";
-import { cls, isTouch } from "./util";
+import { cls } from "./util";
 
 // Rarely used pages load on demand to keep startup light.
 const Manage = () => import("./pages/Manage");
@@ -30,18 +31,6 @@ const Fullscreen = lazy(() => import("./components/Fullscreen").then((m) => ({ d
 const PhonePlayer = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhonePlayer })));
 const PhoneQueue = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhoneQueue })));
 
-/** The phone app, or a narrow touch screen: Spotify mobile-style song screen and queue sheet. */
-function usePhoneLayout() {
-  const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 760px)").matches);
-  useEffect(() => {
-    const m = matchMedia("(max-width: 760px)");
-    const on = () => setNarrow(m.matches);
-    m.addEventListener("change", on);
-    return () => m.removeEventListener("change", on);
-  }, []);
-  return isMobileApp() || (narrow && isTouch());
-}
-
 function Page() {
   const r = useUi((s) => s.stack[s.pos]);
   switch (r.name) {
@@ -50,13 +39,15 @@ function Page() {
     case "search":
       return <Search q={r.q ?? ""} />;
     case "library":
-      return <LibraryPage />;
+      return <LibraryPage key={r.tab ?? ""} tab={r.tab} />;
     case "artist":
       return <ArtistPage id={r.id} />;
     case "album":
       return <AlbumPage id={r.id} />;
     case "playlist":
-      return <PlaylistPage id={r.id} />;
+      return r.id.startsWith("yt:MPSP") ? <PodcastPage id={r.id} /> : <PlaylistPage id={r.id} />;
+    case "episodes":
+      return <EpisodesPage />;
     case "local":
       return <LocalPage />;
     case "downloads":
@@ -91,7 +82,25 @@ export function App() {
 
   useEffect(() => {
     scroll.current?.scrollTo(0, 0);
+    useUi.setState({ scrolled: 0 });
   }, [pos]);
+
+  // Past the page header the top bar turns solid and shows the page's name (Spotify style).
+  useEffect(() => {
+    const el = scroll.current;
+    if (!el) return;
+    let frame = 0;
+    const on = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const level = el.scrollTop > 260 ? 2 : el.scrollTop > 48 ? 1 : 0;
+        if (level !== useUi.getState().scrolled) useUi.setState({ scrolled: level });
+      });
+    };
+    el.addEventListener("scroll", on, { passive: true });
+    return () => el.removeEventListener("scroll", on);
+  });
 
   // TV mode: keep the focused card in view as the D-pad moves along a row or down the page.
   useEffect(() => {
@@ -171,6 +180,7 @@ export function App() {
       <ContextMenu />
       <DialogHost />
       <InfoDialog />
+      <UpdateBanner />
       <Toasts />
     </div>
   );

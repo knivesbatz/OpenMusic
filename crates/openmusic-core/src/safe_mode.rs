@@ -11,7 +11,11 @@ const MARKER: &str = "running.marker";
 const GPU_OFF: &str = "gpu-off";
 
 /// Browser arguments for safe mode. They replace wry's defaults, which are repeated here.
-pub const SAFE_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu --disable-gpu-compositing";
+/// WebView2 arguments. Setting our own replaces wry's defaults, so they are repeated here, plus
+/// autoplay: the player starts the next song (and the crossfade's second player) without a click.
+pub const NORMAL_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+pub const SAFE_ARGS: &str =
+    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --disable-gpu --disable-gpu-compositing";
 
 /// Decide this launch's mode and mark the app as running. `Some("auto")` after an unclean exit,
 /// `Some("manual")` when turned off in Settings, `None` otherwise.

@@ -16,6 +16,9 @@ export interface Track {
   trackNumber?: number | null;
   explicit?: boolean;
   episode?: boolean;
+  /** Episodes: show notes and release date as shown ("Oct 26"). */
+  description?: string | null;
+  published?: string | null;
 }
 
 export interface Album {
@@ -82,6 +85,8 @@ export interface ArtistPage {
   singles: Album[];
   appearsOn: Album[];
   related: Artist[];
+  /** Follower count as the provider words it ("1.2M"); YouTube Music subscribers. */
+  followers?: string | null;
   /** Local files by an artist with the same name. */
   localTracks?: Track[];
   localAlbums?: Album[];
@@ -102,6 +107,8 @@ export interface Library {
   albums: Album[];
   playlists: Playlist[];
   podcasts: Podcast[];
+  /** "Your Episodes" (saved in the app). */
+  episodes?: Track[];
 }
 
 export type Stream =
@@ -116,6 +123,8 @@ export interface Capabilities {
   crossfade: boolean;
   gapless: boolean;
   favorites: boolean;
+  /** Discord Rich Presence is built in (desktop builds with a Discord application id). */
+  discordPresence?: boolean;
 }
 
 export interface AppInfo {

@@ -300,6 +300,8 @@ fn track_from(video_id: String, title: String, sub: &Sub, artwork: Option<String
         track_number: None,
         explicit: false,
         episode,
+        description: None,
+        published: None,
     }
 }
 
@@ -425,6 +427,13 @@ pub fn parse_multi_row(r: &Value) -> Option<Track> {
     let sub = parse_sub(&runs(r.get("subtitle")));
     let art = thumbnail(r.get("thumbnail").unwrap_or(&Value::Null));
     let mut t = track_from(vid, title, &sub, art, true);
+    t.description = Some(text(r.get("description"))).filter(|d| !d.trim().is_empty());
+    // Subtitles read like "Sep 3 • 45 min": the part that isn't a length is the date.
+    t.published = sub
+        .plain
+        .iter()
+        .find(|p| !["min", "sec", "hr"].iter().any(|u| p.contains(u)) && p.chars().any(|c| c.is_ascii_digit()))
+        .cloned();
     if t.duration_ms.is_none() {
         // Episode subtitles read like "Sep 3 • 45 min".
         t.duration_ms = sub.plain.iter().find_map(|p| {
@@ -472,6 +481,19 @@ fn collect_items(v: &Value, out: &mut Vec<MediaItem>) {
     }
 }
 
+/// A carousel's "More" / "See all" browse target (browseId, params), from the header title link
+/// or its "More" button.
+fn more_endpoint(shelf: &Value) -> Option<(String, Option<String>)> {
+    let h = shelf.get("header")?.get("musicCarouselShelfBasicHeaderRenderer")?;
+    let ep = h
+        .get("moreContentButton")
+        .and_then(|b| b.pointer("/buttonRenderer/navigationEndpoint/browseEndpoint"))
+        .or_else(|| h.pointer("/title/runs/0/navigationEndpoint/browseEndpoint"))?;
+    let bid = ep.get("browseId")?.as_str()?.to_string();
+    let params = ep.get("params").and_then(|p| p.as_str()).map(str::to_string);
+    Some((bid, params))
+}
+
 fn shelf_title(shelf: &Value) -> String {
     let h = shelf.get("header");
     let t = h
@@ -516,6 +538,20 @@ fn split_by_kind(items: Vec<MediaItem>, out: &mut SearchResults) {
 fn dedupe<T, K: std::hash::Hash + Eq>(v: &mut Vec<T>, key: impl Fn(&T) -> K) {
     let mut seen = std::collections::HashSet::new();
     v.retain(|x| seen.insert(key(x)));
+}
+
+/// The artist's subscriber count from the header's subscribe button ("1.23M"), shown as followers.
+fn subscriber_count(header: &Value) -> Option<String> {
+    let button = find_first(header, "subscribeButtonRenderer")?;
+    let short = text(button.get("subscriberCountText"));
+    let n = if short.is_empty() {
+        // Only the long form ("1.23M subscribers"): keep the number part.
+        text(button.get("longSubscriberCountText")).split_whitespace().next().unwrap_or_default().to_string()
+    } else {
+        short
+    };
+    let n = n.trim().to_string();
+    n.chars().any(|c| c.is_ascii_digit()).then_some(n)
 }
 
 fn header_of(v: &Value) -> Option<&Value> {
@@ -588,6 +624,49 @@ pub fn parse_accounts(v: &Value) -> Vec<YtAccount> {
             })
         })
         .collect()
+}
+
+/// Home shows songs, not music videos: shelves of videos ("Music videos for you", …) are
+/// dropped. Songs elsewhere keep their video thumbnails until the song version is looked up.
+fn drop_videos(shelf: Shelf) -> Option<Shelf> {
+    let title = shelf.title.to_lowercase();
+    (!(title.contains("video") || title.contains("動画") || title.contains("ビデオ"))).then_some(shelf)
+}
+
+#[cfg(test)]
+mod home_tests {
+    use super::*;
+
+    #[test]
+    fn artist_subscribers_become_followers() {
+        let h = json!({ "title": { "runs": [{ "text": "Aster" }] }, "subscriptionButton": { "subscribeButtonRenderer": {
+            "subscriberCountText": { "runs": [{ "text": "1.23M" }] },
+            "longSubscriberCountText": { "runs": [{ "text": "1.23M subscribers" }] } } } });
+        assert_eq!(subscriber_count(&h).as_deref(), Some("1.23M"));
+        let long_only = json!({ "subscriptionButton": { "subscribeButtonRenderer": { "longSubscriberCountText": { "runs": [{ "text": "45.6K subscribers" }] } } } });
+        assert_eq!(subscriber_count(&long_only).as_deref(), Some("45.6K"));
+        assert_eq!(subscriber_count(&json!({ "title": "x" })), None);
+    }
+
+    #[test]
+    fn carousel_more_link() {
+        let shelf = json!({ "header": { "musicCarouselShelfBasicHeaderRenderer": {
+            "title": { "runs": [{ "text": "Albums", "navigationEndpoint": { "browseEndpoint": { "browseId": "UCabc", "params": "6gPz" } } }] }
+        } } });
+        assert_eq!(more_endpoint(&shelf), Some(("UCabc".into(), Some("6gPz".into()))));
+        let button = json!({ "header": { "musicCarouselShelfBasicHeaderRenderer": {
+            "title": { "runs": [{ "text": "Singles" }] },
+            "moreContentButton": { "buttonRenderer": { "navigationEndpoint": { "browseEndpoint": { "browseId": "MPAD1" } } } }
+        } } });
+        assert_eq!(more_endpoint(&button), Some(("MPAD1".into(), None)));
+    }
+    #[test]
+    fn music_video_shelves_are_dropped() {
+        let shelf = |title: &str| Shelf { title: title.into(), ..Default::default() };
+        assert!(drop_videos(shelf("Music videos for you")).is_none());
+        assert!(drop_videos(shelf("あなたにおすすめのミュージック ビデオ")).is_none());
+        assert!(drop_videos(shelf("Quick picks")).is_some());
+    }
 }
 
 fn is_video_thumb(art: &Option<String>) -> bool {
@@ -718,12 +797,16 @@ impl Ytm {
 
     pub async fn home(&self) -> Result<Vec<Shelf>> {
         let pages = self.browse_all("FEmusic_home", 3).await?;
-        Ok(pages.iter().flat_map(parse_shelves).collect())
+        Ok(pages.iter().flat_map(parse_shelves).filter_map(drop_videos).collect())
     }
 
     /// Search one result type (the YouTube Music filter chips), following continuations, for the
     /// full list behind a filter. `kind`: songs, albums, artists, playlists, podcasts, episodes.
     pub async fn search_kind(&self, q: &str, kind: &str) -> Result<SearchResults> {
+        self.search_kind_pages(q, kind, 3).await
+    }
+
+    async fn search_kind_pages(&self, q: &str, kind: &str, max_pages: usize) -> Result<SearchResults> {
         // Filter params as sent by the web client (ytmusicapi's get_search_params).
         let params = match kind {
             "songs" => "EgWKAQIIAWoMEA4QChADEAQQCRAF",
@@ -735,7 +818,7 @@ impl Ytm {
             _ => return Err(Error::Invalid(format!("unknown search kind {kind}"))),
         };
         let mut pages = vec![self.post("search", json!({ "query": q, "params": params }), "").await?];
-        while pages.len() < 3 {
+        while pages.len() < max_pages {
             let Some((token, command)) = continuation_token(pages.last().unwrap()) else { break };
             let next = if command {
                 self.post("search", json!({ "continuation": token }), "").await
@@ -783,6 +866,26 @@ impl Ytm {
         for s in shelves {
             split_by_kind(s.get("contents").map(all_items).unwrap_or_default(), &mut out);
         }
+        // The overview only has ~3 items per type; like Spotify's "All", fill each type from its
+        // own filtered search (one page each, in parallel).
+        let (songs, artists, albums, playlists) = tokio::join!(
+            self.search_kind_pages(q, "songs", 1),
+            self.search_kind_pages(q, "artists", 1),
+            self.search_kind_pages(q, "albums", 1),
+            self.search_kind_pages(q, "playlists", 1),
+        );
+        if let Ok(r) = songs {
+            out.tracks.extend(r.tracks);
+        }
+        if let Ok(r) = artists {
+            out.artists.extend(r.artists);
+        }
+        if let Ok(r) = albums {
+            out.albums.extend(r.albums);
+        }
+        if let Ok(r) = playlists {
+            out.playlists.extend(r.playlists);
+        }
         dedupe(&mut out.tracks, |t| t.id.clone());
         // Songs only: music videos are left out unless the query matched nothing else.
         if out.tracks.iter().any(|t| !is_video_thumb(&t.artwork)) {
@@ -808,6 +911,7 @@ impl Ytm {
                 artwork: header.and_then(|h| thumbnail(h)),
             }),
             description: header.map(|h| text(h.get("description"))).filter(|d| !d.is_empty()),
+            followers: header.and_then(subscriber_count),
             ..Default::default()
         };
         for shelf in parse_shelves(&v) {
@@ -822,6 +926,39 @@ impl Ytm {
                     _ => {}
                 }
             }
+        }
+        // The page only carries ~10 albums and singles; the shelves' "More" links (YouTube Music's
+        // "See all") hold the full discography, older releases included.
+        let mut carousels = Vec::new();
+        find_all(&v, "musicCarouselShelfRenderer", &mut carousels);
+        let mut more: Vec<(bool, String, Option<String>)> = Vec::new();
+        for c in carousels {
+            let lower = shelf_title(c).to_lowercase();
+            let singles = lower.contains("single");
+            if !(singles || lower.contains("album")) || lower.contains("featured") || lower.contains("appears") {
+                continue;
+            }
+            if let Some((bid, params)) = more_endpoint(c) {
+                more.push((singles, bid, params));
+            }
+        }
+        let fetched = futures_util::future::join_all(more.iter().map(|(_, bid, params)| async move {
+            let mut body = json!({ "browseId": bid });
+            if let Some(p) = params {
+                body["params"] = json!(p);
+            }
+            self.post("browse", body, "").await
+        }))
+        .await;
+        for ((singles, _, _), res) in more.iter().zip(fetched) {
+            let Ok(full) = res else { continue };
+            let list: Vec<Album> = all_items(&full).into_iter().filter_map(|it| if let MediaItem::Album(a) = it { Some(a) } else { None }).collect();
+            if list.is_empty() {
+                continue;
+            }
+            let target = if *singles { &mut page.singles } else { &mut page.albums };
+            target.extend(list);
+            dedupe(target, |a| a.id.clone());
         }
         // Album/single cards on an artist page omit the artist name.
         let name = page.artist.as_ref().map(|a| a.name.clone()).unwrap_or_default();

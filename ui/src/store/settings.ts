@@ -14,6 +14,10 @@ export interface Settings {
   autoplaySimilar: boolean;
   /** Desktop: the close button hides the window to the tray; music keeps playing. */
   closeToTray: boolean;
+  /** Download new versions from GitHub in the background and install them on close (Windows). */
+  autoUpdate: boolean;
+  /** Desktop: show the playing song on the user's Discord profile (Rich Presence). */
+  discordPresence: boolean;
   volume: number; // 0-1
   textScale: number; // 0.85 - 1.5
   reducedMotion: boolean;
@@ -21,7 +25,8 @@ export interface Settings {
   jpMode: JpMode;
   /** Show MusicBrainz aliases of artist names in the UI language. */
   translateNames: boolean;
-  scrobble: boolean;
+  /** Scrobble to Last.fm once connected. Off by default (new key, so earlier "on" defaults reset). */
+  lastfmScrobble: boolean;
   sidebarCollapsed: boolean;
   htpc: boolean;
 }
@@ -34,13 +39,15 @@ export const defaults: Settings = {
   automix: false,
   autoplaySimilar: false,
   closeToTray: false,
+  autoUpdate: true,
+  discordPresence: true,
   volume: 0.8,
   textScale: 1,
   reducedMotion: false,
   highContrast: false,
   jpMode: "original",
   translateNames: true,
-  scrobble: true,
+  lastfmScrobble: false,
   sidebarCollapsed: false,
   htpc: false,
 };

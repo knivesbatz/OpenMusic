@@ -6,7 +6,7 @@ import * as P from "./player/engine";
 import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
 import { useSettings } from "./store/settings";
 import { confirmDialog, navigate, promptDialog, toast, useUi, type MenuItem } from "./store/ui";
-import type { Album, Artist, Playlist, Track } from "./types";
+import type { Album, Artist, Playlist, Podcast, Track } from "./types";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 
 const t = (k: Key, v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
@@ -205,6 +205,42 @@ function moveToFolderSubmenu(pl: Playlist): MenuItem[] {
   ];
 }
 
+/** Pick an image (file picker; works on desktop and Android), crop it square, shrink it and
+ * store it as the app playlist's cover. */
+export function changeCover(pl: Playlist, onDone?: () => void) {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = "image/png,image/jpeg,image/webp";
+  input.onchange = async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const side = Math.min(bitmap.width, bitmap.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = Math.min(640, side);
+      canvas.getContext("2d")!.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.88));
+      if (!blob) throw new Error(t("errorGeneric"));
+      await setCover(pl, Array.from(new Uint8Array(await blob.arrayBuffer())));
+      onDone?.();
+    } catch (e) {
+      toast(errorMessage(e));
+    }
+  };
+  input.click();
+}
+
+async function setCover(pl: Playlist, image: number[] | null) {
+  try {
+    await api.plSetCover(pl.id, image);
+    refreshPlaylists();
+    toast(t(image ? "coverChanged" : "coverRemoved"));
+  } catch (e) {
+    toast(errorMessage(e));
+  }
+}
+
 export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): MenuItem[] {
   const flavor = useApp.getState().info?.flavor;
   const items: MenuItem[] = [{ label: t("moveToFolder"), submenu: moveToFolderSubmenu(pl) }];
@@ -215,6 +251,8 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): Men
   }
   if (pl.local) {
     items.push({ label: t("editDetails"), onClick: () => renamePlaylist(pl) });
+    items.push({ label: t("changeCover"), onClick: () => changeCover(pl) });
+    if (pl.artwork?.startsWith("art://local/cover-")) items.push({ label: t("removeCover"), onClick: () => setCover(pl, null) });
     items.push({ label: t("delete"), danger: true, onClick: () => deletePlaylist(pl) });
   } else if (flavor === "youtube") {
     items.push({ label: t("hidePlaylist"), danger: true, onClick: () => hidePlaylist(pl) });
@@ -223,22 +261,38 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): Men
 }
 
 /** Save or remove an album/artist from "Your Library" (local to the app). Optimistic. */
-export async function toggleSaved(item: { kind: "album"; v: Album } | { kind: "artist"; v: Artist }) {
+export async function toggleSaved(
+  item: { kind: "album"; v: Album } | { kind: "artist"; v: Artist } | { kind: "podcast"; v: Podcast } | { kind: "episode"; v: Track },
+) {
   const on = !isSaved(item.v.id);
   const prev = useApp.getState().saved;
-  const next =
-    item.kind === "album"
-      ? { ...prev, albums: on ? [item.v, ...prev.albums] : prev.albums.filter((a) => a.id !== item.v.id) }
-      : { ...prev, artists: on ? [item.v, ...prev.artists] : prev.artists.filter((a) => a.id !== item.v.id) };
+  const key = (item.kind + "s") as "albums" | "artists" | "podcasts" | "episodes";
+  const list = prev[key] as { id: string }[];
+  const next = { ...prev, [key]: on ? [item.v, ...list] : list.filter((a) => a.id !== item.v.id) };
   useApp.setState({ saved: next });
   try {
-    if (inTauri) await (item.kind === "album" ? api.saveAlbum(item.v, on) : api.saveArtist(item.v, on));
+    if (inTauri)
+      await (item.kind === "album"
+        ? api.saveAlbum(item.v, on)
+        : item.kind === "artist"
+          ? api.saveArtist(item.v, on)
+          : item.kind === "podcast"
+            ? api.savePodcast(item.v, on)
+            : api.saveEpisode(item.v, on));
     toast(on ? t("savedToLibrary") : t("removedFromLibrary"));
   } catch (e) {
     useApp.setState({ saved: prev });
     toast(errorMessage(e));
     refreshSaved();
   }
+}
+
+export function podcastMenu(p: Podcast): MenuItem[] {
+  const following = isSaved(p.id);
+  return [
+    { label: following ? t("unfollow") : t("follow"), onClick: () => toggleSaved({ kind: "podcast", v: p }) },
+    { label: t("open"), onClick: () => navigate({ name: "playlist", id: p.id }) },
+  ];
 }
 
 export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuItem[] {

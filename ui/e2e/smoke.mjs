@@ -150,9 +150,9 @@ await test("playlist folders and custom order in the sidebar", async (p) => {
   await lib.locator(".side-item", { hasText: "Moods" }).click();
   assert.equal(await lib.locator(".side-item.nested").count(), 1);
   // Custom order: drag "End" above "Moods".
-  for (let i = 0; i < 2; i++) await p.click(".lib-tools .link");
-  assert.equal((await p.locator(".lib-tools .link").textContent()).trim(), "Custom order");
-  const names = async () => (await lib.locator(".side-item .name").allTextContents()).filter((n) => n !== "Local files" && n !== "Downloads");
+  for (let i = 0; i < 2; i++) await p.click(".side-section .link");
+  assert.equal((await p.locator(".side-section .link").textContent()).trim(), "Custom order");
+  const names = async () => await lib.locator(".side-item .name").allTextContents();
   await lib.locator(".side-item", { hasText: /^End/ }).dragTo(lib.locator(".side-item", { hasText: "Moods" }), { targetPosition: { x: 40, y: 2 } });
   const order = await names();
   assert.ok(order.indexOf("End") < order.indexOf("Moods"), `order: ${order.join(", ")}`);
@@ -181,6 +181,36 @@ await test("50,000-track playlist stays virtualized and responsive", async (p) =
   assert.ok(renderMs < 3000, `slow first render: ${renderMs} ms`);
   assert.ok(scrollMs < 1000, `slow jump-scroll: ${scrollMs} ms`);
 });
+
+await test(
+  "YouTube podcast: show page, follow, save an episode to Your Episodes",
+  async (p) => {
+    // The classic "Your Library" categories: Podcasts opens the saved shows.
+    await p.click('.sidebar .side-cat:has-text("Podcasts")');
+    await p.locator(".main .card", { hasText: "Conspiracy Theories" }).first().click();
+    await p.waitForSelector(".podcast-page .ep-row", { timeout: 5000 });
+    assert.equal(await p.locator(".ep-row").count(), 3);
+    await p.click(".podcast-page .follow");
+    await p.waitForFunction(() => document.querySelector(".podcast-page .follow")?.getAttribute("aria-pressed") === "true");
+    await p.locator(".ep-row").first().locator("button[aria-pressed]").click();
+    await p.click('.sidebar .side-cat:has-text("Your Episodes")');
+    await p.waitForSelector(".podcast-page .ep-row");
+    assert.equal(await p.locator(".ep-row").count(), 1);
+    assert.match(await p.locator(".ep-row .ep-title").first().textContent(), /Lost Tomb Pt\. 1/);
+  },
+  { youtube: true },
+);
+
+await test(
+  "YouTube artist page shows subscribers as followers",
+  async (p) => {
+    await p.click('.sidebar .side-cat:has-text("Artists")');
+    await p.locator(".main .card").first().click();
+    await p.waitForSelector(".artist-hero");
+    assert.equal((await p.locator(".artist-followers").textContent()).trim(), "1.23M followers");
+  },
+  { youtube: true },
+);
 
 await test(
   "in-app self-test (--self-test, used on Windows CI) reaches the end",

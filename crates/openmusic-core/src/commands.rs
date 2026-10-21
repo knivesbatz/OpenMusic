@@ -37,9 +37,25 @@ pub struct AppInfo {
 
 pub fn capabilities(f: Flavor) -> Capabilities {
     match f {
-        Flavor::Plex => Capabilities { downloads: true, quality_control: true, podcasts: false, crossfade: true, gapless: true, favorites: true },
+        Flavor::Plex => Capabilities {
+            downloads: true,
+            quality_control: true,
+            podcasts: false,
+            crossfade: true,
+            gapless: true,
+            favorites: true,
+            discord_presence: crate::discord::available(f),
+        },
         // YouTube blends with two IFrame players (see ui/src/player/engine.ts).
-        Flavor::YouTube => Capabilities { downloads: false, quality_control: false, podcasts: true, crossfade: true, gapless: true, favorites: true },
+        Flavor::YouTube => Capabilities {
+            downloads: false,
+            quality_control: false,
+            podcasts: true,
+            crossfade: true,
+            gapless: true,
+            favorites: true,
+            discord_presence: crate::discord::available(f),
+        },
     }
 }
 
@@ -313,6 +329,7 @@ pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
             return;
         }
         let _ = w.navigate(back);
+        let _ = app.emit("login-error", "Sign-in timed out. Please try again.".to_string());
     });
     Ok(())
 }
@@ -839,6 +856,24 @@ pub fn queue_load(state: S) -> Result<Option<Value>> {
 
 #[tauri::command]
 pub async fn get_lyrics(state: S<'_>, track: Track) -> Result<Option<lyrics::Lyrics>> {
+    // Lyrics that came with the track win; online sources are only searched when there are none.
+    let embedded = match track.source {
+        Source::Local => {
+            let path = local::path_for(&state.db(), &track.id)?.map(|(p, _)| std::path::PathBuf::from(p));
+            match path {
+                Some(p) => tauri::async_runtime::spawn_blocking(move || local::embedded_lyrics(&p)).await.ok().flatten(),
+                None => None,
+            }
+        }
+        Source::Plex => match state.plex_session().await {
+            Ok(sess) => state.plex.lyrics(&sess, &track.id).await,
+            Err(_) => None,
+        },
+        Source::Youtube => None,
+    };
+    if let Some(l) = embedded.and_then(|t| lyrics::from_text(&t, if track.source == Source::Plex { "Plex" } else { "the file" })) {
+        return Ok(Some(l));
+    }
     let key = format!("lyrics:{}", track.id);
     if let Some(l) = state.db().cache_get::<Option<lyrics::Lyrics>>(&key, false)? {
         return Ok(l);
@@ -869,6 +904,31 @@ pub fn pl_create(app: AppHandle, state: S, name: String, tracks: Option<Vec<Trac
 #[tauri::command(async)]
 pub fn pl_update(app: AppHandle, state: S, id: String, name: String, description: Option<String>) -> Result<()> {
     state.db().playlist_update(&id, name.trim(), description.as_deref())?;
+    let _ = app.emit("playlists-changed", ());
+    Ok(())
+}
+
+/// Set (or with `image: None`, remove) an app playlist's cover. The UI sends a small JPEG/PNG
+/// (cropped and scaled in the webview); it is stored with the local artwork.
+#[tauri::command(async)]
+pub fn pl_set_cover(app: AppHandle, state: S, id: String, image: Option<Vec<u8>>) -> Result<()> {
+    if !id.starts_with("app:") {
+        return Err(Error::Invalid("only app playlists have editable covers".into()));
+    }
+    let cover = match image {
+        Some(bytes) => {
+            let is_image = bytes.starts_with(&[0xFF, 0xD8, 0xFF]) || bytes.starts_with(b"\x89PNG");
+            if !is_image || bytes.len() > 5_000_000 {
+                return Err(Error::Invalid("not a JPEG or PNG image".into()));
+            }
+            std::fs::create_dir_all(&state.dirs.local_art)?;
+            let name = format!("cover-{}.jpg", uuid::Uuid::new_v4().simple());
+            std::fs::write(state.dirs.local_art.join(&name), &bytes)?;
+            Some(format!("art://local/{name}"))
+        }
+        None => None,
+    };
+    state.db().playlist_set_cover(&id, cover.as_deref())?;
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
@@ -1269,7 +1329,31 @@ pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
 #[tauri::command(async)]
 pub fn saved_list(state: S) -> Result<Library> {
     let db = state.db();
-    Ok(Library { albums: db.saved_items("album")?, artists: db.saved_items("artist")?, ..Default::default() })
+    Ok(Library {
+        albums: db.saved_items("album")?,
+        artists: db.saved_items("artist")?,
+        podcasts: db.saved_items("podcast")?,
+        episodes: db.saved_items("episode")?,
+        ..Default::default()
+    })
+}
+
+/// Follow a podcast in the app (its Library section); never changed on YouTube.
+#[tauri::command(async)]
+pub fn save_podcast(app: AppHandle, state: S, podcast: Podcast, saved: bool) -> Result<()> {
+    let db = state.db();
+    if saved { db.save_item("podcast", &podcast.id, &podcast)? } else { db.unsave_item(&podcast.id)? }
+    let _ = app.emit("saved-changed", ());
+    Ok(())
+}
+
+/// Save an episode to "Your Episodes".
+#[tauri::command(async)]
+pub fn save_episode(app: AppHandle, state: S, episode: Track, saved: bool) -> Result<()> {
+    let db = state.db();
+    if saved { db.save_item("episode", &episode.id, &episode)? } else { db.unsave_item(&episode.id)? }
+    let _ = app.emit("saved-changed", ());
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -1507,11 +1591,12 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
     state: &AppState,
 ) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, M> {
     #[cfg(windows)]
-    if state.safe_mode.get().is_some() {
-        return b.additional_browser_args(crate::safe_mode::SAFE_ARGS);
+    return b.additional_browser_args(if state.safe_mode.get().is_some() { crate::safe_mode::SAFE_ARGS } else { crate::safe_mode::NORMAL_ARGS });
+    #[cfg(not(windows))]
+    {
+        let _ = state;
+        b
     }
-    let _ = state;
-    b
 }
 
 /// Turn the webview's GPU acceleration on or off; takes effect after a restart.
@@ -1544,6 +1629,51 @@ pub async fn media_stop(app: AppHandle) -> Result<()> {
     Ok(())
 }
 
+/// Discord Rich Presence for the playing track (desktop). `now.artwork` is the track's `art://`
+/// reference; only public image URLs are passed on. `link` is the track's public page, if any.
+#[tauri::command]
+pub async fn presence_update(state: S<'_>, now: tauri_plugin_openmusic_media::NowPlaying, link: Option<String>) -> Result<()> {
+    let f = state.flavor;
+    if !crate::discord::available(f) {
+        return Ok(());
+    }
+    if !now.playing {
+        crate::discord::set(f, None);
+        return Ok(());
+    }
+    let public = now
+        .artwork
+        .as_deref()
+        .and_then(|a| a.strip_prefix("art://url/"))
+        .and_then(|enc| urlencoding::decode(enc).ok())
+        .map(|u| u.into_owned())
+        .filter(|u| u.starts_with("https://"));
+    let image = match public {
+        Some(u) => Some(u),
+        None => crate::discord::public_cover(&state.http, &now.artist, now.album.as_deref(), &now.title).await,
+    }
+    .or_else(|| Some(crate::discord::app_icon(f)));
+    let link = link.filter(|l| l.starts_with("https://music.youtube.com/")).map(|l| ("Listen on YouTube Music".to_string(), l));
+    crate::discord::set(
+        f,
+        Some(crate::discord::Presence {
+            title: now.title,
+            artist: now.artist,
+            album: now.album,
+            image,
+            position_ms: now.position_ms,
+            duration_ms: now.duration_ms,
+            link,
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn presence_clear(state: S) {
+    crate::discord::set(state.flavor, None);
+}
+
 /// Self-test progress (see ui/src/selftest.ts), appended to `selftest.log` in the data folder
 /// with a timestamp so a hang or crash shows which step it happened in.
 #[tauri::command(async)]
@@ -1557,4 +1687,26 @@ pub fn self_test_log(state: S, line: String) -> Result<()> {
 #[tauri::command]
 pub fn self_test_exit(app: AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+pub async fn update_check(app: AppHandle, state: S<'_>) -> Result<crate::updater::UpdateInfo> {
+    let product = app.config().product_name.clone().unwrap_or_default();
+    crate::updater::check(&state.http, &product).await
+}
+
+/// Windows: fetch the new installer in the background; it installs when the app closes.
+#[tauri::command]
+pub async fn update_download(state: S<'_>, url: String) -> Result<()> {
+    crate::updater::download(&state.http, &url, &state.dirs.data.join("updates")).await
+}
+
+/// "Restart to update": run the downloaded installer (progress window, relaunches the app).
+#[tauri::command]
+pub fn update_restart(app: AppHandle) -> Result<()> {
+    if !crate::updater::run_pending(true) {
+        return Err(Error::Invalid("no update has been downloaded".into()));
+    }
+    app.exit(0);
+    Ok(())
 }

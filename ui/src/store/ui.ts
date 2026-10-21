@@ -2,14 +2,18 @@
 import { create } from "zustand";
 import type { Track } from "../types";
 
+/** Library collections, in the classic Spotify "Your Library" order. */
+export type LibraryTab = "recent" | "playlists" | "albums" | "artists" | "podcasts";
+
 export type Route =
   | { name: "home" }
   | { name: "search"; q?: string }
-  | { name: "library" }
+  | { name: "library"; tab?: LibraryTab }
   | { name: "artist"; id: string }
   | { name: "album"; id: string }
   | { name: "playlist"; id: string }
   | { name: "liked" }
+  | { name: "episodes" }
   | { name: "local" }
   | { name: "downloads" }
   | { name: "import" }
@@ -49,6 +53,10 @@ interface UiState {
   dialog: Dialog | null;
   /** Tracks for the "View credits" style info dialog. */
   info: Track | null;
+  /** The page's own name and play action, shown in the top bar once the page has scrolled. */
+  pageTitle: { title: string; play?: () => void } | null;
+  /** How far the main view is scrolled: 0 top, 1 moved (solid top bar), 2 past the page header (title in the bar). */
+  scrolled: 0 | 1 | 2;
 }
 
 export const useUi = create<UiState>(() => ({
@@ -61,6 +69,8 @@ export const useUi = create<UiState>(() => ({
   menu: null,
   dialog: null,
   info: null,
+  pageTitle: null,
+  scrolled: 0,
 }));
 
 export const route = () => {

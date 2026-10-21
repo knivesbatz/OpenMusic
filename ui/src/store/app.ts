@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorCode, errorMessage, inTauri } from "../api";
-import type { Album, AppInfo, Artist, AuthStatus, Library, Playlist } from "../types";
+import type { Album, AppInfo, Artist, AuthStatus, Library, Playlist, Podcast, Track } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { translate } from "../i18n";
 import { useSettings } from "./settings";
@@ -20,7 +20,7 @@ interface AppStore {
   playlists: Playlist[];
   liked: Set<string>;
   /** Albums and artists saved to "Your Library" in this app. */
-  saved: { albums: Album[]; artists: Artist[] };
+  saved: { albums: Album[]; artists: Artist[]; podcasts: Podcast[]; episodes: Track[] };
   /** YTSpot profile (channel) picker is open. */
   profilePicker: boolean;
 }
@@ -34,7 +34,7 @@ export const useApp = create<AppStore>(() => ({
   libraryError: null,
   playlists: [],
   liked: new Set(),
-  saved: { albums: [], artists: [] },
+  saved: { albums: [], artists: [], podcasts: [], episodes: [] },
   profilePicker: false,
 }));
 
@@ -156,7 +156,7 @@ export async function refreshSaved() {
   if (!inTauri) return;
   try {
     const l = await api.savedList();
-    useApp.setState({ saved: { albums: l.albums, artists: l.artists } });
+    useApp.setState({ saved: { albums: l.albums, artists: l.artists, podcasts: l.podcasts ?? [], episodes: l.episodes ?? [] } });
   } catch {
     /* keep previous */
   }
@@ -164,7 +164,7 @@ export async function refreshSaved() {
 
 export const isSaved = (id: string) => {
   const s = useApp.getState().saved;
-  return s.albums.some((a) => a.id === id) || s.artists.some((a) => a.id === id);
+  return [s.albums, s.artists, s.podcasts, s.episodes].some((list) => list.some((a) => a.id === id));
 };
 
 /** Android/iOS build: no extra windows (mini player), no launch at startup, no folder picking. */

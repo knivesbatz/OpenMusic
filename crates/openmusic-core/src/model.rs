@@ -43,6 +43,11 @@ pub struct Track {
     /// Podcast episode rather than music.
     #[serde(default)]
     pub episode: bool,
+    /// Episodes: the show notes' first lines and the release date as shown ("Oct 26").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -142,6 +147,9 @@ pub struct ArtistPage {
     pub singles: Vec<Album>,
     pub appears_on: Vec<Album>,
     pub related: Vec<Artist>,
+    /// Follower count as the provider words it ("1.2M"); YouTube Music subscribers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub followers: Option<String>,
     /// Local files whose artist matches this artist's name (not cached with the provider page).
     #[serde(default)]
     pub local_tracks: Vec<Track>,
@@ -170,6 +178,9 @@ pub struct Library {
     pub albums: Vec<Album>,
     pub playlists: Vec<Playlist>,
     pub podcasts: Vec<Podcast>,
+    /// "Your Episodes": podcast episodes saved in the app.
+    #[serde(default)]
+    pub episodes: Vec<Track>,
 }
 
 /// How the UI should play a resolved track.
@@ -198,6 +209,9 @@ pub struct Capabilities {
     pub crossfade: bool,
     pub gapless: bool,
     pub favorites: bool,
+    /// Discord Rich Presence: desktop builds that have a Discord application id baked in.
+    #[serde(default)]
+    pub discord_presence: bool,
 }
 
 /// A YouTube identity the signed-in Google account can act as: the personal channel or a

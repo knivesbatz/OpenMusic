@@ -2,12 +2,13 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { artUrl } from "../api";
 import { useT } from "../i18n";
 import { displayText } from "../romaji";
+import { isMobileApp } from "../store/app";
 import { useArtistAlias } from "../store/names";
 import { useSettings } from "../store/settings";
-import { navigate, openMenu } from "../store/ui";
+import { navigate, openMenu, useUi } from "../store/ui";
 import type { MediaItem, Track } from "../types";
 import { useDisplayTrack } from "../store/songmeta";
-import { cls } from "../util";
+import { cls, isTouch } from "../util";
 import { IMusic, IPlay } from "./Icons";
 
 export const Art = memo(function Art({
@@ -254,4 +255,27 @@ export function Select<V extends string>({
       <span aria-hidden="true">▾</span>
     </button>
   );
+}
+
+/** Show this page's name (and a play button) in the top bar once it scrolls, like Spotify. */
+export function usePageTitle(title: string | null | undefined, play?: () => void) {
+  const playRef = useRef(play);
+  playRef.current = play;
+  useEffect(() => {
+    if (!title) return;
+    useUi.setState({ pageTitle: { title, play: () => playRef.current?.() } });
+    return () => useUi.setState({ pageTitle: null });
+  }, [title]);
+}
+
+/** The phone app, or a narrow touch screen: Spotify mobile-style song screen and queue sheet. */
+export function usePhoneLayout() {
+  const [narrow, setNarrow] = useState(() => matchMedia("(max-width: 760px)").matches);
+  useEffect(() => {
+    const m = matchMedia("(max-width: 760px)");
+    const on = () => setNarrow(m.matches);
+    m.addEventListener("change", on);
+    return () => m.removeEventListener("change", on);
+  }, []);
+  return isMobileApp() || (narrow && isTouch());
 }

@@ -15,4 +15,21 @@
   d.localized_artist_names = (a) => Object.fromEntries((a.names || []).filter((n) => /[぀-ヿ一-鿿]/.test(n)).map((n) => [n, "Utada Hikaru"]));
   d.kv_get = (a) => (a.key === "yt.profileChosen" ? true : null);
   d.get_lyrics = { synced: true, source: "x", lines: [{ timeMs: 0, text: "ひかりの中で" }, { timeMs: 90000, text: "Hello" }] };
+  // A podcast show with episodes, and in-app saving (follow / Your Episodes).
+  const show = { id: "yt:MPSPshow", title: "Conspiracy Theories", owner: "Parcast", description: "The world's most controversial events.", artwork: null, local: false };
+  const eps = [1, 2, 3].map((n) => ({
+    id: "yt:ep" + n, source: "youtube", streamKey: "ep" + n, title: "The Lost Tomb Pt. " + n, artist: "Parcast", episode: true,
+    durationMs: 2200000, published: "Oct " + (20 + n), description: "Secret doors, a cast-off wig and mummified arms.",
+  }));
+  const baseLib = typeof d.library === "function" ? d.library() : d.library;
+  d.library = () => ({ ...baseLib, podcasts: [{ id: show.id, title: show.title, author: show.owner, artwork: null }] });
+  const basePlaylist = d.playlist;
+  d.playlist = (a) => (a.id === show.id ? { playlist: show, tracks: eps } : typeof basePlaylist === "function" ? basePlaylist(a) : basePlaylist);
+  // YouTube Music artists carry a subscriber count, shown as followers.
+  const baseArtist = d.artist;
+  d.artist = (a) => ({ ...(typeof baseArtist === "function" ? baseArtist(a) : baseArtist), followers: "1.23M" });
+  const saved = { albums: [], artists: [], playlists: [], podcasts: [], episodes: [] };
+  d.saved_list = () => saved;
+  d.save_podcast = (a) => ((saved.podcasts = a.saved ? [a.podcast] : []), null);
+  d.save_episode = (a) => ((saved.episodes = a.saved ? [a.episode, ...saved.episodes] : saved.episodes.filter((e) => e.id !== a.episode.id)), null);
 })();

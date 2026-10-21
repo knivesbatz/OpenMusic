@@ -104,6 +104,11 @@ jobs:
           # users only press "Connect Last.fm".
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+          # Optional: Discord application ids (discord.com/developers/applications, one app named
+          # "YTSpot" and one "PLEXSpot") for Rich Presence. Ids are public; a repository variable or
+          # secret works. Without them the Discord option is hidden.
+          DISCORD_CLIENT_ID_YTSPOT: ${{ vars.DISCORD_CLIENT_ID_YTSPOT || secrets.DISCORD_CLIENT_ID_YTSPOT }}
+          DISCORD_CLIENT_ID_PLEXSPOT: ${{ vars.DISCORD_CLIENT_ID_PLEXSPOT || secrets.DISCORD_CLIENT_ID_PLEXSPOT }}
         run: |
           $extra = @()
           if ($env:WINDOWS_CERTIFICATE) {

@@ -108,6 +108,8 @@ pub fn to_track(v: &Value) -> Option<Track> {
         track_number: n(v, "index").map(|x| x as u32),
         explicit: false,
         episode: false,
+        description: None,
+        published: None,
     })
 }
 
@@ -645,6 +647,37 @@ impl Plex {
 
     pub fn download_url(&self, sess: &Session, track: &Track) -> Result<String> {
         Ok(format!("{}&download=1", self.stream_url(sess, track, None)?))
+    }
+
+    /// Lyrics stored on the server for a track (a lyrics stream: LRC or plain text), if any.
+    pub async fn lyrics(&self, sess: &Session, id: &str) -> Option<String> {
+        let meta = self.list(sess, &format!("/library/metadata/{}", rating_key(id))).await.ok()?;
+        let key = meta
+            .first()?
+            .get("Media")?
+            .as_array()?
+            .iter()
+            .flat_map(|m| m.get("Part").and_then(|p| p.as_array()).cloned().unwrap_or_default())
+            .flat_map(|p| p.get("Stream").and_then(|s| s.as_array()).cloned().unwrap_or_default())
+            .find(|s| s.get("streamType").and_then(|t| t.as_i64()) == Some(4))
+            .and_then(|s| s.get("key").and_then(|k| k.as_str()).map(str::to_string))?;
+        let resp = self
+            .headers(self.http.get(format!("{}{key}", sess.uri)))
+            .header("X-Plex-Token", &sess.server.access_token)
+            .timeout(Duration::from_secs(15))
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        resp.text().await.ok().filter(|t| !t.trim().is_empty())
+    }
+
+    /// The stored image itself, without the server's photo transcoder (fast on every server).
+    pub fn thumb_url(&self, sess: &Session, path: &str) -> String {
+        let sep = if path.contains('?') { '&' } else { '?' };
+        format!("{}{path}{sep}X-Plex-Token={}", sess.uri, urlencoding::encode(&sess.server.access_token))
     }
 
     pub fn art_url(&self, sess: &Session, path: &str, size: u32) -> String {

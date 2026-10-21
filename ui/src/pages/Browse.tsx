@@ -1,14 +1,15 @@
 // Home, Search and the Library grid.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, playlistMenu, trackMenu } from "../actions";
+import { albumMenu, artistMenu, createPlaylist, playlistMenu, podcastMenu, trackMenu } from "../actions";
 import { api, artUrl, errorMessage, inTauri } from "../api";
-import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, openItem, useAsync } from "../components/common";
+import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, itemSubtitle, openItem, useAsync, usePageTitle, usePhoneLayout } from "../components/common";
+import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { shelfTitle, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
 import { useSettings } from "../store/settings";
-import { navigate, openMenu, toast, useUi } from "../store/ui";
+import { navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
 import { useDisplayTrack } from "../store/songmeta";
 import type { HomeData, MediaItem, PlayContext, SearchResults, Track } from "../types";
 import { cls } from "../util";
@@ -39,6 +40,7 @@ export function cardMenu(e: React.MouseEvent, item: MediaItem) {
   if (item.type === "album") return openMenu(e, albumMenu(item, async () => (await api.album(item.id)).tracks));
   if (item.type === "playlist") return openMenu(e, playlistMenu(item, async () => (await api.playlist(item.id)).tracks));
   if (item.type === "artist") return openMenu(e, artistMenu(item));
+  if (item.type === "podcast") return openMenu(e, podcastMenu(item));
 }
 
 const homeCache: { data: HomeData | null } = { data: null };
@@ -162,7 +164,7 @@ export function Home() {
         </Shelf>
       ))}
       {filter !== "podcasts" && lib && lib.artists.length > 0 && (
-        <Shelf title={t("yourTopArtists")} onShowAll={() => navigate({ name: "library" })}>
+        <Shelf title={t("yourTopArtists")} onShowAll={() => navigate({ name: "library", tab: "artists" })}>
           {lib.artists.slice(0, 12).map((a) => (
             <Card key={a.id} item={{ type: "artist", ...a }} onPlay={() => playItem({ type: "artist", ...a })} onContext={(e) => cardMenu(e, { type: "artist", ...a })} />
           ))}
@@ -399,55 +401,167 @@ export function Grid({ items }: { items: MediaItem[] }) {
   );
 }
 
-export function LibraryPage() {
+const ctxItem = (c: PlayContext): MediaItem =>
+  c.kind === "album"
+    ? { type: "album", id: c.id, title: c.title, artist: "", artwork: c.artwork }
+    : c.kind === "artist"
+      ? { type: "artist", id: c.id, name: c.title, artwork: c.artwork }
+      : { type: "playlist", id: c.id, title: c.title, artwork: c.artwork, local: c.id.startsWith("app:") };
+
+/** Your Library, in the classic Spotify layout: categories on desktop, Music/Podcasts tabs on phones. */
+export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const t = useT();
   const lib = useApp((s) => s.library);
   const err = useApp((s) => s.libraryError);
   const pls = useApp((s) => s.playlists);
   const saved = useApp((s) => s.saved);
-  const [tab, setTab] = useState<"playlists" | "albums" | "artists" | "podcasts">("playlists");
+  const caps = useApp((s) => s.info?.capabilities);
+  const phone = usePhoneLayout();
+  const [q, setQ] = useState("");
   useAsync(() => refreshLibrary(false), []);
+  const cur: LibraryTab = tab ?? "playlists";
+  if (cur === "recent") return <RecentPage />;
   if (!lib && err) return <ErrorBox message={err} onRetry={() => refreshLibrary(true)} />;
+
+  const playlists = dedupe([...pls, ...(lib?.playlists ?? [])]);
+  const liked = playlists.find((p) => /^yt:(VL)?LM$/.test(p.id));
   const items: MediaItem[] =
-    tab === "playlists"
-      ? [...pls, ...(lib?.playlists ?? [])].map((p) => ({ type: "playlist" as const, ...p }))
-      : tab === "albums"
+    cur === "playlists"
+      ? playlists.filter((p) => p !== liked).map((p) => ({ type: "playlist" as const, ...p }))
+      : cur === "albums"
         ? dedupe([...saved.albums, ...(lib?.albums ?? [])]).map((a) => ({ type: "album" as const, ...a }))
-        : tab === "artists"
+        : cur === "artists"
           ? dedupe([...saved.artists, ...(lib?.artists ?? [])]).map((a) => ({ type: "artist" as const, ...a }))
-          : (lib?.podcasts ?? []).map((a) => ({ type: "podcast" as const, ...a }));
-  return (
-    <div className="page">
-      <div className="row between">
-        <h1>{t("library")}</h1>
-        <button className="pill ghost small" onClick={() => refreshLibrary(true)}>
-          {t("sync")}
-        </button>
+          : dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])]).map((a) => ({ type: "podcast" as const, ...a }));
+  const needle = q.trim().toLowerCase();
+  const shown = needle ? items.filter((it) => (it.type === "artist" ? it.name : it.title).toLowerCase().includes(needle)) : items;
+  const go = (tb: LibraryTab) => navigate({ name: "library", tab: tb }, true);
+
+  if (!phone) {
+    const title = cur === "playlists" ? t("playlists") : cur === "albums" ? t("albums") : cur === "artists" ? t("artists") : t("podcasts");
+    return (
+      <div className="page">
+        <div className="row between">
+          <h1>{title}</h1>
+          <div className="row" style={{ gap: 8 }}>
+            <input className="lib-filter" style={{ width: 200 }} placeholder={t("filterLibrary")} aria-label={t("filterLibrary")} value={q} onChange={(e) => setQ(e.target.value)} />
+            <button className="pill ghost small" onClick={() => refreshLibrary(true)}>
+              {t("sync")}
+            </button>
+          </div>
+        </div>
+        {tab == null && (
+          <div className="chips">
+            {(["playlists", "albums", "artists", ...(caps?.podcasts ? ["podcasts"] : [])] as LibraryTab[]).map((f) => (
+              <button key={f} className={cls("chip", cur === f && "on")} aria-pressed={cur === f} onClick={() => go(f)}>
+                {t(f as "playlists")}
+              </button>
+            ))}
+          </div>
+        )}
+        {!lib && !err ? <Loading /> : shown.length ? <Grid items={shown} /> : <p className="muted">{t("empty")}</p>}
       </div>
-      <div className="lib-links">
-        <button className="pill ghost small" onClick={() => navigate({ name: "local" })}>
-          {t("localFiles")}
+    );
+  }
+
+  const podcasts = cur === "podcasts";
+  return (
+    <div className="page lib-classic">
+      <div className="lib-top">
+        <button className={cls("lib-big", !podcasts && "on")} onClick={() => go("playlists")}>
+          {t("music")}
         </button>
-        {useApp.getState().info?.capabilities.downloads && (
-          <button className="pill ghost small" onClick={() => navigate({ name: "downloads" })}>
-            {t("downloads")}
+        {caps?.podcasts && (
+          <button className={cls("lib-big", podcasts && "on")} onClick={() => go("podcasts")}>
+            {t("podcasts")}
           </button>
         )}
-        <button className="pill ghost small" onClick={() => navigate({ name: "import" })}>
-          {t("transferPlaylists")}
-        </button>
-        <button className="pill ghost small" onClick={() => navigate({ name: "settings" })}>
-          {t("settings")}
-        </button>
       </div>
-      <div className="chips">
-        {(["playlists", "albums", "artists", "podcasts"] as const).map((f) => (
-          <button key={f} className={cls("chip", tab === f && "on")} aria-pressed={tab === f} onClick={() => setTab(f)}>
-            {t(f)}
-          </button>
-        ))}
+      {!podcasts && (
+        <div className="lib-tabs" role="tablist">
+          {(["playlists", "artists", "albums"] as const).map((f) => (
+            <button key={f} role="tab" aria-selected={cur === f} className={cls("lib-tab", cur === f && "on")} onClick={() => go(f)}>
+              {t(f)}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="lib-rows" key={cur}>
+        {cur === "playlists" && (
+          <>
+            <LibRow
+              icon={<div className="art grad-new"><I.IPlus size={26} /></div>}
+              title={t("createPlaylist")}
+              onClick={async () => {
+                const pl = await createPlaylist();
+                if (pl) navigate({ name: "playlist", id: pl.id });
+              }}
+            />
+            {liked && <LibRow icon={<div className="art grad-liked"><I.IHeartFill size={24} /></div>} title={t("likedSongs")} sub={liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : undefined} onClick={() => navigate({ name: "playlist", id: liked.id })} />}
+            <LibRow icon={<div className="art grad-local"><I.IFolder size={24} /></div>} title={t("localFiles")} onClick={() => navigate({ name: "local" })} />
+            {caps?.downloads && <LibRow icon={<div className="art grad-dl"><I.IDownload size={24} /></div>} title={t("downloads")} onClick={() => navigate({ name: "downloads" })} />}
+          </>
+        )}
+        {podcasts && (
+          <LibRow icon={<div className="art grad-episodes"><I.IBookmark size={24} /></div>} title={t("yourEpisodes")} sub={t("episodesCount", { n: saved.episodes.length })} onClick={() => navigate({ name: "episodes" })} />
+        )}
+        {!lib && !err ? (
+          <Loading />
+        ) : (
+          shown.map((it) => (
+            <LibRow
+              key={it.type + it.id}
+              icon={<Art src={it.artwork} size={128} round={it.type === "artist"} />}
+              title={it.type === "artist" ? it.name : it.title}
+              sub={itemSubtitle(it, t)}
+              onClick={() => openItem(it)}
+              onContext={(e) => cardMenu(e, it)}
+            />
+          ))
+        )}
       </div>
-      {!lib && !err ? <Loading /> : items.length ? <Grid items={items} /> : <p className="muted">{t("empty")}</p>}
+    </div>
+  );
+}
+
+function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; onClick: () => void; onContext?: (e: React.MouseEvent) => void }) {
+  return (
+    <div className="lib-row" role="button" tabIndex={0} onClick={p.onClick} onKeyDown={(e) => e.key === "Enter" && p.onClick()} onContextMenu={p.onContext}>
+      {p.icon}
+      <div className="lib-row-text">
+        <span className="name">{p.title}</span>
+        {p.sub && <span className="sub">{p.sub}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** Recently Played: the albums, playlists and artists you played lately, then the songs. */
+function RecentPage() {
+  const t = useT();
+  const [data, setData] = useState<HomeData | null>(homeCache.data);
+  useEffect(() => {
+    if (!inTauri || homeCache.data) return;
+    api.home(false).then((d) => {
+      homeCache.data = d;
+      setData(d);
+    }, () => setData({ shelves: [], recent: [], contexts: [], topTracks: [], stale: false }));
+  }, []);
+  usePageTitle(t("recentlyPlayed"));
+  if (!data) return <Loading />;
+  const seen = new Set<string>();
+  const items = data.contexts.filter((c) => !seen.has(c.id) && (seen.add(c.id), true)).map(ctxItem);
+  return (
+    <div className="page">
+      <h1>{t("recentlyPlayed")}</h1>
+      {items.length > 0 && <Grid items={items} />}
+      {data.recent.length > 0 && (
+        <>
+          <h2>{t("songs")}</h2>
+          <TrackList tracks={data.recent} />
+        </>
+      )}
+      {!items.length && !data.recent.length && <p className="muted">{t("empty")}</p>}
     </div>
   );
 }
