@@ -7,7 +7,7 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ SQLite with versioned migrations (unit-tested)
 - ✅ Credential-store secrets with chunking for large values
 - ✅ GitHub repo + CI workflow (tests + NSIS installers for both apps)
-- 🟡 Windows installers built by CI and published as GitHub pre-releases (`workflow_dispatch` with `release_tag`; the session's git proxy can't push tags)
+- ✅ Windows installers built by CI and published as GitHub releases (`workflow_dispatch` with `release_tag`): v0.1.0-beta.1 (pre-release), v1.0.0
 
 ## Phase 2: Shared UI
 - 🟡 App shell: sidebar (filters, in-library search, sort, collapse), top bar with history navigation, main view, bottom player bar. Renders correctly with a mock backend (docs/screenshots)
