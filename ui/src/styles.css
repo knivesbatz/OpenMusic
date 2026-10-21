@@ -49,6 +49,7 @@ p { margin: 0 0 8px; }
 .grow { flex: 1; min-width: 0; }
 .pad { padding: 16px; }
 .dim { opacity: 0.5; }
+.jp-alt { color: var(--muted); font-weight: 400; font-size: 0.85em; }
 .skip { position: absolute; left: -999px; top: 0; z-index: 100; background: #fff; color: #000; padding: 8px 12px; border-radius: 4px; }
 .skip:focus { left: 8px; top: 8px; }
 .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--surface-4); border-top-color: var(--green); animation: spin 0.8s linear infinite; }

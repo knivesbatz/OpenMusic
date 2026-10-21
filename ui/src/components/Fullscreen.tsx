@@ -10,7 +10,7 @@ import { useUi } from "../store/ui";
 import type { Lyrics, Track } from "../types";
 import { cls } from "../util";
 import { displayText } from "../romaji";
-import { Art } from "./common";
+import { Art, JpText } from "./common";
 import * as I from "./Icons";
 import { SaveButton, Seek, Transport, Volume } from "./PlayerBar";
 import { QueuePanel } from "./QueuePanel";
@@ -129,8 +129,12 @@ export function Fullscreen() {
       <div className="fs-bottom">
         <div className="fs-meta">
           <div>
-            <div className="fs-title">{tr?.title ?? ""}</div>
-            <div className="fs-artist">{[tr?.artist, tr?.album].filter(Boolean).join(" • ")}</div>
+            <div className="fs-title">
+              <JpText text={tr?.title} />
+            </div>
+            <div className="fs-artist">
+              <JpText text={[tr?.artist, tr?.album].filter(Boolean).join(" • ")} />
+            </div>
           </div>
           <SaveButton />
         </div>

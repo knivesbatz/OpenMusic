@@ -10,7 +10,7 @@ import { useApp } from "../store/app";
 import { openMenu } from "../store/ui";
 import type { PlayContext, Track } from "../types";
 import { cls, fmtMs } from "../util";
-import { Art } from "./common";
+import { Art, JpText } from "./common";
 import { IClock, IMore, IPlay } from "./Icons";
 
 /** The main view's scroll container; lists virtualize against it. */
@@ -194,15 +194,21 @@ const Row = memo(function Row(p: RowProps) {
       <span className="tl-title">
         {p.showArt && <Art src={tr.artwork} size={80} className="sm" />}
         <span className="tl-text">
-          <span className="name">{tr.title}</span>
+          <span className="name">
+            <JpText text={tr.title} />
+          </span>
           <span className="sub">
             {tr.explicit && <span className="badge">{t("explicit")}</span>}
             {tr.source === "local" && <span className="badge">{t("localFile")}</span>}
-            {tr.artist}
+            <JpText text={tr.artist} />
           </span>
         </span>
       </span>
-      {p.showAlbum && <span className="tl-album">{tr.album}</span>}
+      {p.showAlbum && (
+        <span className="tl-album">
+          <JpText text={tr.album} />
+        </span>
+      )}
       <span className="tl-dur">
         {fmtMs(tr.durationMs)}
         <button className="icon-btn more" aria-label={t("more")} title={t("more")} onClick={(e) => (e.stopPropagation(), p.onContext(e))}>

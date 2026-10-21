@@ -9,7 +9,7 @@ import { useApp } from "../store/app";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import { cls, fmtTime } from "../util";
-import { Art } from "./common";
+import { Art, JpText } from "./common";
 import * as I from "./Icons";
 
 export function Seek({ compact }: { compact?: boolean }) {
@@ -165,10 +165,10 @@ export function PlayerBar() {
             </button>
             <div className="pb-meta" onContextMenu={(e) => openMenu(e, trackMenu(tr, { queueUid: undefined }))}>
               <button className="link name" onClick={() => tr.albumId && navigate({ name: "album", id: tr.albumId })}>
-                {tr.title}
+                <JpText text={tr.title} />
               </button>
               <button className="link sub" onClick={() => tr.artistId && navigate({ name: "artist", id: tr.artistId })}>
-                {tr.artist}
+                <JpText text={tr.artist} />
               </button>
             </div>
             <SaveButton />

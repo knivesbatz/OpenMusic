@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { albumMenu, downloadTracks, playlistMenu } from "../actions";
 import { api, errorMessage } from "../api";
-import { Art, ErrorBox, Loading, PlayFab, useAsync } from "../components/common";
+import { Art, ErrorBox, JpText, Loading, PlayFab, useAsync } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT } from "../i18n";
@@ -20,7 +20,9 @@ function Hero({ art, kind, title, meta, round }: { art?: string | null; kind: st
       <Art src={art} size={480} round={round} className="hero-art" />
       <div className="hero-text">
         <span className="small">{kind}</span>
-        <h1 className={cls(title.length > 28 && "long")}>{title}</h1>
+        <h1 className={cls(title.length > 28 && "long")}>
+          <JpText text={title} />
+        </h1>
         <div className="hero-meta">{meta}</div>
       </div>
     </header>
@@ -120,7 +122,9 @@ export function ArtistPage({ id }: { id: string }) {
   return (
     <div className="page detail">
       <header className="artist-hero" style={data.artist?.artwork ? { ["--hero" as string]: `url(${JSON.stringify(artBg(data.artist.artwork))})` } : undefined}>
-        <h1>{name}</h1>
+        <h1>
+          <JpText text={name} />
+        </h1>
       </header>
       <ActionBar tracks={data.topTracks} ctx={ctx} />
       {data.topTracks.length > 0 && (

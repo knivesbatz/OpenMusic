@@ -1,6 +1,8 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { artUrl } from "../api";
 import { useT } from "../i18n";
+import { displayText } from "../romaji";
+import { useSettings } from "../store/settings";
 import { navigate } from "../store/ui";
 import type { MediaItem } from "../types";
 import { cls } from "../util";
@@ -103,9 +105,11 @@ export const Card = memo(function Card({
         )}
       </div>
       <div className="card-title" title={title}>
-        {title}
+        <JpText text={title} />
       </div>
-      <div className="card-sub">{itemSubtitle(item, t)}</div>
+      <div className="card-sub">
+        <JpText text={itemSubtitle(item, t)} />
+      </div>
     </div>
   );
 });
@@ -170,3 +174,17 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data: T | 
   }, [...deps, n]);
   return { ...state, reload: () => setN((x) => x + 1) };
 }
+
+/** Japanese metadata shown per the "Japanese text" setting; the original is never modified. */
+export const JpText = memo(function JpText({ text }: { text: string | null | undefined }) {
+  const mode = useSettings((s) => s.jpMode);
+  if (!text) return null;
+  const [main, alt] = displayText(text, mode);
+  return alt ? (
+    <>
+      {main} <span className="jp-alt">{alt}</span>
+    </>
+  ) : (
+    <>{main}</>
+  );
+});
