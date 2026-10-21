@@ -122,6 +122,10 @@ export interface AppInfo {
   capabilities: Capabilities;
   /** Local artwork server base URL; absent when it failed to start. */
   artBase?: string | null;
+  /** "windows", "macos", "linux", "android", "ios". */
+  platform?: string;
+  /** GPU acceleration off: "auto" after an unclean exit, "manual" from Settings. */
+  safeMode?: "auto" | "manual" | null;
 }
 
 export interface PlayContext {
@@ -226,6 +230,10 @@ export interface YtAccount {
 }
 
 export interface SongMeta {
+  /** Song (audio track) version played instead of the music video. */
+  videoId?: string | null;
+  /** Title of the song version, without "(Official Video)" etc. */
+  title?: string | null;
   artwork?: string | null;
   artist?: string | null;
   artistId?: string | null;

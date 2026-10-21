@@ -98,7 +98,8 @@ p { margin: 0 0 8px; }
 .grad-dl { background: linear-gradient(135deg, #1db954, #0d5a2a); color: #fff; }
 
 /* ---- top bar ------------------------------------------------------------------------------ */
-.topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; background: #121212e6; backdrop-filter: blur(8px); }
+/* No backdrop-filter: a live blur over a scrolling area is expensive and some GPU drivers hang on it. */
+.topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 24px; background: #121212f2; }
 .round-btn { width: 32px; height: 32px; border-radius: 50%; background: #0009; display: grid; place-items: center; color: var(--text); }
 .round-btn:hover:not(:disabled) { transform: scale(1.04); }
 .round-btn.home { width: 44px; height: 44px; background: var(--surface-3); }
@@ -311,7 +312,9 @@ p { margin: 0 0 8px; }
 .fullscreen-host { position: fixed; inset: 0; z-index: 40; background: var(--black); }
 .error-view code { max-width: 70ch; overflow-wrap: anywhere; user-select: text; }
 .fullscreen { position: fixed; inset: 0; z-index: 40; background: var(--black); display: flex; flex-direction: column; padding: 24px 40px 32px; outline: none; overflow: hidden; }
-.fs-bg { position: absolute; inset: -40px; background-size: cover; background-position: center; filter: blur(60px) brightness(0.35) saturate(1.2); z-index: -1; }
+/* A tiny image scaled up is naturally soft; no CSS blur filter (GPU-heavy at full screen). */
+.fs-bg { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: 0.35; z-index: -1; }
+.fs-bg::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #19141499, #191414 85%); }
 .fullscreen > :not(.fs-bg) { position: relative; }
 .fs-top { display: flex; justify-content: space-between; align-items: center; }
 .fs-context { font-weight: 700; }
@@ -366,7 +369,8 @@ p { margin: 0 0 8px; }
 .settings h2 { font-size: 1.25rem; }
 .setting { display: flex; align-items: center; gap: 24px; padding: 10px 0; }
 .setting.disabled { opacity: 0.6; }
-.select { background: var(--surface-3); border: 1px solid #ffffff1a; border-radius: 4px; padding: 8px 10px; color: var(--text); }
+.select { background: var(--surface-3); border: 1px solid #ffffff1a; border-radius: 4px; padding: 8px 10px; color: var(--text); display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 150px; text-align: left; }
+.select:hover:not(:disabled) { border-color: #ffffff4d; }
 .switch { -webkit-appearance: none; appearance: none; width: 40px; height: 22px; border-radius: 11px; background: #727272; position: relative; cursor: pointer; flex: none; transition: background 0.2s; }
 .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #000; transition: transform 0.2s; }
 .switch:checked { background: var(--green); }
@@ -392,3 +396,71 @@ p { margin: 0 0 8px; }
 .htpc :focus-visible, .htpc :focus { outline: 3px solid var(--green); outline-offset: 3px; }
 .htpc .sidebar { width: 340px; }
 .htpc .card { padding: 16px; }
+
+/* ---- phone layout (Android, narrow windows) ------------------------------------------------ */
+.pb-mobile, .mobile-tabs { display: none; }
+.lib-links { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+@media (max-width: 760px) {
+  body { font-size: 0.9375rem; }
+  .layout, .layout.with-queue {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto auto;
+    grid-template-areas: "main" "player" "tabs";
+    gap: 0;
+    padding: env(safe-area-inset-top) 0 0;
+  }
+  .sidebar { display: none; }
+  .main { border-radius: 0; }
+  .page { padding: 8px 16px 24px; }
+  .topbar { padding: 8px 12px; gap: 8px; }
+  .topbar > .row:first-child, .topbar .account, .round-btn.home, .topbar .import-btn { display: none; }
+  .search-box { max-width: none; }
+  .search-input { height: 40px; }
+  h1 { font-size: 1.6rem; }
+  h2 { font-size: 1.2rem; }
+
+  /* Mini player above the tabs */
+  .playerbar { position: relative; grid-template-columns: 1fr auto; height: 64px; margin: 0 8px; padding: 0 8px; border-radius: 8px; background: #2a2a2a; gap: 8px; }
+  .pb-center, .pb-right, .playerbar .save-group, .playerbar > .pb-left > .icon-btn { display: none; }
+  .pb-mobile { display: flex; align-items: center; gap: 4px; }
+  .pb-mobile .icon-btn { color: var(--text); padding: 8px; }
+  .pb-line { position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; background: #ffffff33; border-radius: 1px; overflow: hidden; }
+  .pb-line div { height: 100%; background: #fff; }
+  .pb-art .art { width: 44px; height: 44px; }
+
+  .mobile-tabs { grid-area: tabs; display: flex; justify-content: space-around; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, #000 40%); }
+  .mobile-tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--muted); font-size: 0.6875rem; padding: 4px 16px; }
+  .mobile-tabs button.on { color: var(--text); }
+
+  /* Queue opens full screen */
+  .queue-panel { position: fixed; inset: 0; z-index: 30; border-radius: 0; }
+
+  /* Lists and cards */
+  .tl-row, .tl-row.no-album { grid-template-columns: 28px 1fr 64px; gap: 10px; padding: 0 8px; }
+  .tl-album { display: none; }
+  .tl-head span:nth-child(3):not(.tl-dur) { display: none; }
+  .tl-dur .more, .q-row .more { opacity: 1; }
+  .tl-text .name { font-size: 0.9375rem; }
+  .shelf-row { grid-auto-columns: 140px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .card { padding: 8px; }
+  .shortcuts { grid-template-columns: 1fr 1fr; }
+  .shortcut { height: 48px; }
+  .shortcut .art { width: 48px; height: 48px; }
+  .hero { flex-direction: column; align-items: flex-start; gap: 16px; }
+  .hero-art { width: 60vw; height: 60vw; max-width: 260px; max-height: 260px; align-self: center; }
+  .artist-hero { height: 220px; margin: -56px -16px 0; padding: 0 16px 16px; }
+  .search-top { grid-template-columns: 1fr; }
+  .setting { flex-wrap: wrap; gap: 8px; }
+
+  /* Fullscreen player: stacked */
+  .fullscreen { padding: calc(12px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom)); }
+  .fs-main, .fs-main.with-lyrics { flex-direction: column; gap: 16px; }
+  .fs-art { height: auto; width: min(80vw, 46vh); }
+  .fs-main.with-lyrics .fs-left { display: none; }
+  .fs-title { font-size: 1.4rem; }
+  .fs-controls { grid-template-columns: 1fr; justify-items: center; }
+  .fs-controls .volume, .fs-controls > div:first-child { display: none; }
+  .menu { max-width: calc(100vw - 16px); }
+  .menu button { padding: 14px 12px; }
+}

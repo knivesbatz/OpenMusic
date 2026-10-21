@@ -5,7 +5,7 @@ import { api, inTauri } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
-import { useApp } from "../store/app";
+import { isMobileApp, useApp } from "../store/app";
 import { useDisplayTrack } from "../store/songmeta";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
@@ -181,6 +181,7 @@ export function PlayerBar() {
         <Transport />
         <Seek />
       </div>
+      {tr && <MiniControls />}
       <div className="pb-right">
         {quality && (
           <span className="quality" title={offline ? t("offlineAvailable") : t("audioQuality")}>
@@ -195,7 +196,7 @@ export function PlayerBar() {
           <I.IQueue size={18} />
         </button>
         <Volume />
-        {inTauri && (
+        {inTauri && !isMobileApp() && (
           <button className={cls("icon-btn", pip && "on")} aria-label={t("miniPlayer")} title={t("miniPlayer")} onClick={() => api.pipToggle().then(setPip)}>
             <I.IPip size={18} />
           </button>
@@ -207,3 +208,25 @@ export function PlayerBar() {
     </footer>
   );
 }
+
+/** Phone layout: play/pause and next on the mini player, plus a thin progress line. */
+function MiniControls() {
+  const t = useT();
+  const playing = usePlayer((s) => s.playing);
+  const pos = usePlayer((s) => s.position);
+  const dur = usePlayer((s) => s.duration);
+  return (
+    <div className="pb-mobile">
+      <button className="icon-btn" aria-label={playing ? t("pause") : t("play")} onClick={P.toggle}>
+        {playing ? <I.IPause size={24} /> : <I.IPlay size={24} />}
+      </button>
+      <button className="icon-btn" aria-label={t("next")} onClick={() => P.next()}>
+        <I.INext size={22} />
+      </button>
+      <div className="pb-line" aria-hidden="true">
+        <div style={{ width: dur ? (pos / dur) * 100 + "%" : 0 }} />
+      </div>
+    </div>
+  );
+}
+

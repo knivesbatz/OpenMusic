@@ -12,6 +12,7 @@ pub mod local;
 pub mod lyrics;
 pub mod matching;
 pub mod model;
+pub mod safe_mode;
 pub mod names;
 pub mod plex;
 pub mod secrets;
@@ -59,7 +60,7 @@ fn init_state(app: &tauri::AppHandle, flavor: Flavor) -> Result<Arc<AppState>, B
         .connect_timeout(std::time::Duration::from_secs(8))
         .pool_max_idle_per_host(4)
         .build()?;
-    let secrets = secrets::Secrets::new(&app.config().identifier);
+    let secrets = secrets::Secrets::new(&app.config().identifier, &dirs.data);
     let yt_cookie = if flavor == Flavor::YouTube { secrets.get_large("yt.cookie").ok().flatten() } else { None };
     let plex_session = if flavor == Flavor::Plex { secrets.get_json::<plex::Session>("plex.session").ok().flatten() } else { None };
 
@@ -81,6 +82,7 @@ fn init_state(app: &tauri::AppHandle, flavor: Flavor) -> Result<Arc<AppState>, B
         download_slots: Arc::new(Semaphore::new(2)),
         art_slots: Arc::new(Semaphore::new(6)),
         art_base: std::sync::OnceLock::new(),
+        safe_mode: std::sync::OnceLock::new(),
         scanning: AtomicBool::new(false),
         last_yt_refresh: Mutex::new(None),
     }))
@@ -106,7 +108,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
     let state_slot: Arc<Mutex<Option<Arc<AppState>>>> = Arc::new(Mutex::new(None));
     let slot_for_protocol = state_slot.clone();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
@@ -117,7 +121,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![commands::HTPC_ARG]),
-        ))
+        ));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("art", move |_ctx, request, responder| {
@@ -135,6 +140,13 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             install_crash_log(&handle);
             let state = init_state(&handle, flavor)?;
             *state_slot.lock().unwrap() = Some(state.clone());
+            if let Some(mode) = safe_mode::decide(&state.dirs.data) {
+                let _ = state.safe_mode.set(mode);
+            }
+            // The main window is created here (not from config) so safe mode can switch the
+            // webview's GPU acceleration off before it starts.
+            let main_cfg = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("no main window in config")?;
+            commands::with_browser_args(tauri::WebviewWindowBuilder::from_config(&handle, &main_cfg)?, &state).build()?;
             match art::start_server(state.clone()) {
                 Ok(base) => {
                     let _ = state.art_base.set(base);
@@ -241,6 +253,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::lastfm_scrobble,
             commands::spotify_status,
             commands::spotify_connect,
+            commands::spotify_builtin,
             commands::spotify_disconnect,
             commands::spotify_playlists,
             commands::spotify_import,
@@ -256,6 +269,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::liked_ids,
             commands::localized_artist_names,
             commands::log_ui_error,
+            commands::gpu_set,
             commands::yt_accounts,
             commands::plex_home_users,
             commands::plex_switch_user,
@@ -268,6 +282,14 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::htpc_autostart_get,
             commands::htpc_autostart_set,
         ])
-        .run(context)
-        .expect("error while running application");
+        .build(context)
+        .expect("error while running application")
+        .run(|app, event| {
+            // A clean exit removes the "running" marker; a crash leaves it for the next launch.
+            if let tauri::RunEvent::Exit = event {
+                if let Ok(dir) = app.path().app_data_dir() {
+                    safe_mode::clean_exit(&dir);
+                }
+            }
+        });
 }

@@ -105,7 +105,8 @@ export const api = {
   lastfmScrobble: (track: T.Track, startedAt: number) => call<boolean>("lastfm_scrobble", { track, startedAt }),
 
   spotifyStatus: () => call<string | null>("spotify_status"),
-  spotifyConnect: (clientId: string) => call<void>("spotify_connect", { clientId }),
+  spotifyConnect: (clientId: string | null) => call<void>("spotify_connect", { clientId }),
+  spotifyBuiltin: () => call<boolean>("spotify_builtin"),
   spotifyDisconnect: () => call<void>("spotify_disconnect"),
   spotifyPlaylists: () => call<T.SpotifyPlaylist[]>("spotify_playlists"),
   spotifyImport: (playlistId: string, name: string) => call<T.ImportReport>("spotify_import", { playlistId, name }),
@@ -122,6 +123,7 @@ export const api = {
   pipToggle: () => call<boolean>("pip_toggle"),
   focusMain: () => call<void>("focus_main"),
   logUiError: (message: string) => call<void>("log_ui_error", { message }),
+  gpuSet: (enabled: boolean) => call<void>("gpu_set", { enabled }),
   htpcLaunch: () => call<boolean>("htpc_launch"),
   htpcAutostartGet: () => call<boolean>("htpc_autostart_get"),
   htpcAutostartSet: (enabled: boolean) => call<void>("htpc_autostart_set", { enabled }),

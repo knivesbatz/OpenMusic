@@ -26,3 +26,7 @@ export function totalDuration(tracks: { durationMs?: number | null }[]): number 
 export function cls(...xs: (string | false | null | undefined)[]): string {
   return xs.filter(Boolean).join(" ");
 }
+
+/** Touch-first device (phones/tablets): taps play instead of selecting, no hover. */
+export const isTouch = () => typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+

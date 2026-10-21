@@ -4,12 +4,12 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorMessage, inTauri } from "../api";
-import { ErrorBox, Loading, useAsync } from "../components/common";
+import { ErrorBox, Loading, Select, useAsync } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
-import { openProfilePicker, refreshPlaylists, setLocalOnly, useApp } from "../store/app";
+import { isMobileApp, openProfilePicker, refreshPlaylists, setLocalOnly, useApp } from "../store/app";
 import { useSettings, type Quality } from "../store/settings";
 import { confirmDialog, navigate, toast } from "../store/ui";
 import type { DownloadInfo, ImportReport, LastFmStatus, ScanReport, SpotifyPlaylist, Track } from "../types";
@@ -61,7 +61,7 @@ export function LocalPage() {
           <button className="pill ghost small" disabled={busy || !folders.length} onClick={() => run(api.localScan)}>
             {busy ? t("scanning") : t("rescan")}
           </button>
-          <button className="pill primary small" disabled={busy || !inTauri} onClick={add}>
+          <button className="pill primary small" disabled={busy || !inTauri || isMobileApp()} title={isMobileApp() ? t("localFilesMobile") : undefined} onClick={add}>
             {t("addFolder")}
           </button>
         </div>
@@ -192,9 +192,13 @@ export function ImportPage() {
   const [report, setReport] = useState<ImportReport | null>(null);
   const [pick, setPick] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [builtin, setBuiltin] = useState(false);
+  const [ownId, setOwnId] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   useEffect(() => {
     if (!inTauri) return setUser(null);
+    api.spotifyBuiltin().then(setBuiltin, () => setBuiltin(false));
     api.spotifyStatus().then(setUser, () => setUser(null));
     const un = listen<{ done: number; total: number }>("import-progress", (e) => setProgress(e.payload));
     return () => void un.then((f) => f());
@@ -203,14 +207,16 @@ export function ImportPage() {
     if (user) api.spotifyPlaylists().then(setLists, (e) => setError(errorMessage(e)));
   }, [user]);
 
-  async function connect() {
+  async function connect(useOwn: boolean) {
     setError(null);
+    setConnecting(true);
     try {
-      await api.spotifyConnect(clientId.trim());
+      await api.spotifyConnect(useOwn ? clientId.trim() : null);
       setUser(await api.spotifyStatus());
     } catch (e) {
       setError(errorMessage(e));
     }
+    setConnecting(false);
   }
 
   async function run(p: SpotifyPlaylist) {
@@ -245,7 +251,19 @@ export function ImportPage() {
     <div className="page import">
       <h1>{t("importSpotify")}</h1>
       {error && <ErrorBox message={error} />}
-      {!user ? (
+      {!user && builtin && !ownId ? (
+        <div className="form">
+          <p className="muted">{t("spotifySignInHint")}</p>
+          <div className="row gap">
+            <button className="pill primary" disabled={connecting} onClick={() => connect(false)}>
+              {connecting ? t("waitingApproval") : t("signInSpotify")}
+            </button>
+            <button className="link small" onClick={() => setOwnId(true)}>
+              {t("spotifyUseOwnId")}
+            </button>
+          </div>
+        </div>
+      ) : !user ? (
         <div className="form">
           <p className="muted">{t("spotifyHint")}</p>
           <code className="redirect">{REDIRECT}</code>
@@ -254,8 +272,8 @@ export function ImportPage() {
             <input value={clientId} onChange={(e) => setClientId(e.target.value)} spellCheck={false} />
           </label>
           <div className="row gap">
-            <button className="pill primary" disabled={!clientId.trim() || !inTauri} onClick={connect}>
-              {t("connect")}
+            <button className="pill primary" disabled={!clientId.trim() || !inTauri || connecting} onClick={() => connect(true)}>
+              {connecting ? t("waitingApproval") : t("connect")}
             </button>
             <button className="link small" onClick={() => openUrl("https://developer.spotify.com/dashboard")}>
               developer.spotify.com
@@ -418,20 +436,30 @@ export function SettingsPage() {
 
       <section>
         <h2>{t("language")}</h2>
-        <select className="select" value={s.language} onChange={(e) => s.set({ language: e.target.value as "en" | "ja" })} aria-label={t("language")}>
-          <option value="en">English</option>
-          <option value="ja">日本語</option>
-        </select>
+        <Select
+          label={t("language")}
+          value={s.language}
+          onChange={(v) => s.set({ language: v })}
+          options={[
+            { value: "en", label: "English" },
+            { value: "ja", label: "日本語" },
+          ]}
+        />
         <label className="setting">
           <div className="grow">
             <div>{t("japaneseDisplay")}</div>
             <div className="muted small">{t("japaneseDisplayHint")}</div>
           </div>
-          <select className="select" value={s.jpMode} onChange={(e) => s.set({ jpMode: e.target.value as "original" | "romaji" | "both" })} aria-label={t("japaneseDisplay")}>
-            <option value="original">{t("jpOriginal")}</option>
-            <option value="romaji">{t("jpRomaji")}</option>
-            <option value="both">{t("jpBoth")}</option>
-          </select>
+          <Select
+            label={t("japaneseDisplay")}
+            value={s.jpMode}
+            onChange={(v) => s.set({ jpMode: v })}
+            options={[
+              { value: "original", label: t("jpOriginal") },
+              { value: "romaji", label: t("jpRomaji") },
+              { value: "both", label: t("jpBoth") },
+            ]}
+          />
         </label>
         <Toggle k="translateNames" label={t("translateNames")} hint={t("translateNamesHint")} />
       </section>
@@ -443,12 +471,18 @@ export function SettingsPage() {
             <div>{t("audioQuality")}</div>
             <div className="muted small">{caps?.qualityControl ? t("qualityAutoHintPlex") : t("qualityProviderHint")}</div>
           </div>
-          <select className="select" value={caps?.qualityControl ? s.quality : "auto"} disabled={!caps?.qualityControl} onChange={(e) => s.set({ quality: e.target.value as Quality })} aria-label={t("audioQuality")}>
-            <option value="auto">{t("qualityAuto")}</option>
-            <option value="low">{t("qualityLow")}</option>
-            <option value="medium">{t("qualityMedium")}</option>
-            <option value="high">{t("qualityHigh")}</option>
-          </select>
+          <Select<Quality>
+            label={t("audioQuality")}
+            value={caps?.qualityControl ? s.quality : "auto"}
+            disabled={!caps?.qualityControl}
+            onChange={(v) => s.set({ quality: v })}
+            options={[
+              { value: "auto", label: t("qualityAuto") },
+              { value: "low", label: t("qualityLow") },
+              { value: "medium", label: t("qualityMedium") },
+              { value: "high", label: t("qualityHigh") },
+            ]}
+          />
         </label>
         <label className="setting">
           <div className="grow">
@@ -462,6 +496,25 @@ export function SettingsPage() {
         <Toggle k="autoplay" label={t("autoplay")} />
       </section>
 
+      {inTauri && info?.platform === "windows" && (
+        <section>
+          <h2>{t("performance")}</h2>
+          <label className="setting">
+            <div className="grow">
+              <div>{t("gpuAccel")}</div>
+              <div className="muted small">{info.safeMode === "auto" ? t("safeModeAuto") : t("gpuAccelHint")}</div>
+            </div>
+            <input
+              type="checkbox"
+              role="switch"
+              className="switch"
+              defaultChecked={!info.safeMode}
+              onChange={(e) => api.gpuSet(e.target.checked).then(() => toast(t("restartToApply")), (err) => toast(errorMessage(err)))}
+            />
+          </label>
+        </section>
+      )}
+
       <section>
         <h2>{t("accessibility")}</h2>
         <label className="setting">
@@ -473,7 +526,7 @@ export function SettingsPage() {
         <p className="muted small">{t("shortcuts")}</p>
       </section>
 
-      <section>
+      {!isMobileApp() && <section>
         <h2>{t("htpc")}</h2>
         <Toggle k="htpc" label={t("htpc")} hint={t("htpcHint")} />
         <label className={cls("setting", autostart === null && "disabled")}>
@@ -493,7 +546,7 @@ export function SettingsPage() {
             }}
           />
         </label>
-      </section>
+      </section>}
 
       <section>
         <h2>{t("lastfm")}</h2>

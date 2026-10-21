@@ -62,7 +62,7 @@ export function TopBar() {
           ) : (
             <span className="muted small account">{auth.account}</span>
           ))}
-        <button className="round-btn" aria-label={t("importSpotify")} title={t("importSpotify")} onClick={() => navigate({ name: "import" })}>
+        <button className="round-btn import-btn" aria-label={t("importSpotify")} title={t("importSpotify")} onClick={() => navigate({ name: "import" })}>
           <I.IImport size={18} />
         </button>
         <button className="round-btn" aria-label={t("settings")} title={t("settings")} onClick={() => navigate({ name: "settings" })}>

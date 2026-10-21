@@ -72,6 +72,7 @@ export async function boot() {
   const localOnly = (await api.kvGet<boolean>("localOnly").catch(() => null)) ?? false;
   useApp.setState({ info, auth, localOnly });
   document.title = info.name;
+  if (info.safeMode === "auto") setTimeout(() => toast(translate(useSettings.getState().language, "safeModeAuto")), 1500);
   // Started by "launch at startup": go straight into TV mode, fullscreen.
   if (await api.htpcLaunch().catch(() => false)) {
     useSettings.getState().set({ htpc: true });
@@ -158,3 +159,10 @@ export const isSaved = (id: string) => {
   const s = useApp.getState().saved;
   return s.albums.some((a) => a.id === id) || s.artists.some((a) => a.id === id);
 };
+
+/** Android/iOS build: no extra windows (mini player), no launch at startup, no folder picking. */
+export const isMobileApp = () => {
+  const p = useApp.getState().info?.platform;
+  return p === "android" || p === "ios";
+};
+

@@ -213,6 +213,12 @@ pub struct YtAccount {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct SongMeta {
+    /// Video id of the song (audio track) version; played instead of the music video.
+    #[serde(default)]
+    pub video_id: Option<String>,
+    /// Title of the song version (no "(Official Video)" etc.).
+    #[serde(default)]
+    pub title: Option<String>,
     pub artwork: Option<String>,
     pub artist: Option<String>,
     pub artist_id: Option<String>,

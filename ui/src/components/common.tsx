@@ -4,7 +4,7 @@ import { useT } from "../i18n";
 import { displayText } from "../romaji";
 import { useArtistAlias } from "../store/names";
 import { useSettings } from "../store/settings";
-import { navigate } from "../store/ui";
+import { navigate, openMenu } from "../store/ui";
 import type { MediaItem, Track } from "../types";
 import { useDisplayTrack } from "../store/songmeta";
 import { cls } from "../util";
@@ -213,4 +213,45 @@ export const ArtistName = memo(function ArtistName({ name }: { name: string | nu
 export function TrackArt({ track, size, className }: { track: Track; size?: number; className?: string }) {
   const tr = useDisplayTrack(track);
   return <Art src={tr.artwork} size={size} className={className} />;
+}
+
+/**
+ * Dropdown drawn by the app (the same menu as right-click menus) instead of a native `<select>`,
+ * whose popup is a separate native window in WebView2 and was implicated in crashes.
+ */
+export function Select<V extends string>({
+  value,
+  options,
+  onChange,
+  label,
+  disabled,
+}: {
+  value: V;
+  options: { value: V; label: string }[];
+  onChange: (v: V) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  const current = options.find((o) => o.value === value)?.label ?? value;
+  return (
+    <button
+      type="button"
+      className="select"
+      role="combobox"
+      aria-label={label}
+      aria-haspopup="menu"
+      aria-expanded={false}
+      disabled={disabled}
+      onClick={(e) => {
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        openMenu(
+          { clientX: r.left, clientY: r.bottom + 4, preventDefault: () => {}, stopPropagation: () => e.stopPropagation() },
+          options.map((o) => ({ label: (o.value === value ? "✓ " : " ") + o.label, onClick: () => onChange(o.value) })),
+        );
+      }}
+    >
+      <span>{current}</span>
+      <span aria-hidden="true">▾</span>
+    </button>
+  );
 }

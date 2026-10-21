@@ -10,7 +10,7 @@ import { useApp } from "../store/app";
 import { useDisplayTrack } from "../store/songmeta";
 import { navigate, openMenu } from "../store/ui";
 import type { PlayContext, Track } from "../types";
-import { cls, fmtMs } from "../util";
+import { cls, fmtMs, isTouch } from "../util";
 import { Art, ArtistName, JpText } from "./common";
 import { IClock, IMore, IPlay } from "./Icons";
 
@@ -171,7 +171,7 @@ const Row = memo(function Row(p: RowProps) {
       aria-selected={p.selected}
       className={cls("tl-row", p.selected && "selected", isCurrent && "current", !p.showAlbum && "no-album", p.dragOver && "drop-before", p.dropAfter && "drop-after", offline && "dim")}
       style={{ transform: `translateY(${p.top}px)` }}
-      onClick={p.onSelect}
+      onClick={(e) => (isTouch() ? p.onPlay() : p.onSelect(e))}
       onDoubleClick={p.onPlay}
       onKeyDown={(e) => {
         if (e.key === "Enter") p.onPlay();
@@ -201,7 +201,7 @@ const Row = memo(function Row(p: RowProps) {
           <span className="sub">
             {tr.explicit && <span className="badge">{t("explicit")}</span>}
             {tr.source === "local" && <span className="badge">{t("localFile")}</span>}
-            {tr.artistId ? (
+            {tr.artistId && !isTouch() ? (
               <button
                 className="link inline"
                 tabIndex={-1}

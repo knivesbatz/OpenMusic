@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { PlayerBar } from "./components/PlayerBar";
+import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
@@ -126,6 +127,7 @@ export function App() {
           </main>
           {queueOpen && !fullscreen && <QueuePanel />}
           <PlayerBar />
+          <MobileTabs />
         </div>
       )}
       {fullscreen && (
