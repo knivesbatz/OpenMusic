@@ -257,38 +257,25 @@ jobs:
     runs-on: windows-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/download-artifact@v4
         with:
           name: ytspot-windows
           path: new
-      - name: Install YTSpot, tauri-driver and a matching msedgedriver
+      - name: Install YTSpot
+        shell: pwsh
+        run: Start-Process (Get-ChildItem new -Filter *.exe | Select-Object -First 1).FullName -ArgumentList '/S' -Wait
+      - name: Self-test in the real app (settings, scrolling, mini player, fullscreen)
+        # The app clicks through itself (ui/src/selftest.ts) and logs each step; a hang or crash
+        # leaves the culprit as the last "start" line.
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          Start-Process (Get-ChildItem ../new -Filter *.exe | Select-Object -First 1).FullName -ArgumentList '/S' -Wait
-          cargo install tauri-driver --locked
-          $wv = (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv
-          if (-not $wv) { $wv = (Get-Item "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe").VersionInfo.ProductVersion }
-          Write-Host "WebView2 runtime $wv"
-          Invoke-WebRequest "https://msedgedriver.microsoft.com/$wv/edgedriver_win64.zip" -OutFile edgedriver.zip
-          Expand-Archive edgedriver.zip -DestinationPath edgedriver
-          npm install --no-save selenium-webdriver@4.27.0
-        working-directory: ui
-      - name: Drive the app (settings, scrolling, mini player, fullscreen)
-        shell: pwsh
-        run: |
-          $driver = Start-Process tauri-driver -ArgumentList "--native-driver", "$PWD\edgedriver\msedgedriver.exe" -PassThru
-          Start-Sleep -Seconds 3
-          node e2e/windows-app.mjs "$env:LOCALAPPDATA\YTSpot\YTSpot.exe"
-          $code = $LASTEXITCODE
-          Stop-Process -Id $driver.Id -ErrorAction SilentlyContinue
-          exit $code
-        working-directory: ui
+          $p = Start-Process "$env:LOCALAPPDATA\YTSpot\YTSpot.exe" -ArgumentList '--self-test' -PassThru
+          $finished = $p.WaitForExit(240000)
+          $log = "$env:APPDATA\app.openmusic.ytspot\selftest.log"
+          if (Test-Path $log) { Get-Content $log } else { Write-Host "no selftest.log (the UI never started the test)" }
+          if (-not $finished) { Write-Host "APP HUNG: still running after 4 minutes"; Stop-Process -Id $p.Id -Force; exit 1 }
+          if (-not ((Test-Path $log) -and (Select-String -Path $log -Pattern '\] done$' -Quiet))) { Write-Host "APP EXITED EARLY (code $($p.ExitCode))"; exit 1 }
+          Write-Host "self-test passed"
       - name: Crash evidence (crash.log, Windows error reports)
         if: always()
         shell: pwsh

@@ -243,6 +243,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::autoplay_tracks,
             commands::media_update,
             commands::media_stop,
+            commands::self_test_log,
+            commands::self_test_exit,
             commands::resolve_stream,
             commands::record_play,
             commands::mark_played,

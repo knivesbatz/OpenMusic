@@ -66,6 +66,7 @@ async function start() {
   await restore();
   initMediaSession();
   initRemoteControls();
+  if (useApp.getState().info?.selfTest) import("./selftest").then((m) => m.runSelfTest());
   startBroadcast();
   initGamepad();
 }

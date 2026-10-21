@@ -129,6 +129,8 @@ export interface AppInfo {
   platform?: string;
   /** GPU acceleration off: "auto" after an unclean exit, "manual" from Settings. */
   safeMode?: "auto" | "manual" | null;
+  /** Launched with --self-test (CI): run ui/src/selftest.ts. */
+  selfTest?: boolean;
 }
 
 export interface PlayContext {

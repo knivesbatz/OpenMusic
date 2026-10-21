@@ -13,12 +13,13 @@ const base = "http://localhost:4174/";
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
 const results = [];
 
-async function test(name, fn, { youtube = false } = {}) {
+async function test(name, fn, { youtube = false, init } = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript({ path: mock });
   if (youtube) await page.addInitScript({ path: ytOverrides });
+  if (init) await page.addInitScript(init);
   await page.goto(base);
   await page.waitForSelector(".playerbar");
   const t0 = Date.now();
@@ -180,6 +181,27 @@ await test("50,000-track playlist stays virtualized and responsive", async (p) =
   assert.ok(renderMs < 3000, `slow first render: ${renderMs} ms`);
   assert.ok(scrollMs < 1000, `slow jump-scroll: ${scrollMs} ms`);
 });
+
+await test(
+  "in-app self-test (--self-test, used on Windows CI) reaches the end",
+  async (p) => {
+    await p.waitForFunction(() => window.__SELFTEST_EXIT, null, { timeout: 90000 });
+    const lines = await p.evaluate(() => window.__SELFTEST);
+    const fails = lines.filter((l) => l.startsWith("fail"));
+    console.log(`  self-test: ${lines.filter((l) => l.startsWith("ok")).length} steps ok${fails.length ? "; " + fails.join("; ") : ""}`);
+    assert.equal(lines.at(-1), "done");
+    assert.ok(lines.filter((l) => l.startsWith("ok switch")).length >= 5, "switches were not exercised");
+  },
+  {
+    init: () => {
+      window.__SELFTEST = [];
+      const d = window.__MOCK__;
+      d.app_info = { ...d.app_info, selfTest: true };
+      d.self_test_log = (a) => (window.__SELFTEST.push(a.line), null);
+      d.self_test_exit = () => ((window.__SELFTEST_EXIT = true), null);
+    },
+  },
+);
 
 await browser.close();
 server.httpServer.close();

@@ -66,6 +66,8 @@ export const api = {
   radio: (track: T.Track) => call<T.Track[]>("radio", { track }),
   mediaUpdate: (now: T.NowPlaying) => call<void>("media_update", { now }),
   mediaStop: () => call<void>("media_stop"),
+  selfTestLog: (line: string) => call<void>("self_test_log", { line }),
+  selfTestExit: () => call<void>("self_test_exit"),
   autoplayTracks: (track: T.Track, exclude: string[]) => call<T.Track[]>("autoplay_tracks", { track, exclude }),
 
   resolveStream: (track: T.Track, quality: string) => call<T.Stream>("resolve_stream", { track, quality }),

@@ -31,6 +31,8 @@ pub struct AppInfo {
     platform: &'static str,
     /// "auto" (after an unclean exit) or "manual" when GPU acceleration is off; null otherwise.
     safe_mode: Option<&'static str>,
+    /// Launched with `--self-test` (CI): the UI clicks through itself and logs each step.
+    self_test: bool,
 }
 
 pub fn capabilities(f: Flavor) -> Capabilities {
@@ -51,6 +53,7 @@ pub fn app_info(app: AppHandle, state: S) -> AppInfo {
         art_base: state.art_base.get().cloned(),
         platform: std::env::consts::OS,
         safe_mode: state.safe_mode.get().copied(),
+        self_test: std::env::args().any(|a| a == "--self-test"),
     }
 }
 
@@ -1489,4 +1492,19 @@ pub async fn media_stop(app: AppHandle) -> Result<()> {
         let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
     }
     Ok(())
+}
+
+/// Self-test progress (see ui/src/selftest.ts), appended to `selftest.log` in the data folder
+/// with a timestamp so a hang or crash shows which step it happened in.
+#[tauri::command(async)]
+pub fn self_test_log(state: S, line: String) -> Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(state.dirs.data.join("selftest.log"))?;
+    writeln!(f, "[{}] {line}", crate::db::now())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn self_test_exit(app: AppHandle) {
+    app.exit(0);
 }
