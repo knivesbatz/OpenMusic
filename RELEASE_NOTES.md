@@ -28,7 +28,7 @@ installer downloads it.
 - Your Library: save albums (⊕ on album pages) and follow artists (Follow on artist pages); they appear
   under Albums / Artists in the sidebar. Saved in the app only, never changed on Plex or YouTube
 - Local files, Plex downloads page, Spotify import with report, Last.fm settings, English/日本語,
-  kana→romaji for lyrics, accessibility (text size, reduced motion, contrast, keyboard), TV mode with
+  kana→romaji for lyrics and titles, artist names in your language (MusicBrainz aliases), accessibility (text size, reduced motion, contrast, keyboard), TV mode with
   Xbox/DS4/Switch controller navigation and "Launch at startup in TV mode"
 
 ## Please test
@@ -47,6 +47,8 @@ installer downloads it.
 10. **Last.fm**: connect, now playing, scrobble after half the track / 4 minutes, no duplicates.
 11. **Local files**: add folder, rescan, missing files.
 12. **Saving**: save an album and follow an artist, check the sidebar filters, restart, unsave.
+    **Translated names**: in Japanese, English artists with a Japanese alias show it (and the
+    reverse in English); hover shows the original; Settings can turn it off.
     **Likes**: tracks you already liked in Plex / YouTube Music show as saved; toggling syncs back.
 13. **Japanese**: Settings → Japanese text → Romaji / Both changes titles, artists and lyrics.
 14. **TV mode**: controller D-pad/stick focus, A (select), B (back), X (queue), Y (fullscreen),
@@ -57,6 +59,6 @@ installer downloads it.
 ## Known gaps / not finished
 - Nothing has been verified against real accounts (no Plex server or Google account in CI).
 - Kanji → romaji needs a dictionary; only kana is romanized for now.
-- Translated artist/album names need a licensed metadata source (not started).
+- Translated names cover artists that have a MusicBrainz alias; album titles stay as published.
 - No UI end-to-end tests yet (Playwright).
 - Installers are unsigned, so SmartScreen warns ("More info" → "Run anyway").

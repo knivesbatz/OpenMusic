@@ -61,6 +61,8 @@ export const api = {
   markPlayed: (track: T.Track) => call<void>("mark_played", { track }),
   rate: (track: T.Track, liked: boolean) => call<void>("rate", { track, liked }),
   likedIds: () => call<string[]>("liked_ids"),
+  localizedArtistNames: (names: string[], locale: string) =>
+    call<Record<string, string>>("localized_artist_names", { names, locale }),
   savedList: () => call<T.Library>("saved_list"),
   saveAlbum: (album: T.Album, saved: boolean) => call<void>("save_album", { album, saved }),
   saveArtist: (artist: T.Artist, saved: boolean) => call<void>("save_artist", { artist, saved }),

@@ -9,7 +9,7 @@ import { useApp } from "../store/app";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import { cls, fmtTime } from "../util";
-import { Art, JpText } from "./common";
+import { Art, ArtistName, JpText } from "./common";
 import * as I from "./Icons";
 
 export function Seek({ compact }: { compact?: boolean }) {
@@ -168,7 +168,7 @@ export function PlayerBar() {
                 <JpText text={tr.title} />
               </button>
               <button className="link sub" onClick={() => tr.artistId && navigate({ name: "artist", id: tr.artistId })}>
-                <JpText text={tr.artist} />
+                <ArtistName name={tr.artist} />
               </button>
             </div>
             <SaveButton />

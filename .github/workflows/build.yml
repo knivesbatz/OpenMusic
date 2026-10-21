@@ -17,7 +17,8 @@ permissions:
 
 concurrency:
   group: build-${{ github.ref }}
-  cancel-in-progress: true
+  # Queue rather than cancel: a run that is validating a fix should finish.
+  cancel-in-progress: false
 
 jobs:
   test:

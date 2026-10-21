@@ -10,7 +10,7 @@ import { useApp } from "../store/app";
 import { openMenu } from "../store/ui";
 import type { PlayContext, Track } from "../types";
 import { cls, fmtMs } from "../util";
-import { Art, JpText } from "./common";
+import { Art, ArtistName, JpText } from "./common";
 import { IClock, IMore, IPlay } from "./Icons";
 
 /** The main view's scroll container; lists virtualize against it. */
@@ -200,7 +200,7 @@ const Row = memo(function Row(p: RowProps) {
           <span className="sub">
             {tr.explicit && <span className="badge">{t("explicit")}</span>}
             {tr.source === "local" && <span className="badge">{t("localFile")}</span>}
-            <JpText text={tr.artist} />
+            <ArtistName name={tr.artist} />
           </span>
         </span>
       </span>

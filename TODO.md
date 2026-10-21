@@ -50,8 +50,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 ## Phase 8: Integrations
 - 🟡 Last.fm auth/now-playing/scrobble queue (threshold + dedupe unit-tested)
 - 🟡 English/Japanese UI
-- 🟡 Kana → romaji for lyrics (tested); kanji still need a dictionary (lindera/ipadic, about 20 MB; evaluate size)
-- ⬜ Translated artist/album names (needs a licensed metadata source, e.g. MusicBrainz aliases)
+- 🟡 Kana → romaji for lyrics and titles/artists (tested); kanji still need a dictionary (lindera/ipadic or kuromoji, ~15–20 MB; evaluate size)
+- 🟡 Translated artist names: MusicBrainz aliases in the UI language (CC0 data, exact-match only, 1 req/s,
+  30-day SQLite cache, tested alias picking); original kept as tooltip; setting to turn off.
+  Album titles: MusicBrainz rarely has localized release titles, so albums stay as published
 
 ## Phase 9: Polish
 - 🟡 HTPC/TV mode: launch at startup (autostart plugin, `--htpc` opens fullscreen in TV mode), Gamepad API spatial navigation (A/B/X/Y, LB/RB, LT/RT, Start)

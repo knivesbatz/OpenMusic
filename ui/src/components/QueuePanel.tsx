@@ -9,7 +9,7 @@ import { usePlayer } from "../player/engine";
 import { select, type QItem } from "../player/queue";
 import { openMenu, useUi } from "../store/ui";
 import { cls } from "../util";
-import { Art, JpText } from "./common";
+import { Art, ArtistName, JpText } from "./common";
 import * as I from "./Icons";
 
 type Entry = { kind: "head"; label: string; clear?: boolean } | { kind: "item"; item: QItem; index: number; current: boolean };
@@ -160,7 +160,7 @@ export function QueuePanel() {
                   </span>
                   <span className="sub">
                     {tr.explicit && <span className="badge">{t("explicit")}</span>}
-                    <JpText text={tr.artist} />
+                    <ArtistName name={tr.artist} />
                   </span>
                 </div>
                 <button className="icon-btn more" aria-label={t("more")} title={t("more")} onClick={(e) => (e.stopPropagation(), openMenu(e, trackMenu(tr, { queueUid: current ? undefined : item.uid })))}>

@@ -12,6 +12,7 @@ pub mod local;
 pub mod lyrics;
 pub mod matching;
 pub mod model;
+pub mod names;
 pub mod plex;
 pub mod secrets;
 pub mod spotify;
@@ -213,6 +214,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::pip_toggle,
             commands::focus_main,
             commands::liked_ids,
+            commands::localized_artist_names,
             commands::saved_list,
             commands::save_album,
             commands::save_artist,

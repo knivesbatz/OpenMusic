@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { artUrl } from "../api";
 import { useT } from "../i18n";
 import { displayText } from "../romaji";
+import { useArtistAlias } from "../store/names";
 import { useSettings } from "../store/settings";
 import { navigate } from "../store/ui";
 import type { MediaItem } from "../types";
@@ -105,7 +106,7 @@ export const Card = memo(function Card({
         )}
       </div>
       <div className="card-title" title={title}>
-        <JpText text={title} />
+        {item.type === "artist" ? <ArtistName name={title} /> : <JpText text={title} />}
       </div>
       <div className="card-sub">
         <JpText text={itemSubtitle(item, t)} />
@@ -186,5 +187,21 @@ export const JpText = memo(function JpText({ text }: { text: string | null | und
     </>
   ) : (
     <>{main}</>
+  );
+});
+
+/**
+ * An artist name in the UI language when MusicBrainz has an alias for it (e.g. a Japanese artist
+ * shown with its English name). The original name stays visible as a tooltip and in the DOM text
+ * for screen readers, and the setting "Japanese text" still applies.
+ */
+export const ArtistName = memo(function ArtistName({ name }: { name: string | null | undefined }) {
+  const alias = useArtistAlias(name);
+  if (!name) return null;
+  if (!alias) return <JpText text={name} />;
+  return (
+    <span title={name}>
+      <JpText text={alias} />
+    </span>
   );
 });

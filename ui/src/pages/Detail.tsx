@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { albumMenu, downloadTracks, playlistMenu, toggleSaved } from "../actions";
 import { api, artUrl, errorMessage } from "../api";
-import { Art, ErrorBox, JpText, Loading, PlayFab, useAsync } from "../components/common";
+import { Art, ArtistName, ErrorBox, JpText, Loading, PlayFab, useAsync } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT } from "../i18n";
@@ -77,7 +77,7 @@ export function AlbumPage({ id }: { id: string }) {
         meta={
           <>
             <button className="link strong" onClick={() => album.artistId && navigateArtist(album.artistId)}>
-              {album.artist}
+              <ArtistName name={album.artist} />
             </button>
             {album.year ? ` • ${album.year}` : ""} • {t("songsCount", { n: tracks.length })}, {fmtTime(totalDuration(tracks))}
           </>
@@ -127,7 +127,7 @@ export function ArtistPage({ id }: { id: string }) {
     <div className="page detail">
       <header className="artist-hero" style={data.artist?.artwork ? { ["--hero" as string]: `url(${JSON.stringify(artBg(data.artist.artwork))})` } : undefined}>
         <h1>
-          <JpText text={name} />
+          <ArtistName name={name} />
         </h1>
       </header>
       <ActionBar tracks={data.topTracks} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
