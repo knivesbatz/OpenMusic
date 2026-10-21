@@ -4,11 +4,19 @@ Rendered from the production UI build in headless Chromium, with the mock backen
 `ui/e2e/mock-backend.js` standing in for the Rust commands. **The artists, albums, artwork and lyrics
 are sample data, not a real Plex or YouTube Music library.**
 
+## Windows (1440×900)
+
 | | |
 |---|---|
-| ![Home](home.png) Home: shortcuts, recently played, top tracks | ![Queue](queue.png) Queue with a Shift-click range selected |
+| ![Home](home.png) Home: shortcuts, recently played, top tracks | ![Your Library](library.png) Your Library categories (YTSpot, Podcasts) |
 | ![Album](album-menu.png) Album page with the track context menu | ![Artist](artist.png) Artist page |
-| ![Fullscreen](fullscreen.png) Fullscreen player with synced lyrics | |
+| ![Queue](queue.png) Queue with a Shift-click range selected | ![Fullscreen](fullscreen.png) Fullscreen player with synced lyrics |
 
-Regenerate: `cd ui && npm run build && npx vite preview --port 4173`, then
-`PLAYWRIGHT=/path/to/playwright/index.mjs CHROMIUM=/path/to/chromium node e2e/screenshots.mjs http://localhost:4173/ ../docs/screenshots e2e/mock-backend.js`.
+## Android (phone)
+
+| | | | |
+|---|---|---|---|
+| ![Home](phone-home.png) Home | ![Library](phone-library.png) Your Library: Music / Podcasts (YTSpot) | ![Albums](phone-albums.png) Albums | ![Song screen](phone-player.png) Song screen |
+
+Regenerate: `cd ui && npm run build && node e2e/screenshots.mjs ../docs/screenshots`
+(`CHROMIUM=/path/to/chromium` to use a preinstalled browser).

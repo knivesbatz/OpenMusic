@@ -67,14 +67,18 @@ await page.waitForTimeout(600);
 await shot(page, "library");
 await page.close();
 
-// Phone (Android) — YTSpot.
+// Phone (Android) — YTSpot library (Music / Podcasts), PLEXSpot home and song screen.
 page = await open({ youtube: true, phone: true });
-await shot(page, "phone-home");
 await page.click('.mobile-tabs button:has-text("Your Library")');
 await page.waitForSelector(".lib-row");
 await page.waitForTimeout(500);
 await shot(page, "phone-library");
+await page.close();
+page = await open({ phone: true });
+await shot(page, "phone-home");
+await page.click('.mobile-tabs button:has-text("Your Library")');
 await page.click('.lib-tab:has-text("Albums")');
+await page.waitForSelector(".lib-row");
 await page.waitForTimeout(500);
 await shot(page, "phone-albums");
 await page.click(".playerbar");
