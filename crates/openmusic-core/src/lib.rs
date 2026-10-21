@@ -16,6 +16,8 @@ pub mod names;
 pub mod plex;
 pub mod secrets;
 pub mod state;
+#[cfg(desktop)]
+mod tray;
 pub mod ytm;
 
 use std::sync::atomic::AtomicBool;
@@ -109,13 +111,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
     let builder = tauri::Builder::default();
     #[cfg(desktop)]
     let builder = builder
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-        }))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![commands::HTPC_ARG]),
@@ -160,6 +156,10 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 Err(e) => log::warn!("artwork server failed to start: {e}"),
             }
             app.manage(state.clone());
+            #[cfg(desktop)]
+            if let Err(e) = tray::create(&handle, &state) {
+                log::warn!("tray icon failed: {e}");
+            }
 
             downloads::recover(&state);
             // Local folders and the downloads dir are readable through the asset protocol.
@@ -195,10 +195,19 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the main window quits the app (and the mini player with it); closing the
-            // mini player only closes the mini player. Playback lives in the main window.
+            // Closing the main window quits the app (and the mini player with it), or hides it to
+            // the tray when that setting is on; closing the mini player only closes the mini
+            // player. Playback lives in the main window.
             match event {
-                tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => {
+                tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
+                    #[cfg(desktop)]
+                    if window.app_handle().try_state::<Arc<AppState>>().is_some_and(|s| tray::close_to_tray(&s)) {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        return;
+                    }
+                    #[cfg(not(desktop))]
+                    let _ = api;
                     if let Some(p) = window.app_handle().get_webview_window("pip") {
                         let _ = p.close();
                     }

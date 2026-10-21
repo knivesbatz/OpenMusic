@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { Pip } from "./components/Pip";
 import { initGamepad } from "./gamepad";
-import { initAndroidMedia, initMediaSession, restore } from "./player/engine";
+import { initRemoteControls, initMediaSession, restore } from "./player/engine";
 import { startBroadcast } from "./player/bridge";
 import { boot } from "./store/app";
 import { useSettings } from "./store/settings";
@@ -65,7 +65,7 @@ async function start() {
   await boot().catch((e) => console.error("boot failed", e));
   await restore();
   initMediaSession();
-  initAndroidMedia();
+  initRemoteControls();
   startBroadcast();
   initGamepad();
 }

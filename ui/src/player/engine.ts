@@ -650,19 +650,22 @@ export function initMediaSession() {
 }
 
 /**
- * Android: the webview's Media Session doesn't reach the system there, so mirror the player into
- * the app's media notification (which also keeps playback alive in the background) and take
- * its buttons back.
+ * Tray menu and Android notification buttons. On Android the webview's Media Session doesn't
+ * reach the system, so the player is also mirrored into the app's media notification (which
+ * keeps playback alive in the background).
  */
-export function initAndroidMedia() {
-  if (!inTauri || !/Android/i.test(navigator.userAgent)) return;
+export function initRemoteControls() {
+  if (!inTauri) return;
+  // Controls outside the webview: the desktop tray menu and the Android notification.
   listen<{ action: string; positionMs?: number }>("media-action", ({ payload }) => {
     if (payload.action === "play") play();
     else if (payload.action === "pause") pause();
+    else if (payload.action === "toggle") toggle();
     else if (payload.action === "next") next();
     else if (payload.action === "previous") previous();
     else if (payload.action === "seek" && payload.positionMs != null) seek(payload.positionMs / 1000);
   });
+  if (!/Android/i.test(navigator.userAgent)) return;
   let sent = { id: "", playing: false, at: 0, position: 0 };
   usePlayer.subscribe((s) => {
     const cur = Q.current(s.queue)?.track;
