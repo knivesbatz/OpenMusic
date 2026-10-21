@@ -665,7 +665,7 @@ export function initRemoteControls() {
     else if (payload.action === "previous") previous();
     else if (payload.action === "seek" && payload.positionMs != null) seek(payload.positionMs / 1000);
   });
-  if (!/Android/i.test(navigator.userAgent)) return;
+  if (!/Android/i.test(navigator.userAgent)) return initDiscordPresence();
   let sent = { id: "", playing: false, at: 0, position: 0 };
   usePlayer.subscribe((s) => {
     const cur = Q.current(s.queue)?.track;
@@ -691,4 +691,43 @@ export function initRemoteControls() {
       })
       .catch(() => {});
   });
+}
+
+/**
+ * Desktop: mirror the playing song into Discord Rich Presence (cleared on pause). Updates go out
+ * on track, play/pause or seek changes only; Discord runs the progress bar itself.
+ */
+function initDiscordPresence() {
+  let sent = { id: "", playing: false, at: 0, position: 0 };
+  const push = () => {
+    const s = usePlayer.getState();
+    const cur = Q.current(s.queue)?.track;
+    const on = useSettings.getState().discordPresence;
+    if (!cur || !on || !s.playing) {
+      if (sent.id && sent.playing) api.presenceClear().catch(() => {});
+      sent = { id: cur && on ? cur.id : "", playing: false, at: 0, position: 0 };
+      return;
+    }
+    const t = displayTrack(cur);
+    const expected = sent.position + (sent.playing ? (Date.now() - sent.at) / 1000 : 0);
+    if (t.id === sent.id && sent.playing && Math.abs(s.position - expected) < 3) return;
+    sent = { id: t.id, playing: true, at: Date.now(), position: s.position };
+    const link = cur.source === "youtube" && cur.streamKey ? `https://music.youtube.com/watch?v=${encodeURIComponent(cur.streamKey)}` : null;
+    api
+      .presenceUpdate(
+        {
+          title: t.title,
+          artist: t.artist,
+          album: t.album ?? null,
+          artwork: t.artwork ?? null,
+          playing: true,
+          positionMs: Math.round(s.position * 1000),
+          durationMs: Math.round(s.duration * 1000),
+        },
+        link,
+      )
+      .catch(() => {});
+  };
+  usePlayer.subscribe(push);
+  useSettings.subscribe((s, prev) => s.discordPresence !== prev.discordPresence && push());
 }

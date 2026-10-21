@@ -123,6 +123,8 @@ export interface Capabilities {
   crossfade: boolean;
   gapless: boolean;
   favorites: boolean;
+  /** Discord Rich Presence is built in (desktop builds with a Discord application id). */
+  discordPresence?: boolean;
 }
 
 export interface AppInfo {

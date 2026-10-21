@@ -37,9 +37,25 @@ pub struct AppInfo {
 
 pub fn capabilities(f: Flavor) -> Capabilities {
     match f {
-        Flavor::Plex => Capabilities { downloads: true, quality_control: true, podcasts: false, crossfade: true, gapless: true, favorites: true },
+        Flavor::Plex => Capabilities {
+            downloads: true,
+            quality_control: true,
+            podcasts: false,
+            crossfade: true,
+            gapless: true,
+            favorites: true,
+            discord_presence: crate::discord::available(f),
+        },
         // YouTube blends with two IFrame players (see ui/src/player/engine.ts).
-        Flavor::YouTube => Capabilities { downloads: false, quality_control: false, podcasts: true, crossfade: true, gapless: true, favorites: true },
+        Flavor::YouTube => Capabilities {
+            downloads: false,
+            quality_control: false,
+            podcasts: true,
+            crossfade: true,
+            gapless: true,
+            favorites: true,
+            discord_presence: crate::discord::available(f),
+        },
     }
 }
 
@@ -1611,6 +1627,51 @@ pub async fn media_stop(app: AppHandle) -> Result<()> {
         let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
     }
     Ok(())
+}
+
+/// Discord Rich Presence for the playing track (desktop). `now.artwork` is the track's `art://`
+/// reference; only public image URLs are passed on. `link` is the track's public page, if any.
+#[tauri::command]
+pub async fn presence_update(state: S<'_>, now: tauri_plugin_openmusic_media::NowPlaying, link: Option<String>) -> Result<()> {
+    let f = state.flavor;
+    if !crate::discord::available(f) {
+        return Ok(());
+    }
+    if !now.playing {
+        crate::discord::set(f, None);
+        return Ok(());
+    }
+    let public = now
+        .artwork
+        .as_deref()
+        .and_then(|a| a.strip_prefix("art://url/"))
+        .and_then(|enc| urlencoding::decode(enc).ok())
+        .map(|u| u.into_owned())
+        .filter(|u| u.starts_with("https://"));
+    let image = match public {
+        Some(u) => Some(u),
+        None => crate::discord::public_cover(&state.http, &now.artist, now.album.as_deref(), &now.title).await,
+    }
+    .or_else(|| Some(crate::discord::app_icon(f)));
+    let link = link.filter(|l| l.starts_with("https://music.youtube.com/")).map(|l| ("Listen on YouTube Music".to_string(), l));
+    crate::discord::set(
+        f,
+        Some(crate::discord::Presence {
+            title: now.title,
+            artist: now.artist,
+            album: now.album,
+            image,
+            position_ms: now.position_ms,
+            duration_ms: now.duration_ms,
+            link,
+        }),
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub fn presence_clear(state: S) {
+    crate::discord::set(state.flavor, None);
 }
 
 /// Self-test progress (see ui/src/selftest.ts), appended to `selftest.log` in the data folder

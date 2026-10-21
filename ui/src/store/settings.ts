@@ -16,6 +16,8 @@ export interface Settings {
   closeToTray: boolean;
   /** Download new versions from GitHub in the background and install them on close (Windows). */
   autoUpdate: boolean;
+  /** Desktop: show the playing song on the user's Discord profile (Rich Presence). */
+  discordPresence: boolean;
   volume: number; // 0-1
   textScale: number; // 0.85 - 1.5
   reducedMotion: boolean;
@@ -38,6 +40,7 @@ export const defaults: Settings = {
   autoplaySimilar: false,
   closeToTray: false,
   autoUpdate: true,
+  discordPresence: true,
   volume: 0.8,
   textScale: 1,
   reducedMotion: false,

@@ -248,7 +248,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -363,6 +363,7 @@ export function SettingsPage() {
         <section>
           <h2>{t("window")}</h2>
           <Toggle k="closeToTray" label={t("closeToTray")} hint={t("closeToTrayHint")} />
+          {info?.capabilities.discordPresence && <Toggle k="discordPresence" label={t("discordPresence")} hint={t("discordPresenceHint")} />}
         </section>
       )}
 

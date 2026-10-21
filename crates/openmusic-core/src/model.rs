@@ -209,6 +209,9 @@ pub struct Capabilities {
     pub crossfade: bool,
     pub gapless: bool,
     pub favorites: bool,
+    /// Discord Rich Presence: desktop builds that have a Discord application id baked in.
+    #[serde(default)]
+    pub discord_presence: bool,
 }
 
 /// A YouTube identity the signed-in Google account can act as: the personal channel or a

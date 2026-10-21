@@ -5,6 +5,7 @@
 pub mod art;
 pub mod commands;
 pub mod db;
+pub mod discord;
 pub mod downloads;
 pub mod error;
 pub mod lastfm;
@@ -264,6 +265,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::autoplay_tracks,
             commands::media_update,
             commands::media_stop,
+            commands::presence_update,
+            commands::presence_clear,
             commands::self_test_log,
             commands::update_check,
             commands::update_download,
