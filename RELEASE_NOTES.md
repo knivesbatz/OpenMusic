@@ -1,8 +1,40 @@
-# OpenMusic 1.0.4
+# OpenMusic 1.0.5
 
-Fixes the freeze behind the Settings/playlist/closing hangs, and the first Android preview APKs.
+A big polish release: Spotify-style search and library, podcasts in YTSpot, online synced lyrics,
+playlist covers, automatic updates, and crossfade / next-song fixes.
 
-## New in 1.0.4
+## New in 1.0.5
+- **Crossfade and the next song**: the next song now starts by itself (and crossfade works) on
+  Windows and Android. The app's web view was blocking audio that didn't start from a click.
+- **Search** works like Spotify: a top result, songs, then rows of artists, albums and playlists
+  (YTSpot asks YouTube Music for each kind, so there are many more results).
+- **Your Library** uses the classic Spotify categories. On desktop: Recently played, Liked Songs,
+  Albums, Artists, Podcasts, Your Episodes, Local files and Downloads, then your playlists. On
+  phones: **Music / Podcasts** with Playlists, Artists and Albums tabs.
+- **Podcasts (YTSpot)**: follow shows, save episodes to **Your Episodes**, and a show page with
+  About, episodes and dates.
+- **Synced lyrics from the internet** (LRCLIB, then NetEase), no account or API key. They're only
+  looked up when the song doesn't already have lyrics (embedded `.lrc`/tags or Plex lyrics).
+- **Playlist covers**: click a playlist's cover (or use its menu) to pick your own image.
+- **Automatic updates**: the Windows apps check GitHub for new versions, download them in the
+  background and install when you close the app (or right away with "Restart now"). Settings →
+  About has "Check for updates". Android shows a banner that opens the new APK.
+- **YTSpot artists** show their subscriber count as followers, where Spotify shows monthly listeners.
+- **Older albums on YTSpot**: artist pages load the whole discography, not only the newest releases.
+- **Last.fm scrobbling is now off by default**. Turn it on in Settings after connecting Last.fm.
+- **Cleaner, closer to Spotify**: heart buttons for likes, a playlist header in Spotify's style,
+  the page title in the top bar when you scroll, light animations, and a playlist no longer
+  starts playing when you click it.
+- **Android**: covers load in PLEXSpot, the whole mini player opens the song screen, and YTSpot
+  sign-in works (Google was rejecting the app's built-in browser).
+- **TV mode**: arrow keys, remotes and controllers move between whole cards and rows reliably.
+- "Music videos for you" and other video shelves no longer appear on YTSpot's Home.
+- Fixed: the artist name overlapping the top bar when scrolling an artist page; artist circles
+  stretching to giant sizes; PLEXSpot not asking which Plex Home profile to use after signing in;
+  closing the app could hang.
+- **New installer look**: branded installer artwork, in English or Japanese to match Windows.
+
+## Also in 1.0.4
 - **The freeze is fixed**: opening Settings asked for the Last.fm status in a way that locked the
   app's database twice and waited on itself forever. In 1.0.1/1.0.2 that froze the window; in
   1.0.3 the window survived but everything that needed the database afterwards (saving settings
