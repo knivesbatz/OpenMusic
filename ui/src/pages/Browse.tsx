@@ -328,6 +328,22 @@ export function LibraryPage() {
           {t("sync")}
         </button>
       </div>
+      <div className="lib-links">
+        <button className="pill ghost small" onClick={() => navigate({ name: "local" })}>
+          {t("localFiles")}
+        </button>
+        {useApp.getState().info?.capabilities.downloads && (
+          <button className="pill ghost small" onClick={() => navigate({ name: "downloads" })}>
+            {t("downloads")}
+          </button>
+        )}
+        <button className="pill ghost small" onClick={() => navigate({ name: "import" })}>
+          {t("importSpotify")}
+        </button>
+        <button className="pill ghost small" onClick={() => navigate({ name: "settings" })}>
+          {t("settings")}
+        </button>
+      </div>
       <div className="chips">
         {(["playlists", "albums", "artists", "podcasts"] as const).map((f) => (
           <button key={f} className={cls("chip", tab === f && "on")} aria-pressed={tab === f} onClick={() => setTab(f)}>

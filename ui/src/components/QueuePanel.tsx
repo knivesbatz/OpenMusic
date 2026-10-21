@@ -8,7 +8,7 @@ import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { select, type QItem } from "../player/queue";
 import { openMenu, useUi } from "../store/ui";
-import { cls } from "../util";
+import { cls, isTouch } from "../util";
 import { ArtistName, JpText, TrackArt } from "./common";
 import { useDisplayTrack } from "../store/songmeta";
 import type { Track } from "../types";
@@ -114,7 +114,7 @@ export function QueuePanel() {
                 className={cls("q-row", current && "current", selected && "selected", dropAt === index && "drop-before", dropAt === index + 1 && index === queue.items.length - 1 && "drop-after")}
                 style={style}
                 draggable={!current}
-                onClick={(e) => !current && setSel((s) => select(order, s.selected, s.anchor, item.uid, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }))}
+                onClick={(e) => (isTouch() ? P.playUid(item.uid) : !current && setSel((s) => select(order, s.selected, s.anchor, item.uid, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey })))}
                 onDoubleClick={() => P.playUid(item.uid)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") P.playUid(item.uid);

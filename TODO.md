@@ -95,6 +95,20 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Last.fm: serialized queue flush (duplicate-scrobble race), repeat-one rescrobble, official
   artist for music videos, 10-min retry, revoked session handling
 
+## Android (started)
+- 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library
+- 🟡 Desktop-only features gated (`desktop`/`mobile` cfg from core build.rs; `OPENMUSIC_CHECK_MOBILE=1
+  cargo check` checks the mobile paths on a desktop host): single instance, launch at startup, mini
+  player window, OS keyring (Android: secrets file in app-private storage)
+- 🟡 Phone layout (≤760 px): bottom tabs, mini player with progress line, full-screen queue/player,
+  tap-to-play, long-press menus; checked in headless Chromium at 390×844 with touch
+- 🟡 YouTube sign-in on Android navigates the main webview to Google and back (Google may refuse
+  embedded sign-in; fallback: OAuth device-code flow)
+- 🟡 CI `android` job builds and signs arm64 APKs (non-blocking; throwaway key unless
+  `ANDROID_KEYSTORE` secret is set). Not yet run; Android SDK isn't reachable from the dev container
+- ⬜ Local music folders on Android (needs Storage Access Framework), background playback service,
+  media notification controls
+
 ## Known issues
 - YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
   with a toast.

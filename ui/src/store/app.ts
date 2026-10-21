@@ -158,3 +158,10 @@ export const isSaved = (id: string) => {
   const s = useApp.getState().saved;
   return s.albums.some((a) => a.id === id) || s.artists.some((a) => a.id === id);
 };
+
+/** Android/iOS build: no extra windows (mini player), no launch at startup, no folder picking. */
+export const isMobileApp = () => {
+  const p = useApp.getState().info?.platform;
+  return p === "android" || p === "ios";
+};
+

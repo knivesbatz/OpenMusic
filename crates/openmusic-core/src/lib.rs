@@ -59,7 +59,7 @@ fn init_state(app: &tauri::AppHandle, flavor: Flavor) -> Result<Arc<AppState>, B
         .connect_timeout(std::time::Duration::from_secs(8))
         .pool_max_idle_per_host(4)
         .build()?;
-    let secrets = secrets::Secrets::new(&app.config().identifier);
+    let secrets = secrets::Secrets::new(&app.config().identifier, &dirs.data);
     let yt_cookie = if flavor == Flavor::YouTube { secrets.get_large("yt.cookie").ok().flatten() } else { None };
     let plex_session = if flavor == Flavor::Plex { secrets.get_json::<plex::Session>("plex.session").ok().flatten() } else { None };
 
@@ -106,7 +106,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
     let state_slot: Arc<Mutex<Option<Arc<AppState>>>> = Arc::new(Mutex::new(None));
     let slot_for_protocol = state_slot.clone();
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.unminimize();
@@ -117,7 +119,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![commands::HTPC_ARG]),
-        ))
+        ));
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("art", move |_ctx, request, responder| {

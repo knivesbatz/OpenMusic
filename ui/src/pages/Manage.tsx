@@ -9,7 +9,7 @@ import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
-import { openProfilePicker, refreshPlaylists, setLocalOnly, useApp } from "../store/app";
+import { isMobileApp, openProfilePicker, refreshPlaylists, setLocalOnly, useApp } from "../store/app";
 import { useSettings, type Quality } from "../store/settings";
 import { confirmDialog, navigate, toast } from "../store/ui";
 import type { DownloadInfo, ImportReport, LastFmStatus, ScanReport, SpotifyPlaylist, Track } from "../types";
@@ -61,7 +61,7 @@ export function LocalPage() {
           <button className="pill ghost small" disabled={busy || !folders.length} onClick={() => run(api.localScan)}>
             {busy ? t("scanning") : t("rescan")}
           </button>
-          <button className="pill primary small" disabled={busy || !inTauri} onClick={add}>
+          <button className="pill primary small" disabled={busy || !inTauri || isMobileApp()} title={isMobileApp() ? t("localFilesMobile") : undefined} onClick={add}>
             {t("addFolder")}
           </button>
         </div>
@@ -473,7 +473,7 @@ export function SettingsPage() {
         <p className="muted small">{t("shortcuts")}</p>
       </section>
 
-      <section>
+      {!isMobileApp() && <section>
         <h2>{t("htpc")}</h2>
         <Toggle k="htpc" label={t("htpc")} hint={t("htpcHint")} />
         <label className={cls("setting", autostart === null && "disabled")}>
@@ -493,7 +493,7 @@ export function SettingsPage() {
             }}
           />
         </label>
-      </section>
+      </section>}
 
       <section>
         <h2>{t("lastfm")}</h2>

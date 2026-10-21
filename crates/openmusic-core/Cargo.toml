@@ -8,15 +8,12 @@ license.workspace = true
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
-tauri-plugin-autostart = "2"
 tiny_http = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net", "io-util"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "json", "stream"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
-keyring = { version = "3", features = ["windows-native"] }
 lofty = "0.22.2"
 walkdir = "2"
 sha1 = "0.10"
@@ -31,6 +28,13 @@ thiserror = "2"
 log = "0.4"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 uuid = { version = "1", features = ["v4"] }
+
+# Desktop only: single instance, launch at startup, OS credential store. On Android, secrets live
+# in the app's private storage (see secrets.rs).
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+keyring = { version = "3", features = ["windows-native"] }
 
 [dev-dependencies]
 tempfile = "3"

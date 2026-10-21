@@ -122,6 +122,8 @@ export interface AppInfo {
   capabilities: Capabilities;
   /** Local artwork server base URL; absent when it failed to start. */
   artBase?: string | null;
+  /** "windows", "macos", "linux", "android", "ios". */
+  platform?: string;
 }
 
 export interface PlayContext {

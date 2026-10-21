@@ -27,6 +27,8 @@ pub struct AppInfo {
     capabilities: Capabilities,
     /// Base URL of the local artwork server; the UI falls back to `art://` when absent.
     art_base: Option<String>,
+    /// "windows", "macos", "linux", "android", "ios".
+    platform: &'static str,
 }
 
 pub fn capabilities(f: Flavor) -> Capabilities {
@@ -45,6 +47,7 @@ pub fn app_info(app: AppHandle, state: S) -> AppInfo {
         version: app.package_info().version.to_string(),
         capabilities: capabilities(state.flavor),
         art_base: state.art_base.get().cloned(),
+        platform: std::env::consts::OS,
     }
 }
 
@@ -235,6 +238,51 @@ async fn yt_adopt_cookie(app: &AppHandle, state: &AppState, cookie: String) -> R
     Ok(())
 }
 
+/// Android allows a single window, so sign-in happens in the main webview: navigate it to the
+/// Google sign-in page, wait until it lands on music.youtube.com with a session, adopt the cookies
+/// and navigate back to the app (which then boots signed in).
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
+    let w = app.get_webview_window("main").ok_or_else(|| Error::Invalid("no main window".into()))?;
+    let back = w.url().map_err(|e| Error::Invalid(e.to_string()))?;
+    let url: tauri::Url = YT_LOGIN_URL.parse().map_err(|_| Error::Invalid("url".into()))?;
+    w.navigate(url).map_err(|e| Error::Invalid(e.to_string()))?;
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        // Up to 10 minutes to sign in.
+        for _ in 0..600 {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            let on_ytm = w.url().ok().map(|u| u.host_str() == Some("music.youtube.com")).unwrap_or(false);
+            // Back in the app (user pressed Back): give up quietly.
+            if w.url().ok().map(|u| u.origin() == back.origin()).unwrap_or(true) {
+                return;
+            }
+            if !on_ytm {
+                continue;
+            }
+            let cookie = read_cookies(&app, "main").await;
+            if ytm::sapisid(&cookie).is_none() {
+                continue;
+            }
+            let result = yt_adopt_cookie(&app, &state, cookie).await;
+            let _ = w.navigate(back.clone());
+            match result {
+                Ok(()) => {
+                    let _ = app.emit("login-done", ());
+                }
+                Err(e) => {
+                    let _ = app.emit("login-error", e.to_string());
+                }
+            }
+            return;
+        }
+        let _ = w.navigate(back);
+    });
+    Ok(())
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
     if let Some(w) = app.get_webview_window("ytlogin") {
@@ -282,6 +330,14 @@ pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
 /// Google rotates short-lived session cookies. On an auth failure, load music.youtube.com in a
 /// hidden window (same browser profile as the sign-in window) and pick up the fresh jar.
 pub async fn yt_refresh_session(app: &AppHandle, state: &AppState) -> bool {
+    // A hidden second window isn't possible on Android; there the user signs in again.
+    #[cfg(mobile)]
+    {
+        let _ = (app, state);
+        false
+    }
+    #[cfg(desktop)]
+    {
     {
         let mut last = state.last_yt_refresh.lock().unwrap();
         if last.map(|t| t.elapsed().as_secs() < 300).unwrap_or(false) {
@@ -313,6 +369,7 @@ pub async fn yt_refresh_session(app: &AppHandle, state: &AppState) -> bool {
         return true;
     }
     false
+    }
 }
 
 /// Run a YouTube call; on an auth failure refresh the cookie jar once and retry.
@@ -1078,6 +1135,14 @@ pub async fn clear_cache(state: S<'_>) -> Result<()> {
 
 // ---- windows --------------------------------------------------------------------------------
 
+/// The mini player is a second always-on-top window: desktop only (Android has one window).
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn pip_toggle(_app: AppHandle) -> Result<bool> {
+    Err(Error::Unsupported("mini player window".into()))
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn pip_toggle(app: AppHandle) -> Result<bool> {
     if let Some(w) = app.get_webview_window("pip") {
@@ -1100,8 +1165,11 @@ pub async fn pip_toggle(app: AppHandle) -> Result<bool> {
 #[tauri::command]
 pub fn focus_main(app: AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
-        let _ = w.unminimize();
-        let _ = w.show();
+        #[cfg(desktop)]
+        {
+            let _ = w.unminimize();
+            let _ = w.show();
+        }
         let _ = w.set_focus();
     }
 }
@@ -1117,18 +1185,32 @@ pub fn htpc_launch() -> bool {
     std::env::args().any(|a| a == HTPC_ARG)
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn htpc_autostart_get(app: AppHandle) -> Result<bool> {
     use tauri_plugin_autostart::ManagerExt;
     app.autolaunch().is_enabled().map_err(|e| Error::Invalid(e.to_string()))
 }
 
+#[cfg(desktop)]
 #[tauri::command]
 pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
     use tauri_plugin_autostart::ManagerExt;
     let al = app.autolaunch();
     let r = if enabled { al.enable() } else { al.disable() };
     r.map_err(|e| Error::Invalid(e.to_string()))
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub fn htpc_autostart_get(_app: AppHandle) -> Result<bool> {
+    Err(Error::Unsupported("launch at startup".into()))
+}
+
+#[cfg(mobile)]
+#[tauri::command]
+pub fn htpc_autostart_set(_app: AppHandle, _enabled: bool) -> Result<()> {
+    Err(Error::Unsupported("launch at startup".into()))
 }
 
 // ---- likes ----------------------------------------------------------------------------------

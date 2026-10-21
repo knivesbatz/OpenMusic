@@ -7,6 +7,7 @@ import { usePlayer } from "../player/engine";
 import * as P from "../player/engine";
 import { useSettings } from "../store/settings";
 import { useDisplayTrack } from "../store/songmeta";
+import { isMobileApp } from "../store/app";
 import { useUi } from "../store/ui";
 import type { Lyrics, Track } from "../types";
 import { cls } from "../util";
@@ -128,7 +129,7 @@ export function Fullscreen() {
           <button className={cls("icon-btn", queueOpen && "on")} aria-pressed={queueOpen} aria-label={t("queue")} title={t("queue")} onClick={() => useUi.setState({ queueOpen: !queueOpen })}>
             <I.IQueue size={20} />
           </button>
-          {inTauri && (
+          {inTauri && !isMobileApp() && (
             <button className={cls("icon-btn", osFull && "on")} aria-pressed={osFull} aria-label={t("fullscreenWindow")} title={t("fullscreenWindow")} onClick={toggleOsFullscreen}>
               <I.IFullscreen size={20} />
             </button>
