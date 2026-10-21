@@ -20,12 +20,19 @@ export function errorCode(e: unknown): string | undefined {
 
 const isWindows = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
+/** Local artwork server (`http://127.0.0.1:<port>/<token>`), set from `app_info` at startup. */
+let artBase: string | null = null;
+export const setArtBase = (base: string | null | undefined) => {
+  artBase = base ? base.replace(/\/$/, "") + "/" : null;
+};
+
 /** Resolve an `art://…` reference to a URL the webview can load (served by the Rust art cache). */
 export function artUrl(ref: string | null | undefined, size = 300): string | undefined {
   if (!ref) return undefined;
   if (!ref.startsWith("art://")) return ref;
   const rest = ref.slice("art://".length);
-  const base = isWindows ? "http://art.localhost/" : "art://localhost/";
+  // Prefer the local HTTP server: image requests cancelled by scrolling are routine there.
+  const base = artBase ?? (isWindows ? "http://art.localhost/" : "art://localhost/");
   const sep = rest.includes("?") ? "&" : "?";
   return base + rest + sep + "s=" + size;
 }
@@ -61,6 +68,8 @@ export const api = {
   markPlayed: (track: T.Track) => call<void>("mark_played", { track }),
   rate: (track: T.Track, liked: boolean) => call<void>("rate", { track, liked }),
   likedIds: () => call<string[]>("liked_ids"),
+  plexHomeUsers: () => call<T.PlexUser[]>("plex_home_users"),
+  plexSwitchUser: (uuid: string, pin: string | null) => call<void>("plex_switch_user", { uuid, pin }),
   ytAccounts: () => call<T.YtAccount[]>("yt_accounts"),
   ytSelectAccount: (pageId: string | null, name: string) => call<void>("yt_select_account", { pageId, name }),
   ytSongMeta: (videoIds: string[]) => call<Record<string, T.SongMeta>>("yt_song_meta", { videoIds }),
@@ -112,6 +121,7 @@ export const api = {
 
   pipToggle: () => call<boolean>("pip_toggle"),
   focusMain: () => call<void>("focus_main"),
+  logUiError: (message: string) => call<void>("log_ui_error", { message }),
   htpcLaunch: () => call<boolean>("htpc_launch"),
   htpcAutostartGet: () => call<boolean>("htpc_autostart_get"),
   htpcAutostartSet: (enabled: boolean) => call<void>("htpc_autostart_set", { enabled }),

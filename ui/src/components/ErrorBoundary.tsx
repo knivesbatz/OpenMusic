@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import { api, inTauri } from "../api";
 import { translate } from "../i18n";
 import { useSettings } from "../store/settings";
 
@@ -27,6 +28,7 @@ export class ErrorBoundary extends Component<Props, { error: Error | null; key: 
 
   componentDidCatch(error: Error, info: { componentStack?: string | null }) {
     console.error("UI error", error, info.componentStack);
+    if (inTauri) api.logUiError(`render error: ${error.message}\n${error.stack ?? ""}\n${info.componentStack ?? ""}`.slice(0, 4000)).catch(() => {});
   }
 
   render() {

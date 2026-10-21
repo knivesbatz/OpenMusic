@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api, errorCode, errorMessage, inTauri } from "../api";
 import type { Album, AppInfo, Artist, AuthStatus, Library, Playlist } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { translate } from "../i18n";
 import { useSettings } from "./settings";
 import { toast } from "./ui";
 
@@ -39,15 +40,17 @@ export const useApp = create<AppStore>(() => ({
 export const openProfilePicker = () => useApp.setState({ profilePicker: true });
 export const closeProfilePicker = () => useApp.setState({ profilePicker: false });
 
-/** After a YouTube sign-in, ask once which channel to use when the account has several. */
+/** After sign-in, ask once which profile to use when the account has several (YouTube channels
+ * or Plex Home users). */
 async function maybeAskProfile() {
   const s = useApp.getState();
-  if (s.info?.flavor !== "youtube" || !s.auth?.signedIn) return;
-  if (await api.kvGet<boolean>("yt.profileChosen").catch(() => true)) return;
+  if (!s.auth?.signedIn || s.auth.needsServer) return;
+  const key = s.info?.flavor === "plex" ? "plex.profileChosen" : "yt.profileChosen";
+  if (await api.kvGet<boolean>(key).catch(() => true)) return;
   try {
-    const list = await api.ytAccounts();
+    const list = s.info?.flavor === "plex" ? await api.plexHomeUsers() : await api.ytAccounts();
     if (list.length > 1) openProfilePicker();
-    else await api.kvSet("yt.profileChosen", true);
+    else await api.kvSet(key, true);
   } catch {
     /* ask again next time */
   }
@@ -89,6 +92,7 @@ export async function boot() {
     useApp.setState((s) => ({ auth: s.auth ? { ...s.auth, signedIn: false } : s.auth }));
     toast("Your session expired. Please sign in again.");
   });
+  listen("lastfm-auth-expired", () => toast(translate(useSettings.getState().language, "lastfmExpired")));
   listen<string>("connection-changed", (e) => useApp.setState({ online: e.payload === "online" }));
   listen("playlists-changed", () => {
     refreshPlaylists();

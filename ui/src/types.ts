@@ -120,6 +120,8 @@ export interface AppInfo {
   name: string;
   version: string;
   capabilities: Capabilities;
+  /** Local artwork server base URL; absent when it failed to start. */
+  artBase?: string | null;
 }
 
 export interface PlayContext {
@@ -229,5 +231,15 @@ export interface SongMeta {
   artistId?: string | null;
   album?: string | null;
   albumId?: string | null;
+}
+
+export interface PlexUser {
+  uuid: string;
+  title: string;
+  thumb?: string | null;
+  admin: boolean;
+  /** Switching needs the user's PIN. */
+  protected: boolean;
+  selected: boolean;
 }
 

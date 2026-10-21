@@ -18,7 +18,7 @@ export interface PlayerState {
   duration: number; // seconds
   shuffle: boolean;
   repeat: Q.Repeat;
-  /** Kind of output for the current track; YouTube has no crossfade/gapless. */
+  /** Kind of output for the current track. */
   output: "audio" | "youtube" | null;
   quality: string | null;
   offline: boolean;
@@ -50,8 +50,36 @@ let active = 0;
 let preloaded: { uid: string; src: string } | null = null;
 let fading = false;
 let fadeTimer: ReturnType<typeof setInterval> | undefined;
-let yt: YouTubeOutput | null = null;
 let loadToken = 0;
+
+/**
+ * Two YouTube players, like the two audio decks: the idle one cues the next video so it can
+ * crossfade in or start the moment the current one ends.
+ */
+const ytDecks: YouTubeOutput[] = [];
+let ytActive = 0;
+let ytPreloaded: { uid: string; videoId: string; ready: boolean } | null = null;
+
+function ytDeck(i = ytActive): YouTubeOutput {
+  while (ytDecks.length < 2) {
+    const idx = ytDecks.length;
+    const mine = () => idx === ytActive && get().output === "youtube";
+    ytDecks.push(
+      new YouTubeOutput({
+        onTime: (t, d) => mine() && onTime(t, d),
+        onEnded: () => mine() && onEnded(),
+        onState: (p) => mine() && !fading && set({ playing: p }),
+        onError: (m) => mine() && onError(m),
+      }),
+    );
+  }
+  return ytDecks[i];
+}
+
+function stopYouTube() {
+  for (const d of ytDecks) d.stop();
+  ytPreloaded = null;
+}
 let scrobble: { uid: string; startedAt: number; done: boolean; playedMs: number; lastTick: number } | null = null;
 
 function deck(i = active) {
@@ -88,7 +116,7 @@ function stopAll() {
     a.load();
   }
   preloaded = null;
-  yt?.stop();
+  stopYouTube();
 }
 
 // ---- stream resolution -----------------------------------------------------------------------
@@ -144,20 +172,28 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
       startedTrack(item);
       return;
     }
+    // Same for a YouTube video cued on the idle player.
+    if (ytPreloaded && ytPreloaded.uid === item.uid && ytPreloaded.ready) {
+      ytDeck().stop();
+      ytActive = 1 - ytActive;
+      ytPreloaded = null;
+      const d = ytDeck();
+      d.setVolume(volume());
+      if (autoplay) d.play();
+      set({ loading: false, output: "youtube", quality: null, offline: false });
+      startedTrack(item);
+      return;
+    }
     const stream = await resolve(item.track);
     if (token !== loadToken) return;
     for (const a of decks) a.pause();
     if (stream.kind === "youtube") {
-      yt ??= new YouTubeOutput({
-        onTime: (t, d) => get().output === "youtube" && onTime(t, d),
-        onEnded: () => get().output === "youtube" && onEnded(),
-        onState: (p) => get().output === "youtube" && set({ playing: p }),
-        onError: (m) => get().output === "youtube" && onError(m),
-      });
       set({ output: "youtube", quality: null, offline: false });
-      await yt.load(stream.videoId, startAt, autoplay, volume());
+      if (ytDecks.length) ytDeck(1 - ytActive).stop();
+      ytPreloaded = null;
+      await ytDeck().load(stream.videoId, startAt, autoplay, volume());
     } else {
-      yt?.stop();
+      stopYouTube();
       const a = deck();
       a.src = srcOf(stream)!;
       a.volume = volume();
@@ -179,7 +215,8 @@ function startedTrack(item: Q.QItem) {
   if (!inTauri) return;
   const ctx = get().context;
   api.recordPlay(item.track, ctx).catch(() => {});
-  if (useSettings.getState().scrobble && !item.track.episode) api.lastfmNowPlaying(item.track).catch(() => {});
+  // Last.fm gets the official artist/album of YouTube music videos, not the uploader.
+  if (useSettings.getState().scrobble && !item.track.episode) api.lastfmNowPlaying(displayTrack(item.track)).catch(() => {});
   persistSoon();
 }
 
@@ -200,21 +237,83 @@ function onTime(t: number, d: number) {
   set({ position: t, duration: dur });
   if (t > 1) errorStreak = 0;
   trackScrobble();
-  if (s.output !== "audio" || !s.playing) return;
+  if (!s.output || !s.playing) return;
   const remaining = dur - t;
   const settings = useSettings.getState();
   const nextI = Q.nextIndex(s.queue, s.repeat, false);
   const nextItem = nextI >= 0 && nextI !== s.queue.index ? s.queue.items[nextI] : undefined;
-  if (!nextItem || nextItem.track.source === "youtube") return;
+  if (!nextItem) return;
+  // Blending needs both tracks on the same kind of output (two audio decks or two players).
+  const yt = s.output === "youtube";
+  if (yt !== (nextItem.track.source === "youtube")) return;
   const cur = Q.current(s.queue)!;
   const fade = crossfadeSeconds(cur.track, nextItem.track);
-  // Preload the next stream ahead of time: makes gapless and crossfade start instantly.
-  if ((settings.gapless || fade > 0) && remaining < Math.max(20, fade + 8) && preloaded?.uid !== nextItem.uid) {
-    preload(nextItem);
+  const ahead = remaining < Math.max(20, fade + 8);
+  // Preload the next track ahead of time: makes gapless and crossfade start instantly.
+  if (yt) {
+    if ((settings.gapless || fade > 0) && ahead && ytPreloaded?.uid !== nextItem.uid) preloadYouTube(nextItem);
+    if (fade > 0 && !fading && remaining <= fade && remaining > 0.25 && ytPreloaded?.uid === nextItem.uid && ytPreloaded.ready) {
+      crossfadeYouTube(nextI, fade);
+    }
+    return;
   }
+  if ((settings.gapless || fade > 0) && ahead && preloaded?.uid !== nextItem.uid) preload(nextItem);
   if (fade > 0 && !fading && remaining <= fade && remaining > 0.25 && preloaded?.uid === nextItem.uid) {
     crossfadeTo(nextI, fade);
   }
+}
+
+async function preloadYouTube(item: Q.QItem) {
+  ytPreloaded = { uid: item.uid, videoId: "", ready: false };
+  try {
+    const stream = await resolve(item.track);
+    if (stream.kind !== "youtube" || ytPreloaded?.uid !== item.uid) return;
+    ytPreloaded.videoId = stream.videoId;
+    // Cued (not playing) and silent until the transition.
+    await ytDeck(1 - ytActive).load(stream.videoId, 0, false, 0);
+    if (ytPreloaded?.uid === item.uid) ytPreloaded.ready = true;
+  } catch {
+    ytPreloaded = null;
+  }
+}
+
+function crossfadeYouTube(nextI: number, seconds: number) {
+  const from = ytDeck();
+  const to = ytDeck(1 - ytActive);
+  fading = true;
+  to.setVolume(0);
+  to.play();
+  ytActive = 1 - ytActive;
+  ytPreloaded = null;
+  set({ queue: Q.advance(get().queue, nextI), position: 0, playing: true });
+  const item = Q.current(get().queue);
+  if (item) startedTrack(item);
+  runFade(
+    seconds,
+    (inV, outV) => {
+      to.setVolume(inV);
+      from.setVolume(outV);
+    },
+    () => from.stop(),
+  );
+}
+
+/** Equal-power fade over `seconds`, calling `apply(incoming, outgoing)` volumes every 50 ms. */
+function runFade(seconds: number, apply: (inV: number, outV: number) => void, done: () => void) {
+  const steps = Math.max(1, Math.round((seconds * 1000) / 50));
+  let step = 0;
+  clearInterval(fadeTimer);
+  fadeTimer = setInterval(() => {
+    step++;
+    const v = volume();
+    const k = Math.min(1, step / steps);
+    apply(v * Math.sin((k * Math.PI) / 2), v * Math.cos((k * Math.PI) / 2));
+    if (k >= 1) {
+      clearInterval(fadeTimer);
+      done();
+      fading = false;
+    }
+  }, 50);
 }
 
 /** Crossfade length between two tracks, respecting Automix (never fade inside an album). */
@@ -254,22 +353,14 @@ function crossfadeTo(nextI: number, seconds: number) {
   set({ queue: Q.advance(get().queue, nextI), position: 0 });
   const item = Q.current(get().queue);
   if (item) startedTrack(item);
-  const steps = Math.max(1, Math.round((seconds * 1000) / 50));
-  let step = 0;
-  clearInterval(fadeTimer);
-  fadeTimer = setInterval(() => {
-    step++;
-    const v = volume();
-    const k = Math.min(1, step / steps);
-    // Equal-power curve keeps loudness steady through the fade.
-    to.volume = v * Math.sin((k * Math.PI) / 2);
-    from.volume = v * Math.cos((k * Math.PI) / 2);
-    if (k >= 1) {
-      clearInterval(fadeTimer);
-      from.pause();
-      fading = false;
-    }
-  }, 50);
+  runFade(
+    seconds,
+    (inV, outV) => {
+      to.volume = inV;
+      from.volume = outV;
+    },
+    () => from.pause(),
+  );
 }
 
 function onEnded() {
@@ -280,8 +371,11 @@ function onEnded() {
     return;
   }
   if (i === s.queue.index) {
+    // Repeat one: every replay is a new listen (Last.fm scrobble and history).
     seek(0);
     play();
+    const item = Q.current(s.queue);
+    if (item) startedTrack(item);
     return;
   }
   set({ queue: Q.advance(s.queue, i) });
@@ -319,7 +413,7 @@ function trackScrobble() {
     scrobble.done = true;
     if (inTauri) {
       api.markPlayed(item.track).catch(() => {});
-      if (useSettings.getState().scrobble) api.lastfmScrobble(item.track, scrobble.startedAt).catch(() => {});
+      if (useSettings.getState().scrobble) api.lastfmScrobble(displayTrack(item.track), scrobble.startedAt).catch(() => {});
     }
   }
 }
@@ -373,8 +467,9 @@ usePlayer.subscribe((s, prev) => {
 // Volume follows settings.
 useSettings.subscribe((s, prev) => {
   if (s.volume === prev.volume) return;
-  if (!fading && decks.length) deck().volume = s.volume;
-  yt?.setVolume(s.volume);
+  if (fading) return; // the fade reads the volume on every step
+  if (decks.length) deck().volume = s.volume;
+  if (ytDecks.length) ytDeck().setVolume(s.volume);
 });
 
 // ---- public commands -------------------------------------------------------------------------
@@ -401,17 +496,28 @@ export function play() {
     loadCurrent(true, s.position);
     return;
   }
-  if (s.output === "youtube") yt?.play();
+  if (s.output === "youtube") ytDeck().play();
   else deck().play().catch((e) => onError(errorMessage(e)));
 }
 
 export function pause() {
-  if (get().output === "youtube") yt?.pause();
-  else if (decks.length) {
+  // Pausing mid-fade finishes the transition: the outgoing track stops, the new one keeps its place.
+  const midFade = fading;
+  if (midFade) {
+    clearInterval(fadeTimer);
+    fading = false;
+  }
+  if (get().output === "youtube") {
+    if (ytDecks.length) {
+      ytDeck().pause();
+      if (midFade) {
+        ytDeck(1 - ytActive).stop();
+        ytDeck().setVolume(volume());
+      }
+    }
+  } else if (decks.length) {
     deck().pause();
-    if (fading) {
-      clearInterval(fadeTimer);
-      fading = false;
+    if (midFade) {
       deck(1 - active).pause();
       deck().volume = volume();
     }
@@ -448,7 +554,7 @@ export function previous() {
 export function seek(seconds: number) {
   const s = get();
   const t = Math.max(0, Math.min(seconds, s.duration || seconds));
-  if (s.output === "youtube") yt?.seek(t);
+  if (s.output === "youtube") ytDecks.length && ytDeck().seek(t);
   else if (decks.length && deck().src) deck().currentTime = t;
   set({ position: t });
 }

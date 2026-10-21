@@ -80,6 +80,7 @@ fn init_state(app: &tauri::AppHandle, flavor: Flavor) -> Result<Arc<AppState>, B
         downloads: Mutex::new(Default::default()),
         download_slots: Arc::new(Semaphore::new(2)),
         art_slots: Arc::new(Semaphore::new(6)),
+        art_base: std::sync::OnceLock::new(),
         scanning: AtomicBool::new(false),
         last_yt_refresh: Mutex::new(None),
     }))
@@ -134,6 +135,13 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             install_crash_log(&handle);
             let state = init_state(&handle, flavor)?;
             *state_slot.lock().unwrap() = Some(state.clone());
+            match art::start_server(state.clone()) {
+                Ok(base) => {
+                    let _ = state.art_base.set(base);
+                }
+                // The UI falls back to the art:// protocol.
+                Err(e) => log::warn!("artwork server failed to start: {e}"),
+            }
             app.manage(state.clone());
 
             downloads::recover(&state);
@@ -156,6 +164,16 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 commands::flush_scrobbles(&h, &st).await;
                 let art_dir = st.dirs.art.clone();
                 let _ = tauri::async_runtime::spawn_blocking(move || art::prune(&art_dir)).await;
+            });
+            // Scrobbles that failed while offline are retried every 10 minutes, not only when the
+            // next track is scrobbled.
+            let st = state.clone();
+            let h = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(600)).await;
+                    commands::flush_scrobbles(&h, &st).await;
+                }
             });
             Ok(())
         })
@@ -237,7 +255,10 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::focus_main,
             commands::liked_ids,
             commands::localized_artist_names,
+            commands::log_ui_error,
             commands::yt_accounts,
+            commands::plex_home_users,
+            commands::plex_switch_user,
             commands::yt_select_account,
             commands::yt_song_meta,
             commands::saved_list,

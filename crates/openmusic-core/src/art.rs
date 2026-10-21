@@ -41,8 +41,70 @@ fn not_found() -> Response<Vec<u8>> {
 
 pub async fn handle(state: Arc<AppState>, req: Request<Vec<u8>>) -> Response<Vec<u8>> {
     let uri = req.uri();
-    let path = uri.path().to_string();
-    let query = uri.query().unwrap_or("").to_string();
+    match serve(state, uri.path(), uri.query().unwrap_or("")).await {
+        Some(bytes) => respond(bytes),
+        None => not_found(),
+    }
+}
+
+/// Local HTTP server for artwork, used by the UI instead of the `art://` protocol.
+///
+/// WebView2 cancels image requests whenever a list scrolls or a page changes; answering
+/// cancelled requests through an asynchronous custom protocol is a known source of native
+/// crashes, while a cancelled HTTP request is routine. The server listens on 127.0.0.1 only, on
+/// a random port, and every URL must start with a random per-launch token so other local
+/// programs or web pages cannot use it to reach the user's Plex server.
+pub fn start_server(state: Arc<AppState>) -> std::io::Result<String> {
+    let server = Arc::new(tiny_http::Server::http("127.0.0.1:0").map_err(|e| std::io::Error::other(e.to_string()))?);
+    let port = server.server_addr().to_ip().map(|a| a.port()).ok_or_else(|| std::io::Error::other("no port"))?;
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    let prefix = format!("/{token}/");
+    for _ in 0..4 {
+        let server = server.clone();
+        let state = state.clone();
+        let prefix = prefix.clone();
+        std::thread::Builder::new().name("art-server".into()).spawn(move || {
+            for req in server.incoming_requests() {
+                let body = match route(req.url(), &prefix) {
+                    Some((path, query)) if req.method() == &tiny_http::Method::Get => {
+                        tauri::async_runtime::block_on(serve(state.clone(), &path, &query))
+                    }
+                    _ => None,
+                };
+                // A failed respond means the webview cancelled the request: nothing to do.
+                let _ = match body {
+                    Some(bytes) => {
+                        let ct = mime(&bytes);
+                        let headers = [
+                            tiny_http::Header::from_bytes("Content-Type", ct).ok(),
+                            tiny_http::Header::from_bytes("Cache-Control", "max-age=604800, immutable").ok(),
+                            tiny_http::Header::from_bytes("Access-Control-Allow-Origin", "*").ok(),
+                        ];
+                        let mut resp = tiny_http::Response::from_data(bytes);
+                        for h in headers.into_iter().flatten() {
+                            resp.add_header(h);
+                        }
+                        req.respond(resp)
+                    }
+                    None => req.respond(tiny_http::Response::empty(404)),
+                };
+            }
+        })?;
+    }
+    Ok(format!("http://127.0.0.1:{port}/{token}"))
+}
+
+/// Split a server request URL into the artwork path and query, if it carries the token prefix.
+fn route(url: &str, prefix: &str) -> Option<(String, String)> {
+    let (path, query) = url.split_once('?').unwrap_or((url, ""));
+    let rest = path.strip_prefix(prefix)?;
+    Some((format!("/{rest}"), query.to_string()))
+}
+
+/// Resolve an artwork path (`/local/<file>`, `/plex/<thumb>`, `/url/<encoded>`) to image bytes,
+/// from the disk cache or upstream.
+async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>> {
+    let path = path.to_string();
     let size: u32 = url::form_urlencoded::parse(query.as_bytes())
         .find(|(k, _)| k == "s")
         .and_then(|(_, v)| v.parse().ok())
@@ -52,41 +114,38 @@ pub async fn handle(state: Arc<AppState>, req: Request<Vec<u8>>) -> Response<Vec
     // Local embedded artwork extracted during scans.
     if let Some(name) = path.strip_prefix("/local/") {
         if name.contains("..") || name.contains('/') || name.contains('\\') {
-            return not_found();
+            return None;
         }
-        return match tokio::fs::read(state.dirs.local_art.join(name)).await {
-            Ok(b) => respond(b),
-            Err(_) => not_found(),
-        };
+        return tokio::fs::read(state.dirs.local_art.join(name)).await.ok();
     }
 
     let key = hex::encode(Sha1::digest(format!("{path}|{size}").as_bytes()));
     let file = state.dirs.art.join(&key[..2]).join(&key);
     if let Ok(b) = tokio::fs::read(&file).await {
-        return respond(b);
+        return Some(b);
     }
 
     let upstream = if let Some(thumb) = path.strip_prefix("/plex") {
         match state.plex_session.read().await.as_ref() {
             Some(sess) => state.plex.art_url(sess, thumb, size),
-            None => return not_found(),
+            None => return None,
         }
     } else if let Some(enc) = path.strip_prefix("/url/") {
         match urlencoding::decode(enc) {
             Ok(u) if u.starts_with("https://") || u.starts_with("http://") => u.into_owned(),
-            _ => return not_found(),
+            _ => return None,
         }
     } else {
-        return not_found();
+        return None;
     };
 
     let _permit = state.art_slots.acquire().await;
     let bytes = match state.http.get(&upstream).timeout(std::time::Duration::from_secs(20)).send().await {
         Ok(r) if r.status().is_success() => match r.bytes().await {
             Ok(b) => b.to_vec(),
-            Err(_) => return not_found(),
+            Err(_) => return None,
         },
-        _ => return not_found(),
+        _ => return None,
     };
     if mime(&bytes).starts_with("image/") {
         if let Some(dir) = file.parent() {
@@ -98,7 +157,7 @@ pub async fn handle(state: Arc<AppState>, req: Request<Vec<u8>>) -> Response<Vec
             let _ = tokio::fs::rename(&tmp, &file).await;
         }
     }
-    respond(bytes)
+    Some(bytes)
 }
 
 pub fn dir_size(p: &Path) -> u64 {
@@ -137,3 +196,18 @@ pub fn prune(dir: &Path) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn server_routes_only_tokened_urls() {
+        let p = "/tok123/";
+        assert_eq!(route("/tok123/url/https%3A%2F%2Fx%2Fy.jpg?s=300", p), Some(("/url/https%3A%2F%2Fx%2Fy.jpg".into(), "s=300".into())));
+        assert_eq!(route("/tok123/plex/library/metadata/1/thumb/2", p), Some(("/plex/library/metadata/1/thumb/2".into(), "".into())));
+        assert_eq!(route("/url/https%3A%2F%2Fx", p), None);
+        assert_eq!(route("/other/url/x", p), None);
+    }
+}
+
