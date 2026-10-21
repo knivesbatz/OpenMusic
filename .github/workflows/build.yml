@@ -249,6 +249,56 @@ jobs:
           if (Test-Path $exe) { throw "uninstall left $exe behind" }
           Write-Host "Uninstalled"
 
+  # Drives the real installed app through tauri-driver/WebDriver to reproduce UI crashes in
+  # WebView2. Diagnostic for now: it reports but doesn't block releases.
+  windows-ui:
+    needs: bundle
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          name: ytspot-windows
+          path: new
+      - name: Install YTSpot, tauri-driver and a matching msedgedriver
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Start-Process (Get-ChildItem new -Filter *.exe | Select-Object -First 1).FullName -ArgumentList '/S' -Wait
+          cargo install tauri-driver --locked
+          $wv = (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv
+          if (-not $wv) { $wv = (Get-Item "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe").VersionInfo.ProductVersion }
+          Write-Host "WebView2 runtime $wv"
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$wv/edgedriver_win64.zip" -OutFile edgedriver.zip
+          Expand-Archive edgedriver.zip -DestinationPath edgedriver
+          npm install --no-save selenium-webdriver@4.27.0
+        working-directory: ui
+      - name: Drive the app (settings, scrolling, mini player, fullscreen)
+        shell: pwsh
+        run: |
+          $driver = Start-Process tauri-driver -ArgumentList "--native-driver", "$PWD\edgedriver\msedgedriver.exe" -PassThru
+          Start-Sleep -Seconds 3
+          node e2e/windows-app.mjs "$env:LOCALAPPDATA\YTSpot\YTSpot.exe"
+          $code = $LASTEXITCODE
+          Stop-Process -Id $driver.Id -ErrorAction SilentlyContinue
+          exit $code
+        working-directory: ui
+      - name: Crash evidence (crash.log, Windows error reports)
+        if: always()
+        shell: pwsh
+        run: |
+          $log = "$env:APPDATA\app.openmusic.ytspot\crash.log"
+          if (Test-Path $log) { Write-Host "---- crash.log ----"; Get-Content $log } else { Write-Host "no crash.log" }
+          Write-Host "---- Application event log (YTSpot / WebView2) ----"
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-30) } -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'YTSpot|msedgewebview2|WebView2' } |
+            Select-Object -First 20 | Format-List TimeCreated, ProviderName, Id, Message
+
   release:
     needs: [bundle, install-test]
     if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''

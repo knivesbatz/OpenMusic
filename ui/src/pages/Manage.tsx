@@ -458,7 +458,10 @@ export function SettingsPage() {
         </button>
       </section>
 
-      <p className="muted small">{info && `${info.name} — ${t("version", { v: info.version })}`}</p>
+      <footer className="credits">
+        <p>{t("publishedBy", { name: "マッキニー マイヤ" })}</p>
+        <p className="muted small">{info && `${info.name} — ${t("version", { v: info.version })}`}</p>
+      </footer>
     </div>
   );
 }

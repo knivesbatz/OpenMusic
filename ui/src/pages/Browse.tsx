@@ -238,8 +238,12 @@ export function Search({ q }: { q: string }) {
   const r = res;
   // Full list for the active filter once loaded; the overview's results meanwhile.
   const fr = filter !== "all" && kindRes?.key === filter + "\u0000" + query.toLowerCase() ? kindRes.res : r;
-  const songs = r ? r.tracks.filter((x) => x.source !== "local") : [];
-  const localSongs = r ? r.tracks.filter((x) => x.source === "local") : [];
+  // Local files blend into the song list (they carry a "Local file" badge): up to 2 of the
+  // overview's 4 spots, so they're visible without a separate section.
+  const provider = r ? r.tracks.filter((x) => x.source !== "local") : [];
+  const local = r ? r.tracks.filter((x) => x.source === "local") : [];
+  const nLocal = Math.min(2, local.length);
+  const songs = [...provider.slice(0, 4 - nLocal), ...local.slice(0, nLocal), ...provider.slice(4 - nLocal), ...local.slice(nLocal)];
   return (
     <div className="page search">
       <div className="chips">
@@ -277,12 +281,6 @@ export function Search({ q }: { q: string }) {
               </section>
             )}
           </div>
-          {localSongs.length > 0 && (
-            <section>
-              <h2>{t("onThisComputer")}</h2>
-              <TrackList tracks={localSongs} limit={5} context={ctx} numbered={false} />
-            </section>
-          )}
           <CardShelf title={t("artists")} items={r.artists.map((a) => ({ type: "artist" as const, ...a }))} />
           <CardShelf title={t("albums")} items={r.albums.map((a) => ({ type: "album" as const, ...a }))} />
           <CardShelf title={t("playlists")} items={r.playlists.map((a) => ({ type: "playlist" as const, ...a }))} />
