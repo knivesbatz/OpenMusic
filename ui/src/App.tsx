@@ -12,7 +12,7 @@ import { Loading } from "./components/common";
 import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
 import * as P from "./player/engine";
-import { useApp } from "./store/app";
+import { isMobileApp, useApp } from "./store/app";
 import { useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
 import { Home, LibraryPage, Search } from "./pages/Browse";
@@ -69,7 +69,8 @@ export function App() {
   const queueOpen = useUi((s) => s.queueOpen);
   const fullscreen = useUi((s) => s.fullscreen);
   const pos = useUi((s) => s.pos);
-  const htpc = useSettings((s) => s.htpc);
+  // TV mode is a desktop (HTPC) feature; the phone app never uses it.
+  const htpc = useSettings((s) => s.htpc) && !isMobileApp();
   const profilePicker = useApp((s) => s.profilePicker);
   const scroll = useRef<HTMLElement>(null);
 

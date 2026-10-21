@@ -87,7 +87,7 @@ pub fn start(app: AppHandle, state: Arc<AppState>) {
         .ok();
 }
 
-fn append(state: &AppState, line: &str) {
+pub(crate) fn append(state: &AppState, line: &str) {
     use std::io::Write;
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(state.dirs.data.join("crash.log")) {
         let _ = writeln!(f, "[{}] v{} {line}", crate::db::now(), env!("CARGO_PKG_VERSION"));

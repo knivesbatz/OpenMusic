@@ -101,6 +101,17 @@ fn route(url: &str, prefix: &str) -> Option<(String, String)> {
     Some((format!("/{rest}"), query.to_string()))
 }
 
+/// The first artwork download that fails in a session goes to crash.log (server and path only,
+/// never the query, which carries the Plex token), so "covers don't load" reports have a cause.
+fn note_failure(state: &AppState, upstream: &str, why: &str) -> Option<Vec<u8>> {
+    static LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        let shown = upstream.split('?').next().unwrap_or_default();
+        crate::watchdog::append(state, &format!("artwork download failed ({why}): {shown}"));
+    }
+    None
+}
+
 fn cache_file(state: &AppState, path: &str, size: u32) -> PathBuf {
     let key = hex::encode(Sha1::digest(format!("{path}|{size}").as_bytes()));
     state.dirs.art.join(&key[..2]).join(&key)
@@ -164,9 +175,10 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
     let bytes = match state.http.get(&upstream).timeout(std::time::Duration::from_secs(20)).send().await {
         Ok(r) if r.status().is_success() => match r.bytes().await {
             Ok(b) => b.to_vec(),
-            Err(_) => return None,
+            Err(e) => return note_failure(&state, &upstream, &e.to_string()),
         },
-        _ => return None,
+        Ok(r) => return note_failure(&state, &upstream, &format!("HTTP {}", r.status())),
+        Err(e) => return note_failure(&state, &upstream, &e.to_string()),
     };
     if mime(&bytes).starts_with("image/") {
         if let Some(dir) = file.parent() {

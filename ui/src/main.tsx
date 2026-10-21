@@ -4,6 +4,8 @@ import { App } from "./App";
 import { Pip } from "./components/Pip";
 import { initGamepad } from "./gamepad";
 import { initRemoteControls, initMediaSession, restore } from "./player/engine";
+import { initGestures } from "./gestures";
+import { isTouch } from "./util";
 import { startBroadcast } from "./player/bridge";
 import { boot } from "./store/app";
 import { useSettings } from "./store/settings";
@@ -66,6 +68,7 @@ async function start() {
   await restore();
   initMediaSession();
   initRemoteControls();
+  if (isTouch() || /Android/i.test(navigator.userAgent)) initGestures();
   if (useApp.getState().info?.selfTest) import("./selftest").then((m) => m.runSelfTest());
   startBroadcast();
   initGamepad();
