@@ -1,7 +1,8 @@
-# OpenMusic 0.1.0-alpha.1 — first runnable build
+# OpenMusic 0.1.0-beta.1 — first usable beta
 
-**Pre-release. Not verified against real Plex or YouTube Music accounts yet.** These installers are
-for testing the shell, navigation and playback engine on Windows.
+**Pre-release (beta). Not yet verified against real Plex or YouTube Music accounts.** Please run
+through the checklist below and report anything that breaks. The final release follows once these
+flows are confirmed.
 
 ## Downloads
 - `YTSpot_*_x64-setup.exe`: YouTube Music client (`app.openmusic.ytspot`)
@@ -26,7 +27,7 @@ installer downloads it.
 - App playlists (SQLite, separate from Plex/Plexamp), YTSpot permanent hide with no-undo confirmation
 - Local files, Plex downloads page, Spotify import with report, Last.fm settings, English/日本語,
   kana→romaji for lyrics, accessibility (text size, reduced motion, contrast, keyboard), TV mode with
-  Xbox/DS4/Switch controller navigation
+  Xbox/DS4/Switch controller navigation and "Launch at startup in TV mode"
 
 ## Please test
 1. **PLEXSpot sign-in**: Plex PIN sign-in, server list, server selection, reconnect after restart.
@@ -43,12 +44,15 @@ installer downloads it.
    "needs review" rows.
 10. **Last.fm**: connect, now playing, scrobble after half the track / 4 minutes, no duplicates.
 11. **Local files**: add folder, rescan, missing files.
-12. **TV mode**: controller D-pad/stick focus, A/B, LB/RB, Start.
+12. **TV mode**: controller D-pad/stick focus, A (select), B (back), X (queue), Y (fullscreen),
+    LB/RB (previous/next), LT/RT (seek), Start (play/pause). Turn on "Launch at startup in TV mode",
+    sign out of Windows and back in: the app should open fullscreen in TV mode.
+13. **Install/uninstall**: install both apps side by side, uninstall one, the other keeps working.
 
 ## Known gaps / not finished
 - Nothing has been verified against real accounts (no Plex server or Google account in CI).
-- "Launch at startup" for HTPC mode isn't wired yet (the TV-mode layout and controller input are).
 - Kanji → romaji needs a dictionary; only kana is romanized for now.
 - Translated artist/album names need a licensed metadata source (not started).
 - No UI end-to-end tests yet (Playwright).
-- Installers are unsigned, so SmartScreen will warn.
+- The "Save to Liked" button doesn't load existing likes from the provider yet.
+- Installers are unsigned, so SmartScreen warns ("More info" → "Run anyway").

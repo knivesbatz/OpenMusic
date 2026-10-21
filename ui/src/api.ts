@@ -103,4 +103,7 @@ export const api = {
 
   pipToggle: () => call<boolean>("pip_toggle"),
   focusMain: () => call<void>("focus_main"),
+  htpcLaunch: () => call<boolean>("htpc_launch"),
+  htpcAutostartGet: () => call<boolean>("htpc_autostart_get"),
+  htpcAutostartSet: (enabled: boolean) => call<void>("htpc_autostart_set", { enabled }),
 };

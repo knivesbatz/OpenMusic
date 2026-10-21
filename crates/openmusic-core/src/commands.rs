@@ -1089,3 +1089,29 @@ pub fn focus_main(app: AppHandle) {
         let _ = w.set_focus();
     }
 }
+
+// ---- HTPC mode ------------------------------------------------------------------------------
+
+/// Argument the OS passes when the app is launched at sign-in for TV mode.
+pub const HTPC_ARG: &str = "--htpc";
+
+/// True when this process was started by the "launch at startup" entry (TV mode).
+#[tauri::command]
+pub fn htpc_launch() -> bool {
+    std::env::args().any(|a| a == HTPC_ARG)
+}
+
+#[tauri::command]
+pub fn htpc_autostart_get(app: AppHandle) -> Result<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().is_enabled().map_err(|e| Error::Invalid(e.to_string()))
+}
+
+#[tauri::command]
+pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let al = app.autolaunch();
+    let r = if enabled { al.enable() } else { al.disable() };
+    r.map_err(|e| Error::Invalid(e.to_string()))
+}
+

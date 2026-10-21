@@ -7,10 +7,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ SQLite with versioned migrations (unit-tested)
 - ✅ Credential-store secrets with chunking for large values
 - ✅ GitHub repo + CI workflow (tests + NSIS installers for both apps)
-- 🟡 First local Windows release build of both installers
+- 🟡 Windows installers built by CI and published as GitHub pre-releases (`workflow_dispatch` with `release_tag`; the session's git proxy can't push tags)
 
 ## Phase 2: Shared UI
-- 🟡 App shell: sidebar, top bar with history navigation, main view, bottom player bar
+- 🟡 App shell: sidebar (filters, in-library search, sort, collapse), top bar with history navigation, main view, bottom player bar. Renders correctly with a mock backend (docs/screenshots)
 - 🟡 Home, Search, Library, Artist, Album, Playlist pages
 - 🟡 Track list (virtualised) with context menu and add-to-playlist
 - 🟡 Settings page (language, quality, crossfade, gapless, automix, accessibility, storage, accounts)
@@ -26,7 +26,7 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Crossfade 0–12 s, near-gapless preload, Automix (audio element sources)
 - 🟡 YouTube IFrame output
 - 🟡 Media keys (navigator.mediaSession)
-- ⬜ Engine unit tests for queue operations (vitest), partly done
+- ✅ Queue operations are pure (`ui/src/player/queue.ts`) and unit-tested: enqueue/play next, consume manual items, remove, multi-move, repeat, shuffle restore, Shift/Ctrl selection
 
 ## Phase 5: Library and import
 - ✅ App playlists CRUD + reorder in SQLite (unit-tested)
@@ -46,13 +46,13 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 ## Phase 8: Integrations
 - 🟡 Last.fm auth/now-playing/scrobble queue (threshold + dedupe unit-tested)
 - 🟡 English/Japanese UI
-- ⬜ Kanji → romaji (needs a dictionary such as lindera/ipadic, about 20 MB; evaluate size)
+- 🟡 Kana → romaji for lyrics (tested); kanji still need a dictionary (lindera/ipadic, about 20 MB; evaluate size)
 - ⬜ Translated artist/album names (needs a licensed metadata source, e.g. MusicBrainz aliases)
 
 ## Phase 9: Polish
-- ⬜ HTPC/TV mode: launch at startup + Gamepad API (Xbox/DS4/Switch) navigation
-- ⬜ Sleep timer, "View credits", "Share" menu items
-- ⬜ Playwright/WebDriver UI tests
+- 🟡 HTPC/TV mode: launch at startup (autostart plugin, `--htpc` opens fullscreen in TV mode), Gamepad API spatial navigation (A/B/X/Y, LB/RB, LT/RT, Start)
+- 🟡 Sleep timer, "View credits", "Share" (copy title/link) menu items
+- 🟡 Playwright screenshot run against a mock backend (`ui/e2e/`); no assertions yet
 - ⬜ Measure startup and memory on a 50k-track library
 
 ## Phase 10: Release
@@ -60,4 +60,8 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ⬜ Upgrade-install test
 
 ## Known issues
-- (none recorded yet)
+- Liked state isn't loaded from the provider, so the "Save to Liked" button starts unfilled until
+  you toggle it in this session.
+- YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
+  with a toast.
+- Rust tests need GTK/WebKit dev packages on Linux (see CLAUDE.md); CI runs them on Windows.

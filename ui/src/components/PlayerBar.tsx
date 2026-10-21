@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { playlistSubmenu, toggleLike, trackMenu } from "../actions";
 import { api, inTauri } from "../api";
 import { useT } from "../i18n";
@@ -142,6 +143,12 @@ export function PlayerBar() {
   const lyricsOpen = useUi((s) => s.lyricsOpen);
   const [pip, setPip] = useState(false);
   const tr = item?.track;
+
+  useEffect(() => {
+    if (!inTauri) return;
+    const un = listen("pip-closed", () => setPip(false));
+    return () => void un.then((f) => f());
+  }, []);
 
   useEffect(() => {
     if (tr) document.title = `${tr.title} • ${tr.artist}`;

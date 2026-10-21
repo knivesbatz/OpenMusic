@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorCode, errorMessage, inTauri } from "../api";
 import type { AppInfo, AuthStatus, Library, Playlist } from "../types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useSettings } from "./settings";
 import { toast } from "./ui";
 
 interface AppStore {
@@ -44,6 +46,11 @@ export async function boot() {
   const localOnly = (await api.kvGet<boolean>("localOnly").catch(() => null)) ?? false;
   useApp.setState({ info, auth, localOnly });
   document.title = info.name;
+  // Started by "launch at startup": go straight into TV mode, fullscreen.
+  if (await api.htpcLaunch().catch(() => false)) {
+    useSettings.getState().set({ htpc: true });
+    getCurrentWindow().setFullscreen(true).catch(() => {});
+  }
   refreshPlaylists();
   if (auth?.signedIn && !auth.needsServer) refreshLibrary(false);
   listen("auth-changed", async () => {

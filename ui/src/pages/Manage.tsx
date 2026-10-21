@@ -359,8 +359,12 @@ export function SettingsPage() {
   const [keys, setKeys] = useState({ key: "", secret: "" });
   const [lfmToken, setLfmToken] = useState<string | null>(null);
 
+  const [autostart, setAutostart] = useState<boolean | null>(null);
+
   useEffect(() => {
-    if (inTauri) api.lastfmStatus().then(setLfm, () => {});
+    if (!inTauri) return;
+    api.lastfmStatus().then(setLfm, () => {});
+    api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
   const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplay" | "reducedMotion" | "highContrast" | "scrobble" | "htpc"; label: string; hint?: string; disabled?: boolean }) => (
@@ -467,6 +471,23 @@ export function SettingsPage() {
       <section>
         <h2>{t("htpc")}</h2>
         <Toggle k="htpc" label={t("htpc")} hint={t("htpcHint")} />
+        <label className={cls("setting", autostart === null && "disabled")}>
+          <div className="grow">
+            <div>{t("htpcAutostart")}</div>
+            <div className="muted small">{t("htpcAutostartHint")}</div>
+          </div>
+          <input
+            type="checkbox"
+            role="switch"
+            className="switch"
+            checked={!!autostart}
+            disabled={autostart === null}
+            onChange={(e) => {
+              const on = e.target.checked;
+              api.htpcAutostartSet(on).then(() => setAutostart(on), (err) => toast(errorMessage(err)));
+            }}
+          />
+        </label>
       </section>
 
       <section>
