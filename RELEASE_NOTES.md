@@ -1,8 +1,27 @@
-# OpenMusic 1.0.1
+# OpenMusic 1.0.2
 
-Fixes for crashes and issues reported on 1.0.0, plus YouTube crossfade and Plex profiles.
+Crash fixes for the settings screen and scrolling, YouTube Music song versions instead of music
+videos, and one-click Spotify import.
 
-## New in 1.0.1
+## New in 1.0.2
+- **Settings crashes**: the dropdowns (Language, Japanese text, Audio quality) are now drawn by the app
+  instead of native Windows popups, which were implicated in the crashes.
+- **Safe mode**: if the app didn't close properly, the next launch turns off the web view's GPU
+  acceleration automatically and tells you. You can switch it back on under Settings → Performance →
+  Hardware acceleration (or turn it off yourself if scrolling freezes).
+- **Lighter rendering**: removed the live blur behind the top bar and the full-screen blur, both
+  expensive for some graphics drivers.
+- **YouTube Music songs, not music videos**: music videos play their YouTube Music song version and
+  show its title, album art and official artist; search leaves music videos out of song results.
+  Titles of videos without a song version drop tags like "(Official Music Video)", "[Lyric Video]",
+  "【MV】" or "- Official Audio", without touching words in the real title.
+- **Spotify import with just a sign-in**: when the release is built with the project's Spotify app
+  Client ID, Import shows "Sign in with Spotify" with no developer steps. Without it, the
+  own-Client-ID option still works.
+- Android groundwork (same code as desktop): phone layout and an APK build in CI (preview, not
+  released yet).
+
+## Also in 1.0.1
 - **Crash fix (scrolling, opening pages, settings)**: artwork is now served by a small local web server
   inside the app (127.0.0.1 only, with a random per-launch key in every URL) instead of a custom
   protocol. Image requests cancelled while scrolling or switching pages, a likely cause of the crashes,

@@ -95,6 +95,14 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Last.fm: serialized queue flush (duplicate-scrobble race), repeat-one rescrobble, official
   artist for music videos, 10-min retry, revoked session handling
 
+## 1.0.2
+- 🟡 Settings/scroll crashes: native `<select>` popups replaced by in-app dropdowns; safe mode (GPU off
+  after an unclean exit, Settings switch); backdrop/fullscreen blurs removed. Root cause still not
+  reproduced; crash.log from the user will confirm
+- ✅ Lyrics effect keyed on track id (regression test as YTSpot with music videos)
+- ✅ YouTube: song versions played/displayed instead of music videos; title cleanup (tested)
+- 🟡 Spotify one-click sign-in with a built-in Client ID (`SPOTIFY_CLIENT_ID` repo secret)
+
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library
 - 🟡 Desktop-only features gated (`desktop`/`mobile` cfg from core build.rs; `OPENMUSIC_CHECK_MOBILE=1

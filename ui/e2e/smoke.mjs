@@ -7,16 +7,18 @@ import { preview } from "vite";
 import { chromium } from "playwright";
 
 const mock = fileURLToPath(new URL("./mock-backend.js", import.meta.url));
+const ytOverrides = fileURLToPath(new URL("./yt-overrides.js", import.meta.url));
 const server = await preview({ preview: { port: 4174, strictPort: true }, logLevel: "error" });
 const base = "http://localhost:4174/";
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
 const results = [];
 
-async function test(name, fn) {
+async function test(name, fn, { youtube = false } = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript({ path: mock });
+  if (youtube) await page.addInitScript({ path: ytOverrides });
   await page.goto(base);
   await page.waitForSelector(".playerbar");
   const t0 = Date.now();
@@ -87,9 +89,47 @@ await test("fullscreen opens with lyrics and closes on Escape", async (p) => {
   await p.waitForSelector(".fullscreen", { state: "detached" });
 });
 
+// Regression: the lyrics effect was keyed on the displayed track object, which is new on every
+// render for YouTube music videos, so reopening lyrics (cache hit) looped forever and froze the app.
+await test("YouTube: reopening lyrics on a music video stays responsive", async (p) => {
+  for (let i = 0; i < 2; i++) {
+    await p.click('button[aria-label="Lyrics"]');
+    await p.waitForSelector(".fullscreen .lyrics .line");
+    await p.waitForTimeout(300);
+    await p.keyboard.press("Escape");
+    await p.waitForSelector(".fullscreen", { state: "detached" });
+  }
+  await p.click('button[aria-label="Lyrics"]');
+  await p.waitForSelector(".fullscreen .lyrics .line");
+  const t0 = Date.now();
+  await Promise.race([
+    p.evaluate(() => new Promise((r) => setTimeout(r, 50))),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("page unresponsive (render loop)")), 3000)),
+  ]);
+  assert.ok(Date.now() - t0 < 3000);
+}, { youtube: true });
+
+await test("YouTube: settings toggles and Japanese text modes", async (p) => {
+  await p.click('button[aria-label="Settings"]');
+  for (const mode of ["Romaji", "Both", "Japanese script"]) {
+    await p.click('button[aria-label="Japanese text"]');
+    await p.click(`.menu button:has-text("${mode}")`);
+  }
+  for (const s of await p.locator('input[role="switch"]:not(:disabled)').all()) {
+    await s.click();
+    await s.click();
+  }
+  await p.click('button[aria-label="Language"]');
+  await p.click('.menu button:has-text("日本語")');
+  await p.click('button[aria-label="言語"]');
+  await p.click('.menu button:has-text("English")');
+  await p.waitForSelector("text=Settings");
+}, { youtube: true });
+
 await test("language switch to Japanese", async (p) => {
   await p.click('button[aria-label="Settings"]');
-  await p.selectOption('select[aria-label="Language"]', "ja");
+  await p.click('button[aria-label="Language"]');
+  await p.click('.menu button:has-text("日本語")');
   await p.waitForSelector("text=ホーム");
 });
 

@@ -21,7 +21,13 @@ const lyricsCache = new Map<string, Lyrics | null>();
 
 export function useLyrics(track?: Track) {
   const [state, setState] = useState<{ id: string; lyrics: Lyrics | null; loading: boolean }>({ id: "", lyrics: null, loading: false });
+  // Keyed on the track id, not the object: the displayed track (song art/title for YouTube
+  // videos) is a new object on every render, and an effect keyed on it looped forever.
+  const latest = useRef(track);
+  latest.current = track;
+  const id = track?.id;
   useEffect(() => {
+    const track = latest.current;
     if (!track || !inTauri) return;
     if (lyricsCache.has(track.id)) return setState({ id: track.id, lyrics: lyricsCache.get(track.id)!, loading: false });
     let live = true;
@@ -37,7 +43,7 @@ export function useLyrics(track?: Track) {
     return () => {
       live = false;
     };
-  }, [track]);
+  }, [id]);
   return state;
 }
 
@@ -179,4 +185,4 @@ export function Fullscreen() {
   );
 }
 
-const artBg = (a?: string | null) => artUrl(a, 120) ?? "";
+const artBg = (a?: string | null) => artUrl(a, 32) ?? "";

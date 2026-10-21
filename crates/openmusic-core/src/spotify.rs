@@ -1,8 +1,10 @@
 //! Spotify playlist import (metadata only — no Spotify audio is ever streamed).
 //!
 //! Uses the Authorization Code flow with PKCE against the official Web API, with a loopback
-//! redirect (`http://127.0.0.1:43117/callback`). The user supplies the Client ID of their own
-//! Spotify developer app, since Spotify requires every app to be registered.
+//! redirect (`http://127.0.0.1:43117/callback`). Spotify requires every app to be registered; a
+//! release build can embed the project's own Client ID (`OPENMUSIC_SPOTIFY_CLIENT_ID` at build
+//! time; PKCE needs no secret), so users just sign in. Without one, users can still enter the
+//! Client ID of their own Spotify app.
 
 use std::time::Duration;
 
@@ -17,6 +19,11 @@ use crate::error::{Error, Result};
 use crate::matching::Wanted;
 
 pub const REDIRECT_PORT: u16 = 43117;
+
+/// Client ID built into this release, if any.
+pub fn builtin_client_id() -> Option<&'static str> {
+    option_env!("OPENMUSIC_SPOTIFY_CLIENT_ID").map(str::trim).filter(|s| !s.is_empty())
+}
 pub const SCOPES: &str = "playlist-read-private playlist-read-collaborative";
 
 pub fn redirect_uri() -> String {

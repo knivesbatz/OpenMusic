@@ -40,6 +40,9 @@ pub struct AppState {
     pub art_slots: Arc<Semaphore>,
     /// Base URL of the local artwork server (`http://127.0.0.1:<port>/<token>`), once started.
     pub art_base: std::sync::OnceLock<String>,
+    /// Safe mode (GPU acceleration off in the webview): "auto" after an unclean exit, "manual"
+    /// when turned off in Settings. Unset = normal.
+    pub safe_mode: std::sync::OnceLock<&'static str>,
     pub scanning: AtomicBool,
     pub last_yt_refresh: Mutex<Option<std::time::Instant>>,
 }

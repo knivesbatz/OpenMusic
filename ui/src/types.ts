@@ -124,6 +124,8 @@ export interface AppInfo {
   artBase?: string | null;
   /** "windows", "macos", "linux", "android", "ios". */
   platform?: string;
+  /** GPU acceleration off: "auto" after an unclean exit, "manual" from Settings. */
+  safeMode?: "auto" | "manual" | null;
 }
 
 export interface PlayContext {

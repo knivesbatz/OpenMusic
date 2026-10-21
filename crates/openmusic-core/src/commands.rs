@@ -29,6 +29,8 @@ pub struct AppInfo {
     art_base: Option<String>,
     /// "windows", "macos", "linux", "android", "ios".
     platform: &'static str,
+    /// "auto" (after an unclean exit) or "manual" when GPU acceleration is off; null otherwise.
+    safe_mode: Option<&'static str>,
 }
 
 pub fn capabilities(f: Flavor) -> Capabilities {
@@ -48,6 +50,7 @@ pub fn app_info(app: AppHandle, state: S) -> AppInfo {
         capabilities: capabilities(state.flavor),
         art_base: state.art_base.get().cloned(),
         platform: std::env::consts::OS,
+        safe_mode: state.safe_mode.get().copied(),
     }
 }
 
@@ -291,7 +294,7 @@ pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
     }
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let url: tauri::Url = YT_LOGIN_URL.parse().map_err(|_| Error::Invalid("url".into()))?;
-    tauri::WebviewWindowBuilder::new(&app, "ytlogin", tauri::WebviewUrl::External(url))
+    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "ytlogin", tauri::WebviewUrl::External(url)), &state)
         .title("Sign in to YouTube Music")
         .inner_size(500.0, 720.0)
         .on_page_load(move |_w, payload| {
@@ -347,7 +350,7 @@ pub async fn yt_refresh_session(app: &AppHandle, state: &AppState) -> bool {
     }
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let Ok(url) = "https://music.youtube.com/".parse::<tauri::Url>() else { return false };
-    let built = tauri::WebviewWindowBuilder::new(app, "ytrefresh", tauri::WebviewUrl::External(url))
+    let built = with_browser_args(tauri::WebviewWindowBuilder::new(app, "ytrefresh", tauri::WebviewUrl::External(url)), state)
         .visible(false)
         .on_page_load(move |_w, p| {
             if p.event() == tauri::webview::PageLoadEvent::Finished {
@@ -996,8 +999,13 @@ pub async fn spotify_status(state: S<'_>) -> Result<Option<String>> {
 }
 
 #[tauri::command]
-pub async fn spotify_connect(app: AppHandle, state: S<'_>, client_id: String) -> Result<()> {
-    let client_id = client_id.trim().to_string();
+pub async fn spotify_connect(app: AppHandle, state: S<'_>, client_id: Option<String>) -> Result<()> {
+    // The built-in Client ID unless the user entered their own.
+    let client_id = client_id
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty())
+        .or_else(|| spotify::builtin_client_id().map(String::from))
+        .ok_or_else(|| Error::Invalid("Spotify Client ID required".into()))?;
     let (verifier, challenge) = spotify::pkce_pair();
     let st = uuid::Uuid::new_v4().simple().to_string();
     let url = spotify::authorize_url(&client_id, &challenge, &st);
@@ -1162,18 +1170,18 @@ pub async fn clear_cache(state: S<'_>) -> Result<()> {
 /// The mini player is a second always-on-top window: desktop only (Android has one window).
 #[cfg(mobile)]
 #[tauri::command]
-pub async fn pip_toggle(_app: AppHandle) -> Result<bool> {
+pub async fn pip_toggle(_app: AppHandle, _state: S<'_>) -> Result<bool> {
     Err(Error::Unsupported("mini player window".into()))
 }
 
 #[cfg(desktop)]
 #[tauri::command]
-pub async fn pip_toggle(app: AppHandle) -> Result<bool> {
+pub async fn pip_toggle(app: AppHandle, state: S<'_>) -> Result<bool> {
     if let Some(w) = app.get_webview_window("pip") {
         let _ = w.close();
         return Ok(false);
     }
-    tauri::WebviewWindowBuilder::new(&app, "pip", tauri::WebviewUrl::App("index.html#pip".into()))
+    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", tauri::WebviewUrl::App("index.html#pip".into())), &state)
         .title("Mini player")
         .inner_size(320.0, 420.0)
         .min_inner_size(220.0, 96.0)
@@ -1489,5 +1497,34 @@ pub async fn plex_switch_user(app: AppHandle, state: S<'_>, uuid: String, pin: O
     }
     let _ = app.emit("auth-changed", ());
     Ok(())
+}
+
+// ---- safe mode (GPU acceleration) -----------------------------------------------------------
+
+/// Apply safe-mode browser arguments. Every webview window in the process must use the same
+/// arguments (WebView2 shares one environment), so all window builders go through this.
+pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
+    b: tauri::WebviewWindowBuilder<'a, tauri::Wry, M>,
+    state: &AppState,
+) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, M> {
+    #[cfg(windows)]
+    if state.safe_mode.get().is_some() {
+        return b.additional_browser_args(crate::safe_mode::SAFE_ARGS);
+    }
+    let _ = state;
+    b
+}
+
+/// Turn the webview's GPU acceleration on or off; takes effect after a restart.
+#[tauri::command]
+pub fn gpu_set(state: S, enabled: bool) -> Result<()> {
+    crate::safe_mode::set_gpu(&state.dirs.data, enabled)?;
+    Ok(())
+}
+
+/// Whether this build has a Spotify Client ID built in (one-click "Sign in with Spotify").
+#[tauri::command]
+pub fn spotify_builtin() -> bool {
+    spotify::builtin_client_id().is_some()
 }
 

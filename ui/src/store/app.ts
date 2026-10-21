@@ -72,6 +72,7 @@ export async function boot() {
   const localOnly = (await api.kvGet<boolean>("localOnly").catch(() => null)) ?? false;
   useApp.setState({ info, auth, localOnly });
   document.title = info.name;
+  if (info.safeMode === "auto") setTimeout(() => toast(translate(useSettings.getState().language, "safeModeAuto")), 1500);
   // Started by "launch at startup": go straight into TV mode, fullscreen.
   if (await api.htpcLaunch().catch(() => false)) {
     useSettings.getState().set({ htpc: true });
