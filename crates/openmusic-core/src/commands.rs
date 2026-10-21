@@ -126,6 +126,8 @@ pub async fn plex_pin_poll(state: S<'_>, id: u64) -> Result<bool> {
     state.secrets.set("plex.token", &token)?;
     state.secrets.delete("plex.homeToken")?;
     state.db().kv_delete("plex.userUuid")?;
+    // A new sign-in asks for the profile again (the UI stores "ui.plex.profileChosen").
+    state.db().kv_delete("ui.plex.profileChosen")?;
     if let Ok(name) = state.plex.account_name(&token).await {
         state.db().kv_set("plex.account", &name)?;
     }
@@ -253,6 +255,7 @@ async fn read_cookies(app: &AppHandle, label: &'static str) -> String {
 
 async fn yt_adopt_cookie(app: &AppHandle, state: &AppState, cookie: String) -> Result<()> {
     state.secrets.set_large("yt.cookie", &cookie)?;
+    state.db().kv_delete("ui.yt.profileChosen")?;
     state.ytm.write().await.cookie = Some(cookie);
     let y = state.ytm().await;
     if let Ok(name) = y.account_name().await {
