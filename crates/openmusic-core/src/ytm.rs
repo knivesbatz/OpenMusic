@@ -191,6 +191,89 @@ fn parse_sub(rs: &[&Value]) -> Sub {
     sub
 }
 
+/// Words that mark a bracketed/trailing title segment as video packaging, not part of the song
+/// title. Matched against whole segments only, so a song called "Music" or "Video Games" is kept.
+const VIDEO_TAGS: &[&str] = &[
+    "official music video", "official video", "official audio", "official lyric video", "official lyrics video",
+    "official visualizer", "official visualiser", "official mv", "official hd video", "official 4k video",
+    "music video", "lyric video", "lyrics video", "lyrics", "lyric", "audio", "visualizer", "visualiser", "video",
+    "mv", "m/v", "pv", "hd", "hq", "4k", "4k remaster", "official", "official performance video", "video oficial",
+    "audio oficial", "clip officiel", "music video full ver.", "full ver.", "full version mv",
+];
+
+fn is_video_tag(segment: &str) -> bool {
+    let s = segment.trim().trim_matches(|c: char| matches!(c, '-' | '|' | ':' | '・' | '/')).trim().to_lowercase();
+    if s.is_empty() {
+        return false;
+    }
+    if VIDEO_TAGS.contains(&s.as_str()) {
+        return true;
+    }
+    // e.g. "official music video 2019", "【公式】MV", "mv full ver."
+    let has_marker = s.contains("official") && (s.contains("video") || s.contains("audio") || s.contains("mv"))
+        || s.contains("music video")
+        || s.contains("lyric video")
+        || (s.contains("mv") && (s.contains("full") || s.contains("公式")))
+        || s.contains("ミュージックビデオ")
+        || s.contains("公式");
+    has_marker && s.split_whitespace().count() <= 6
+}
+
+/// Remove music-video packaging from a YouTube video title: bracketed or trailing segments such
+/// as "(Official Music Video)", "[Lyric Video]", "【MV】", "- Official Audio", "| Official Video",
+/// and a leading "Artist - " that repeats the channel's artist. Words that are part of the actual
+/// title are never touched; if cleaning would leave nothing, the original is returned.
+pub fn clean_title(title: &str, artist: &str) -> String {
+    let mut out = String::with_capacity(title.len());
+    let mut rest = title;
+    // Bracketed segments anywhere.
+    while let Some((start, open)) = rest.char_indices().find(|(_, c)| matches!(c, '(' | '[' | '【' | '「' | '〔')) {
+        let close = match open {
+            '(' => ')',
+            '[' => ']',
+            '【' => '】',
+            '「' => '」',
+            _ => '〕',
+        };
+        let after = &rest[start + open.len_utf8()..];
+        match after.find(close) {
+            Some(end) if is_video_tag(&after[..end]) => {
+                out.push_str(&rest[..start]);
+                rest = &after[end + close.len_utf8()..];
+            }
+            Some(end) => {
+                let upto = start + open.len_utf8() + end + close.len_utf8();
+                out.push_str(&rest[..upto]);
+                rest = &rest[upto..];
+            }
+            None => break,
+        }
+    }
+    out.push_str(rest);
+    let mut t = out.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Trailing " - Official Video" / " | Official Audio".
+    for sep in [" | ", " - ", " / "] {
+        if let Some(idx) = t.rfind(sep) {
+            if is_video_tag(&t[idx + sep.len()..]) {
+                t.truncate(idx);
+            }
+        }
+    }
+    // Leading "Artist - " when it repeats the artist.
+    if !artist.is_empty() {
+        for sep in [" - ", " – ", " — "] {
+            if let Some((head, tail)) = t.split_once(sep) {
+                if head.trim().eq_ignore_ascii_case(artist.trim()) && !tail.trim().is_empty() {
+                    t = tail.trim().to_string();
+                    break;
+                }
+            }
+        }
+    }
+    let t = t.trim().to_string();
+    if t.is_empty() { title.trim().to_string() } else { t }
+}
+
 fn track_from(video_id: String, title: String, sub: &Sub, artwork: Option<String>, episode: bool) -> Track {
     let (artist, artist_id) = if sub.artists.is_empty() {
         // Unlinked artist names (common on uploads/episodes) appear as plain runs.
@@ -201,6 +284,8 @@ fn track_from(video_id: String, title: String, sub: &Sub, artwork: Option<String
             sub.artists.first().and_then(|a| a.1.clone()).map(|id| format!("yt:{id}")),
         )
     };
+    // Music videos carry their packaging in the title; songs are already clean.
+    let title = if !episode && is_video_thumb(&artwork) { clean_title(&title, &artist) } else { title };
     Track {
         id: format!("yt:{video_id}"),
         source: Source::Youtube,
@@ -512,16 +597,19 @@ fn is_video_thumb(art: &Option<String>) -> bool {
 /// Song metadata from a `next` response for a video: the song counterpart of a music video
 /// when there is one (square album art, official artist and album), else the item itself.
 pub fn parse_song_meta(v: &Value) -> Option<SongMeta> {
-    let item = match find_first(v, "playlistPanelVideoWrapperRenderer") {
-        Some(w) => w
-            .get("counterpart")
-            .and_then(|c| find_first(c, "playlistPanelVideoRenderer"))
-            .or_else(|| w.get("primaryRenderer").and_then(|p| find_first(p, "playlistPanelVideoRenderer")))?,
-        None => find_first(v, "playlistPanelVideoRenderer")?,
+    let wrapper = find_first(v, "playlistPanelVideoWrapperRenderer");
+    let counterpart = wrapper.and_then(|w| w.get("counterpart")).and_then(|c| find_first(c, "playlistPanelVideoRenderer"));
+    let item = match (counterpart, wrapper) {
+        (Some(c), _) => c,
+        (None, Some(w)) => w.get("primaryRenderer").and_then(|p| find_first(p, "playlistPanelVideoRenderer"))?,
+        (None, None) => find_first(v, "playlistPanelVideoRenderer")?,
     };
     let sub = parse_sub(&runs(item.get("longBylineText")));
     let art = thumbnail(item);
     let meta = SongMeta {
+        // Only a real song counterpart replaces the video for playback and title.
+        video_id: counterpart.and_then(|c| c.get("videoId")).and_then(|x| x.as_str()).map(String::from),
+        title: counterpart.map(|c| text(c.get("title"))).filter(|t| !t.is_empty()),
         artwork: art.filter(|a| !is_video_thumb(&Some(a.clone()))),
         artist: (!sub.artists.is_empty()).then(|| sub.artists.iter().map(|a| a.0.as_str()).collect::<Vec<_>>().join(", ")),
         artist_id: sub.artists.first().and_then(|a| a.1.clone()).map(|i| format!("yt:{i}")),
@@ -655,6 +743,13 @@ impl Ytm {
             split_by_kind(s.get("contents").map(all_items).unwrap_or_default(), &mut out);
         }
         dedupe(&mut out.tracks, |t| t.id.clone());
+        // Songs only: music videos are left out unless the query matched nothing else.
+        if out.tracks.iter().any(|t| !is_video_thumb(&t.artwork)) {
+            out.tracks.retain(|t| !is_video_thumb(&t.artwork));
+        }
+        if matches!(&out.top, Some(MediaItem::Track(t)) if is_video_thumb(&t.artwork)) {
+            out.top = out.tracks.first().filter(|t| !is_video_thumb(&t.artwork)).cloned().map(MediaItem::Track).or(out.top.take());
+        }
         dedupe(&mut out.albums, |t| t.id.clone());
         dedupe(&mut out.artists, |t| t.id.clone());
         dedupe(&mut out.playlists, |t| t.id.clone());
@@ -893,6 +988,24 @@ mod tests {
     }
 
     #[test]
+    fn cleans_video_titles_but_keeps_real_words() {
+        let c = |t: &str, a: &str| clean_title(t, a);
+        assert_eq!(c("Welcome to the Black Parade (Official Music Video)", "My Chemical Romance"), "Welcome to the Black Parade");
+        assert_eq!(c("My Chemical Romance - Helena [Official Video]", "My Chemical Romance"), "Helena");
+        assert_eq!(c("Teenagers (Official Audio)", "x"), "Teenagers");
+        assert_eq!(c("夜に駆ける 【MV】", "YOASOBI"), "夜に駆ける");
+        assert_eq!(c("Song Title | Official Video", "x"), "Song Title");
+        assert_eq!(c("Lemon - Official Lyric Video", "x"), "Lemon");
+        // Real titles stay as they are.
+        assert_eq!(c("Music Sounds Better with You", "Stardust"), "Music Sounds Better with You");
+        assert_eq!(c("Video Games", "Lana Del Rey"), "Video Games");
+        assert_eq!(c("Video Killed the Radio Star", "The Buggles"), "Video Killed the Radio Star");
+        assert_eq!(c("Bohemian Rhapsody (Live Aid 1985)", "Queen"), "Bohemian Rhapsody (Live Aid 1985)");
+        assert_eq!(c("Music (Remix)", "x"), "Music (Remix)");
+        assert_eq!(c("(Official Video)", "x"), "(Official Video)");
+    }
+
+    #[test]
     fn counts_are_not_artists() {
         for t in ["1.2M plays", "4.5K views", "123 plays", "1.2億回再生", "350万回再生"] {
             assert!(is_count(t), "{t}");
@@ -946,11 +1059,14 @@ mod tests {
                 "thumbnail": { "thumbnails": [ { "url": "https://i.ytimg.com/vi/x/hqdefault.jpg" } ] },
                 "longBylineText": byline("mcr", None) } },
             "counterpart": [ { "counterpartRenderer": { "playlistPanelVideoRenderer": {
+                "videoId": "songId", "title": { "runs": [ { "text": "Welcome to the Black Parade" } ] },
                 "thumbnail": { "thumbnails": [ { "url": "https://lh3.googleusercontent.com/black=w544-h544" } ] },
                 "longBylineText": byline("My Chemical Romance", Some("The Black Parade")) } } } ]
         } });
         let m = parse_song_meta(&v).unwrap();
         assert_eq!(m.artist.as_deref(), Some("My Chemical Romance"));
+        assert_eq!(m.video_id.as_deref(), Some("songId"));
+        assert_eq!(m.title.as_deref(), Some("Welcome to the Black Parade"));
         assert_eq!(m.album.as_deref(), Some("The Black Parade"));
         assert_eq!(m.album_id.as_deref(), Some("yt:MPREb_black"));
         assert!(m.artwork.unwrap().contains("googleusercontent"));

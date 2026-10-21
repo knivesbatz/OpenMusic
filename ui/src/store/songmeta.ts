@@ -54,6 +54,7 @@ export function patchTrack(t: Track, m: SongMeta | null | undefined): Track {
   if (!m) return t;
   return {
     ...t,
+    title: m.title || t.title,
     artwork: m.artwork ?? t.artwork,
     // Prefer the official artist only when the song counterpart names one.
     artist: m.artist ?? t.artist,

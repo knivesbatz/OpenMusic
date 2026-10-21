@@ -623,6 +623,27 @@ pub async fn radio(app: AppHandle, state: S<'_>, track: Track) -> Result<Vec<Tra
 
 // ---- playback -------------------------------------------------------------------------------
 
+/// For a YouTube music video, the video id of its song (audio track) version, so playback uses
+/// the YouTube Music song rather than the video. Cached with the rest of the song metadata;
+/// `None` for songs, podcasts and videos without a song version.
+async fn song_version(state: &AppState, video_id: &str, track: &Track) -> Option<String> {
+    let is_video = track.artwork.as_deref().map(|a| a.contains("ytimg.com")).unwrap_or(true);
+    if track.episode || !is_video {
+        return None;
+    }
+    let key = format!("songmeta:{video_id}");
+    let cached = state.db().cache_get::<SongMeta>(&key, false).ok().flatten();
+    let meta = match cached {
+        Some(m) => m,
+        None => {
+            let m = state.ytm().await.song_meta(video_id).await.ok()??;
+            let _ = state.db().cache_put(&key, &m, 30 * 86400);
+            m
+        }
+    };
+    meta.video_id.filter(|v| v != video_id)
+}
+
 #[tauri::command]
 pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Result<Stream> {
     if let Some(path) = downloads::offline_path(&state, &track.id) {
@@ -654,7 +675,10 @@ pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Resu
             };
             Ok(Stream::Url { url: state.plex.stream_url(&sess, &track, kbps)?, quality: label, offline: false })
         }
-        Source::Youtube => Ok(Stream::Youtube { video_id: track.stream_key.clone().ok_or_else(|| Error::NotFound(track.title.clone()))? }),
+        Source::Youtube => {
+            let vid = track.stream_key.clone().ok_or_else(|| Error::NotFound(track.title.clone()))?;
+            Ok(Stream::Youtube { video_id: song_version(&state, &vid, &track).await.unwrap_or(vid) })
+        }
     }
 }
 
