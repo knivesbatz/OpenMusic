@@ -297,7 +297,8 @@ jobs:
             Select-Object -First 20 | Format-List TimeCreated, ProviderName, Id, Message
 
   release:
-    needs: [bundle, install-test]
+    # android is non-blocking (continue-on-error); its APKs are attached when it built them.
+    needs: [bundle, install-test, android]
     if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
     runs-on: ubuntu-latest
     steps:
@@ -312,10 +313,12 @@ jobs:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
           name: ${{ inputs.release_tag || github.ref_name }}
-          files: installers/*.exe
+          files: |
+            installers/*.exe
+            installers/*.apk
           body_path: RELEASE_NOTES.md
           prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
       - name: Remove superseded releases
         # Only the newest release is kept. The install test above already upgraded from the previous
         # one, so it is no longer needed once this release is published.

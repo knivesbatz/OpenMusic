@@ -995,11 +995,18 @@ fn lastfm_client(state: &AppState) -> Result<lastfm::LastFm> {
 
 #[tauri::command(async)]
 pub fn lastfm_status(state: S) -> Result<LastFmStatus> {
+    // One lock, released before returning. Two `state.db()` calls in the struct literal kept the
+    // first guard alive while taking the second: a self-deadlock that froze the window on opening
+    // Settings (1.0.1/1.0.2) and left the database locked for good in 1.0.3.
+    let (user, pending) = {
+        let db = state.db();
+        (db.kv_get("lastfm.user")?, db.scrobble_pending(1000)?.len())
+    };
     Ok(LastFmStatus {
         has_keys: lastfm_keys(&state)?.is_some(),
         connected: state.secrets.get("lastfm.sk")?.is_some(),
-        user: state.db().kv_get("lastfm.user")?,
-        pending: state.db().scrobble_pending(1000)?.len(),
+        user,
+        pending,
     })
 }
 

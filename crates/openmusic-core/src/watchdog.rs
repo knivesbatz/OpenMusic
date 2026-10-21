@@ -100,3 +100,55 @@ fn append_self_test(state: &AppState, line: &str) {
         let _ = writeln!(f, "[{}] {line}", crate::db::now());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// `state.db()` returns a std MutexGuard. A temporary guard lives until the end of its whole
+    /// statement, so a second `.db()` in the same statement (e.g. two fields of one struct
+    /// literal) deadlocks the thread. This froze the app on opening Settings; keep it out.
+    #[test]
+    fn no_second_db_lock_within_one_statement() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut found = Vec::new();
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let src: String = std::fs::read_to_string(&path)
+                .unwrap()
+                .lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let needle = concat!(".db", "()");
+            let hits: Vec<usize> = src.match_indices(needle).map(|(i, _)| i).collect();
+            for &a in &hits {
+                let mut depth = 0i32;
+                let mut end = src.len();
+                for (i, c) in src[a..].char_indices() {
+                    match c {
+                        '(' | '[' | '{' => depth += 1,
+                        ')' | ']' | '}' => {
+                            depth -= 1;
+                            if depth < 0 {
+                                end = a + i;
+                                break;
+                            }
+                        }
+                        ';' if depth == 0 => {
+                            end = a + i;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                if hits.iter().any(|&b| b > a && b < end) {
+                    let line = src[..a].matches('\n').count() + 1;
+                    found.push(format!("{}:{line}", path.file_name().unwrap().to_string_lossy()));
+                }
+            }
+        }
+        assert!(found.is_empty(), "second database lock in the same statement (self-deadlock): {found:?}");
+    }
+}

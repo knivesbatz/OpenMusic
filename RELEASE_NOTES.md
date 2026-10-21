@@ -1,9 +1,34 @@
-# OpenMusic 1.0.3
+# OpenMusic 1.0.4
 
-Settings and scrolling freeze fix, Autoplay, close to tray, playlist folders, full search results,
-and local files mixed into search and artist pages.
+Fixes the freeze behind the Settings/playlist/closing hangs, and the first Android preview APKs.
 
-## New in 1.0.3
+## New in 1.0.4
+- **The freeze is fixed**: opening Settings asked for the Last.fm status in a way that locked the
+  app's database twice and waited on itself forever. In 1.0.1/1.0.2 that froze the window; in
+  1.0.3 the window survived but everything that needed the database afterwards (saving settings
+  such as Crossfade or Automix, opening playlists, closing the app) waited forever. Found with
+  an automated click-through of the real Windows app plus a new stall detector, which now also
+  writes `crash.log` if anything ever stalls for more than 5 seconds.
+- **Phone layout (Android)**: Spotify-style playlist page, song screen (color from the cover,
+  current lyric line, elapsed/remaining time, lyrics card) and queue sheet (drag handles,
+  Shuffle / Repeat / Sleep timer). Swipe down closes the song screen, queue and menus; swipe from
+  the left edge or press Back to go back. Tapping the song in the player bar opens the song screen.
+- **Android sign-in**: YouTube sign-in no longer hangs after logging in (and Google's pages get a
+  "Back to the app" button); Plex sign-in happens inside the app and returns to it by itself.
+- **Android**: background playback with a media notification and lock-screen controls; app icons;
+  TV mode, mini player and "Fill the screen" are desktop-only.
+- **TV mode** (desktop) now looks like Android TV / Google TV: top tabs, a banner, rows of large
+  cards that grow when focused.
+- Playlists no longer show "Synced from YouTube Music / Plex".
+- Last.fm: the setup form explains the one-time API key and opens the Last.fm page. Builds made
+  with the project's Last.fm key (repository secrets) show just "Connect Last.fm".
+
+## Android preview
+`YTSpot_*_android-arm64.apk` and `PLEXSpot_*_android-arm64.apk` (64-bit ARM phones). Allow
+installing from your browser/files app when Android asks. Signed with a test key, so a later
+build signed with the final key will need an uninstall first.
+
+## Also in 1.0.3
 - **Settings / scrolling freezes and crashes**: everything the Settings page and lists ask the app
   for (Last.fm status, launch at startup, saving settings, library data, …) now runs in the
   background. Before, some of it ran on the window's own thread; when one of those requests was
