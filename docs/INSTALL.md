@@ -34,7 +34,7 @@ install folder). Your data is kept in case you reinstall; delete it by hand if y
 | Library database (app playlists, history, hidden playlists, saved albums/artists, settings) | `%APPDATA%\app.openmusic.ytspot\library.db` / `%APPDATA%\app.openmusic.plexspot\library.db` |
 | Offline downloads (PLEXSpot) | `%APPDATA%\app.openmusic.plexspot\downloads` |
 | Artwork cache | `%LOCALAPPDATA%\app.openmusic.<app>\art` (bounded; Settings → Storage → Clear cache) |
-| Sign-in tokens and cookies, Last.fm and Spotify keys | Windows Credential Manager → Windows Credentials, entries named `app.openmusic.<app>` |
+| Sign-in tokens and cookies, Last.fm keys | Windows Credential Manager → Windows Credentials, entries named `app.openmusic.<app>` |
 
 "Clear cache" removes artwork and metadata caches only. It never deletes app playlists, downloads or
 your local music files.
@@ -64,8 +64,9 @@ players. If YouTube pauses one player when the other starts, that transition bec
 **Audio quality setting is greyed out in YTSpot.** YouTube picks the stream quality itself; third-party
 players can't choose it.
 
-**Spotify import says "INVALID_CLIENT" or the browser shows a redirect error.** In your Spotify
-developer app, add the redirect URI `http://127.0.0.1:43117/callback` exactly, then paste its Client ID.
+**Moving playlists from Spotify.** Use Your Library → Transfer playlists (or the transfer button in the
+top bar). It walks you through Soundiiz, which copies Spotify playlists to YouTube Music or to your
+Plex server; press Sync now afterwards.
 
 **Last.fm doesn't scrobble.** A track is scrobbled after you've listened to half of it or 4 minutes
 (whichever comes first), and only tracks longer than 30 s. Scrobbles made while offline are queued and

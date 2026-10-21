@@ -88,7 +88,7 @@ Tauri events and sends commands back. Closing it never affects playback.
 | YouTube playback | IFrame player only: no crossfade/gapless, no quality control, some videos not embeddable. |
 | YouTube downloads | Not offered. No authorized offline mechanism exists for third-party apps. |
 | Plex transcode | Low/Medium use `/music/:/transcode/universal`. If the server rejects it, the engine falls back to original quality. Not yet verified against a live server. |
-| Spotify import | Users need their own Spotify developer app (Client ID) with redirect `http://127.0.0.1:43117/callback`. Development-mode apps only work for allow-listed users. |
+| Spotify playlists | Reading them needs a registered Spotify developer app (and allow-listed users in development mode), so the app hands transfers off to Soundiiz, which writes to YouTube Music or Plex. |
 | Last.fm | Users supply their own API key/secret (Last.fm requires one per application). |
 | Lyrics | LRCLIB (open database). Coverage varies. Unsynced lyrics are shown as unsynced. |
 | Romaji | Kana are romanized. Kanji need a dictionary, which isn't bundled yet (see TODO). |

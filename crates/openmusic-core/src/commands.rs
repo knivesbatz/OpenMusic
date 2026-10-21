@@ -12,7 +12,7 @@ use crate::db::PlayContext;
 use crate::error::{Error, Result};
 use crate::model::*;
 use crate::state::{AppState, Flavor};
-use crate::{downloads, lastfm, local, lyrics, matching, plex, spotify, ytm};
+use crate::{downloads, lastfm, local, lyrics, plex, ytm};
 
 type S<'a> = State<'a, Arc<AppState>>;
 
@@ -976,139 +976,6 @@ pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
     }
 }
 
-// ---- Spotify import -------------------------------------------------------------------------
-
-async fn spotify_token(state: &AppState) -> Result<String> {
-    let client_id: String = state.db().kv_get("spotify.clientId")?.ok_or(Error::NotSignedIn)?;
-    let tok: spotify::Token = state.secrets.get_json("spotify.token")?.ok_or(Error::NotSignedIn)?;
-    if tok.expires_at > crate::db::now() {
-        return Ok(tok.access_token);
-    }
-    let rt = tok.refresh_token.ok_or(Error::AuthExpired)?;
-    let fresh = spotify::refresh(&state.http, &client_id, &rt).await?;
-    state.secrets.set_json("spotify.token", &fresh)?;
-    Ok(fresh.access_token)
-}
-
-#[tauri::command]
-pub async fn spotify_status(state: S<'_>) -> Result<Option<String>> {
-    if state.secrets.get_large("spotify.token")?.is_none() {
-        return Ok(None);
-    }
-    state.db().kv_get("spotify.clientId")
-}
-
-#[tauri::command]
-pub async fn spotify_connect(app: AppHandle, state: S<'_>, client_id: Option<String>) -> Result<()> {
-    // The built-in Client ID unless the user entered their own.
-    let client_id = client_id
-        .map(|c| c.trim().to_string())
-        .filter(|c| !c.is_empty())
-        .or_else(|| spotify::builtin_client_id().map(String::from))
-        .ok_or_else(|| Error::Invalid("Spotify Client ID required".into()))?;
-    let (verifier, challenge) = spotify::pkce_pair();
-    let st = uuid::Uuid::new_v4().simple().to_string();
-    let url = spotify::authorize_url(&client_id, &challenge, &st);
-    let wait = tokio::spawn({
-        let st = st.clone();
-        async move { spotify::wait_for_code(&st).await }
-    });
-    use tauri_plugin_opener::OpenerExt;
-    let _ = app.opener().open_url(&url, None::<&str>);
-    let code = wait.await.map_err(|e| Error::Invalid(e.to_string()))??;
-    let tok = spotify::exchange(&state.http, &client_id, &code, &verifier).await?;
-    state.secrets.set_json("spotify.token", &tok)?;
-    state.db().kv_set("spotify.clientId", &client_id)?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn spotify_disconnect(state: S<'_>) -> Result<()> {
-    state.secrets.delete_large("spotify.token")
-}
-
-#[tauri::command]
-pub async fn spotify_playlists(state: S<'_>) -> Result<Vec<spotify::SpotifyPlaylist>> {
-    let token = spotify_token(&state).await?;
-    spotify::playlists(&state.http, &token).await
-}
-
-#[tauri::command]
-pub async fn spotify_import(app: AppHandle, state: S<'_>, playlist_id: String, name: String) -> Result<spotify::ImportReport> {
-    let token = spotify_token(&state).await?;
-    let wanted = spotify::playlist_tracks(&state.http, &token, &playlist_id).await?;
-    let mut report = spotify::ImportReport { name: name.clone(), ..Default::default() };
-    let mut seen = std::collections::HashSet::new();
-    let mut matched: Vec<Track> = Vec::new();
-    let total = wanted.len();
-    for (i, w) in wanted.iter().enumerate() {
-        let q = format!("{} {}", w.title, w.artists.first().cloned().unwrap_or_default());
-        let candidates = match state.flavor {
-            Flavor::Plex => {
-                let sess = state.plex_session().await?;
-                // Plex search is title-based; artist words would make it miss.
-                let mut c = state.plex.search_tracks(&sess, &w.title).await.unwrap_or_default();
-                if c.is_empty() {
-                    c = state.plex.search_tracks(&sess, &matching::normalize(&w.title)).await.unwrap_or_default();
-                }
-                c
-            }
-            Flavor::YouTube => {
-                let y = state.ytm().await;
-                y.search_tracks(&q).await.unwrap_or_default()
-            }
-        };
-        let mut row = spotify::ImportRow { title: w.title.clone(), artist: w.artists.join(", "), ..Default::default() };
-        match matching::best_match(w, &candidates) {
-            matching::Verdict::Match(t, s) => {
-                row.score = Some(s);
-                if seen.insert(t.id.clone()) {
-                    row.status = "imported".into();
-                    report.imported += 1;
-                    matched.push(t.clone());
-                } else {
-                    row.status = "duplicate".into();
-                    report.duplicates += 1;
-                }
-                row.matched = Some(t);
-            }
-            matching::Verdict::Ambiguous(t, s) => {
-                row.status = "ambiguous".into();
-                row.score = Some(s);
-                row.matched = Some(t);
-                report.ambiguous += 1;
-            }
-            matching::Verdict::NoMatch => {
-                row.status = "skipped".into();
-                report.skipped += 1;
-            }
-        }
-        report.rows.push(row);
-        let _ = app.emit("import-progress", serde_json::json!({ "done": i + 1, "total": total }));
-    }
-    if !matched.is_empty() {
-        let mut db = state.db();
-        let p = db.playlist_create(&name)?;
-        db.playlist_add(&p.id, &matched)?;
-        report.playlist_id = Some(p.id);
-        let _ = app.emit("playlists-changed", ());
-    }
-    Ok(report)
-}
-
-/// Add tracks the user confirmed from the "ambiguous" list of an import report.
-#[tauri::command]
-pub fn import_confirm(app: AppHandle, state: S, playlist_id: Option<String>, name: String, tracks: Vec<Track>) -> Result<String> {
-    let mut db = state.db();
-    let id = match playlist_id {
-        Some(id) => id,
-        None => db.playlist_create(&name)?.id,
-    };
-    db.playlist_add(&id, &tracks)?;
-    let _ = app.emit("playlists-changed", ());
-    Ok(id)
-}
-
 // ---- downloads / storage --------------------------------------------------------------------
 
 #[tauri::command]
@@ -1520,11 +1387,5 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
 pub fn gpu_set(state: S, enabled: bool) -> Result<()> {
     crate::safe_mode::set_gpu(&state.dirs.data, enabled)?;
     Ok(())
-}
-
-/// Whether this build has a Spotify Client ID built in (one-click "Sign in with Spotify").
-#[tauri::command]
-pub fn spotify_builtin() -> bool {
-    spotify::builtin_client_id().is_some()
 }
 

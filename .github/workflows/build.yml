@@ -99,8 +99,6 @@ jobs:
         env:
           # Optional Authenticode signing: base64 .pfx and its password as repository secrets.
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          # Optional: the project's Spotify app Client ID, for one-click Spotify import.
-          OPENMUSIC_SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           $extra = @()
@@ -158,8 +156,6 @@ jobs:
         working-directory: ui
       - name: Build ${{ matrix.app }} APK
         working-directory: apps/${{ matrix.app }}/src-tauri
-        env:
-          OPENMUSIC_SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           ../../../ui/node_modules/.bin/tauri android init --ci

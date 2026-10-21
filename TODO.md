@@ -31,7 +31,7 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 ## Phase 5: Library and import
 - ✅ App playlists CRUD + reorder in SQLite (unit-tested)
 - 🟡 Local files: folder add, incremental scan (unit-tested), playback via asset protocol
-- 🟡 Spotify import with PKCE, conservative matcher (unit-tested), report UI
+- ✅ Spotify playlists: handed off to Soundiiz (guided Transfer page + Sync now); built-in importer removed because it needed a registered Spotify developer app
 - 🟡 YTSpot permanent hide playlist (DB tested; UI confirm dialog)
 - 🟡 Save albums / follow artists to "Your Library" (local SQLite, migration v2, DB tested): save
   button on album pages, Follow on artist pages, context menus, sidebar Albums/Artists filters.
@@ -101,7 +101,6 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   reproduced; crash.log from the user will confirm
 - ✅ Lyrics effect keyed on track id (regression test as YTSpot with music videos)
 - ✅ YouTube: song versions played/displayed instead of music videos; title cleanup (tested)
-- 🟡 Spotify one-click sign-in with a built-in Client ID (`SPOTIFY_CLIENT_ID` repo secret)
 
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library

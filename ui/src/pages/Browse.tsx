@@ -338,7 +338,7 @@ export function LibraryPage() {
           </button>
         )}
         <button className="pill ghost small" onClick={() => navigate({ name: "import" })}>
-          {t("importSpotify")}
+          {t("transferPlaylists")}
         </button>
         <button className="pill ghost small" onClick={() => navigate({ name: "settings" })}>
           {t("settings")}

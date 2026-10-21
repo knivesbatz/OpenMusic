@@ -11,7 +11,7 @@ design is in `docs/ARCHITECTURE.md`. **Read TODO.md first** when you resume work
 ## Layout
 
 ```
-crates/openmusic-core/   Rust: all shared logic (providers, DB, local files, Last.fm, Spotify import,
+crates/openmusic-core/   Rust: all shared logic (providers, DB, local files, Last.fm,
                          downloads, art cache, Tauri commands). `run(Flavor, ctx)` starts an app.
 apps/{ytspot,plexspot}/src-tauri/   Thin app crates: main.rs + tauri.conf.json + icons + capabilities.
 ui/                      React 18 + TypeScript + Vite 5 + zustand. One UI for both apps; it asks
@@ -54,10 +54,11 @@ cd ui && npm run build && cd ../apps/ytspot/src-tauri && ../../../ui/node_module
   `local-album:<artist>\u001f<album>`, `local-artist:<name>`, `app:<uuid>` (app playlists).
 - Artwork is stored as `art://plex/<path>`, `art://url/<encoded>` or `art://local/<file>`. The UI resolves
   these with `artUrl()`, and `art.rs` serves them from a disk cache. Never store tokens in metadata.
-- Secrets (Plex token/session, YouTube cookies, Last.fm keys/session, Spotify token) go in the OS
+- Secrets (Plex token/session, YouTube cookies, Last.fm keys/session) go in the OS
   credential store (`secrets.rs`), never in SQLite or settings.
 - App playlists are SQLite-only. PLEXSpot never writes Plex/Plexamp playlists, and YTSpot never deletes
   remote playlists. "Hide playlist" is local and permanent.
 - User-visible strings go through `ui/src/i18n.ts` (`en` + `ja`, typed so a missing `ja` key fails `tsc`).
+- Spotify playlist transfer is handed off to Soundiiz (Import page); there is no Spotify API code.
 - Don't add controls that do nothing. If a provider can't do something (YouTube downloads, YouTube
   crossfade), report it through `Capabilities` and say why in the UI.

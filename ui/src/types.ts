@@ -187,32 +187,6 @@ export interface ScanReport {
   failed: number;
 }
 
-export interface SpotifyPlaylist {
-  id: string;
-  name: string;
-  owner: string;
-  trackCount: number;
-  image?: string | null;
-}
-
-export interface ImportRow {
-  title: string;
-  artist: string;
-  status: string;
-  matched?: Track | null;
-  score?: number | null;
-}
-
-export interface ImportReport {
-  playlistId?: string | null;
-  name: string;
-  imported: number;
-  duplicates: number;
-  ambiguous: number;
-  skipped: number;
-  rows: ImportRow[];
-}
-
 export interface LastFmStatus {
   hasKeys: boolean;
   connected: boolean;

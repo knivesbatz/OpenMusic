@@ -598,21 +598,6 @@ impl Plex {
         Ok(lib)
     }
 
-    /// Candidate tracks for import matching.
-    pub async fn search_tracks(&self, sess: &Session, q: &str) -> Result<Vec<Track>> {
-        let mut out = Vec::new();
-        let q = urlencoding::encode(q);
-        for sid in &sess.sections {
-            out.extend(
-                self.list(sess, &format!("/library/sections/{sid}/search?type=10&query={q}&X-Plex-Container-Size=25"))
-                    .await?
-                    .iter()
-                    .filter_map(to_track),
-            );
-        }
-        Ok(out)
-    }
-
     /// Direct-play URL (original file) or a server-side transcode at `kbps`.
     pub fn stream_url(&self, sess: &Session, track: &Track, kbps: Option<u32>) -> Result<String> {
         let token = urlencoding::encode(&sess.server.access_token);

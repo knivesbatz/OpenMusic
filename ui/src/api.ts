@@ -104,14 +104,6 @@ export const api = {
   lastfmNowPlaying: (track: T.Track) => call<void>("lastfm_now_playing", { track }),
   lastfmScrobble: (track: T.Track, startedAt: number) => call<boolean>("lastfm_scrobble", { track, startedAt }),
 
-  spotifyStatus: () => call<string | null>("spotify_status"),
-  spotifyConnect: (clientId: string | null) => call<void>("spotify_connect", { clientId }),
-  spotifyBuiltin: () => call<boolean>("spotify_builtin"),
-  spotifyDisconnect: () => call<void>("spotify_disconnect"),
-  spotifyPlaylists: () => call<T.SpotifyPlaylist[]>("spotify_playlists"),
-  spotifyImport: (playlistId: string, name: string) => call<T.ImportReport>("spotify_import", { playlistId, name }),
-  importConfirm: (playlistId: string | null, name: string, tracks: T.Track[]) =>
-    call<string>("import_confirm", { playlistId, name, tracks }),
 
   downloadTracks: (tracks: T.Track[]) => call<number>("download_tracks", { tracks }),
   downloadList: () => call<T.DownloadInfo[]>("download_list"),

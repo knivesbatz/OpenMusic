@@ -10,13 +10,11 @@ pub mod error;
 pub mod lastfm;
 pub mod local;
 pub mod lyrics;
-pub mod matching;
 pub mod model;
 pub mod safe_mode;
 pub mod names;
 pub mod plex;
 pub mod secrets;
-pub mod spotify;
 pub mod state;
 pub mod ytm;
 
@@ -251,13 +249,6 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::lastfm_disconnect,
             commands::lastfm_now_playing,
             commands::lastfm_scrobble,
-            commands::spotify_status,
-            commands::spotify_connect,
-            commands::spotify_builtin,
-            commands::spotify_disconnect,
-            commands::spotify_playlists,
-            commands::spotify_import,
-            commands::import_confirm,
             commands::download_tracks,
             commands::download_list,
             commands::download_cancel,

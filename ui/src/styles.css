@@ -376,6 +376,7 @@ p { margin: 0 0 8px; }
 .switch:checked { background: var(--green); }
 .switch:checked::after { transform: translateX(18px); }
 .form { display: flex; flex-direction: column; gap: 8px; max-width: 480px; }
+.steps { padding-left: 20px; line-height: 1.8; margin: 8px 0 16px; }
 .redirect { background: var(--surface-3); padding: 6px 10px; border-radius: 4px; user-select: all; align-self: flex-start; }
 .folders, .dl-list, .sp-list { list-style: none; padding: 0; margin: 8px 0 16px; }
 .folders li, .dl-list li, .sp-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 6px; }

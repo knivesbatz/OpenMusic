@@ -756,15 +756,6 @@ impl Ytm {
         Ok(out)
     }
 
-    /// Songs-only search used by the Spotify importer.
-    pub async fn search_tracks(&self, q: &str) -> Result<Vec<Track>> {
-        // `params` = the "Songs" filter chip of the web client.
-        let v = self.post("search", json!({ "query": q, "params": "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D" }), "").await?;
-        let mut out = SearchResults::default();
-        split_by_kind(all_items(&v), &mut out);
-        Ok(out.tracks)
-    }
-
     pub async fn artist(&self, id: &str) -> Result<ArtistPage> {
         let bid = id.trim_start_matches("yt:");
         let v = self.browse(bid).await?;
