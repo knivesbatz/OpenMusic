@@ -119,7 +119,7 @@ export function ArtistPage({ id }: { id: string }) {
     );
   return (
     <div className="page detail">
-      <header className="artist-hero" style={data.artist?.artwork ? { ["--hero" as string]: `url(${artBg(data.artist.artwork)})` } : undefined}>
+      <header className="artist-hero" style={data.artist?.artwork ? { ["--hero" as string]: `url(${JSON.stringify(artBg(data.artist.artwork))})` } : undefined}>
         <h1>{name}</h1>
       </header>
       <ActionBar tracks={data.topTracks} ctx={ctx} />

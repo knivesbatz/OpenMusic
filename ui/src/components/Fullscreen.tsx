@@ -100,7 +100,7 @@ export function Fullscreen() {
   const exit = () => useUi.setState({ fullscreen: false });
   return (
     <div className="fullscreen" role="dialog" aria-modal="true" aria-label={t("fullscreen")} tabIndex={-1} ref={ref} onKeyDown={(e) => e.key === "Escape" && exit()}>
-      {tr && <div className="fs-bg" style={{ backgroundImage: `url(${artBg(tr.artwork)})` }} aria-hidden="true" />}
+      {tr && <div className="fs-bg" style={{ backgroundImage: `url(${JSON.stringify(artBg(tr.artwork))})` }} aria-hidden="true" />}
       <div className="fs-top">
         <span className="fs-context">{context?.title ?? ""}</span>
         <div className="row gap">

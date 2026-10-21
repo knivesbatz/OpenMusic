@@ -238,7 +238,8 @@ p { margin: 0 0 8px; }
 .time { font-size: 0.6875rem; color: var(--muted); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
 .pb-right { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
 .quality { font-size: 0.6875rem; color: var(--green); border: 1px solid #1db95466; border-radius: 4px; padding: 1px 6px; margin-right: 6px; text-transform: uppercase; }
-.volume { display: flex; align-items: center; width: 130px; }
+.volume { display: flex; align-items: center; width: 130px; flex: none; }
+.volume .slider { min-width: 0; width: 100%; }
 
 .slider { -webkit-appearance: none; appearance: none; flex: 1; height: 12px; background: transparent; cursor: pointer; --pct: 0%; }
 .slider::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: linear-gradient(90deg, #fff var(--pct), #4d4d4d var(--pct)); }
