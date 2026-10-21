@@ -1,6 +1,6 @@
 // Home, Search and the Library grid.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, playlistMenu, trackMenu } from "../actions";
+import { albumMenu, artistMenu, playlistMenu, trackMenu } from "../actions";
 import { api, errorMessage, inTauri } from "../api";
 import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, openItem, useAsync } from "../components/common";
 import { TrackList } from "../components/TrackList";
@@ -37,6 +37,7 @@ export function cardMenu(e: React.MouseEvent, item: MediaItem) {
   if (item.type === "track") return openMenu(e, trackMenu(item));
   if (item.type === "album") return openMenu(e, albumMenu(item, async () => (await api.album(item.id)).tracks));
   if (item.type === "playlist") return openMenu(e, playlistMenu(item, async () => (await api.playlist(item.id)).tracks));
+  if (item.type === "artist") return openMenu(e, artistMenu(item));
 }
 
 const homeCache: { data: HomeData | null } = { data: null };
@@ -148,7 +149,7 @@ export function Home() {
       {filter !== "podcasts" && lib && lib.artists.length > 0 && (
         <Shelf title={t("yourTopArtists")} onShowAll={() => navigate({ name: "library" })}>
           {lib.artists.slice(0, 12).map((a) => (
-            <Card key={a.id} item={{ type: "artist", ...a }} onPlay={() => playItem({ type: "artist", ...a })} />
+            <Card key={a.id} item={{ type: "artist", ...a }} onPlay={() => playItem({ type: "artist", ...a })} onContext={(e) => cardMenu(e, { type: "artist", ...a })} />
           ))}
         </Shelf>
       )}
@@ -307,6 +308,7 @@ export function LibraryPage() {
   const lib = useApp((s) => s.library);
   const err = useApp((s) => s.libraryError);
   const pls = useApp((s) => s.playlists);
+  const saved = useApp((s) => s.saved);
   const [tab, setTab] = useState<"playlists" | "albums" | "artists" | "podcasts">("playlists");
   useAsync(() => refreshLibrary(false), []);
   if (!lib && err) return <ErrorBox message={err} onRetry={() => refreshLibrary(true)} />;
@@ -314,9 +316,9 @@ export function LibraryPage() {
     tab === "playlists"
       ? [...pls, ...(lib?.playlists ?? [])].map((p) => ({ type: "playlist" as const, ...p }))
       : tab === "albums"
-        ? (lib?.albums ?? []).map((a) => ({ type: "album" as const, ...a }))
+        ? dedupe([...saved.albums, ...(lib?.albums ?? [])]).map((a) => ({ type: "album" as const, ...a }))
         : tab === "artists"
-          ? (lib?.artists ?? []).map((a) => ({ type: "artist" as const, ...a }))
+          ? dedupe([...saved.artists, ...(lib?.artists ?? [])]).map((a) => ({ type: "artist" as const, ...a }))
           : (lib?.podcasts ?? []).map((a) => ({ type: "podcast" as const, ...a }));
   return (
     <div className="page">
@@ -336,4 +338,9 @@ export function LibraryPage() {
       {!lib && !err ? <Loading /> : items.length ? <Grid items={items} /> : <p className="muted">{t("empty")}</p>}
     </div>
   );
+}
+
+function dedupe<T extends { id: string }>(xs: T[]): T[] {
+  const seen = new Set<string>();
+  return xs.filter((x) => !seen.has(x.id) && (seen.add(x.id), true));
 }

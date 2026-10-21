@@ -10,3 +10,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
 openmusic-core = { path = "../../../crates/openmusic-core" }
+# Plugins whose permissions the capabilities file grants must be direct dependencies so
+# tauri-build can resolve them; the plugins themselves are initialized by openmusic-core.
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"

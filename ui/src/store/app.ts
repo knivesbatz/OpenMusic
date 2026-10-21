@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorCode, errorMessage, inTauri } from "../api";
-import type { AppInfo, AuthStatus, Library, Playlist } from "../types";
+import type { Album, AppInfo, Artist, AuthStatus, Library, Playlist } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useSettings } from "./settings";
 import { toast } from "./ui";
@@ -17,6 +17,8 @@ interface AppStore {
   libraryError: string | null;
   playlists: Playlist[];
   liked: Set<string>;
+  /** Albums and artists saved to "Your Library" in this app. */
+  saved: { albums: Album[]; artists: Artist[] };
 }
 
 export const useApp = create<AppStore>(() => ({
@@ -28,6 +30,7 @@ export const useApp = create<AppStore>(() => ({
   libraryError: null,
   playlists: [],
   liked: new Set(),
+  saved: { albums: [], artists: [] },
 }));
 
 const browserInfo: AppInfo = {
@@ -52,6 +55,8 @@ export async function boot() {
     getCurrentWindow().setFullscreen(true).catch(() => {});
   }
   refreshPlaylists();
+  refreshSaved();
+  listen("saved-changed", refreshSaved);
   if (auth?.signedIn && !auth.needsServer) refreshLibrary(false);
   listen("auth-changed", async () => {
     const auth = await api.authStatus().catch(() => null);
@@ -82,7 +87,10 @@ export function refreshLibrary(refresh: boolean): Promise<void> {
   if (libraryInflight && !refresh) return libraryInflight;
   libraryInflight = api
     .library(refresh)
-    .then((library) => useApp.setState({ library, libraryError: null }))
+    .then((library) => {
+      useApp.setState({ library, libraryError: null });
+      refreshLiked();
+    })
     .catch((e) => {
       if (errorCode(e) === "offline") useApp.setState({ online: false });
       useApp.setState({ libraryError: errorMessage(e) });
@@ -99,3 +107,28 @@ export async function refreshPlaylists() {
     /* keep previous */
   }
 }
+
+/** Like state comes from the provider; failures keep what we have (e.g. offline). */
+export async function refreshLiked() {
+  if (!inTauri || !useApp.getState().info?.capabilities.favorites) return;
+  try {
+    useApp.setState({ liked: new Set(await api.likedIds()) });
+  } catch {
+    /* keep previous */
+  }
+}
+
+export async function refreshSaved() {
+  if (!inTauri) return;
+  try {
+    const l = await api.savedList();
+    useApp.setState({ saved: { albums: l.albums, artists: l.artists } });
+  } catch {
+    /* keep previous */
+  }
+}
+
+export const isSaved = (id: string) => {
+  const s = useApp.getState().saved;
+  return s.albums.some((a) => a.id === id) || s.artists.some((a) => a.id === id);
+};

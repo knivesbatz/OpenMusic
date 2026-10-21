@@ -58,6 +58,13 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE TABLE cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER NOT NULL);
     "#,
+    // v2: albums and artists saved to "Your Library" inside the app (never written to the provider)
+    r#"
+    CREATE TABLE saved (
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL, json TEXT NOT NULL, saved_at INTEGER NOT NULL
+    );
+    CREATE INDEX saved_kind ON saved(kind, saved_at);
+    "#,
 ];
 
 pub fn now() -> i64 {
@@ -307,6 +314,29 @@ impl Db {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
+    // ---- saved albums / artists -------------------------------------------------------------
+
+    pub fn save_item<T: serde::Serialize>(&self, kind: &str, id: &str, item: &T) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO saved(id,kind,json,saved_at) VALUES(?1,?2,?3,?4)
+             ON CONFLICT(id) DO UPDATE SET json=excluded.json",
+            params![id, kind, serde_json::to_string(item)?, now()],
+        )?;
+        Ok(())
+    }
+
+    pub fn unsave_item(&self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM saved WHERE id=?1", [id])?;
+        Ok(())
+    }
+
+    /// Saved items of one kind, most recently saved first. Rows that no longer parse are skipped.
+    pub fn saved_items<T: serde::de::DeserializeOwned>(&self, kind: &str) -> Result<Vec<T>> {
+        let mut st = self.conn.prepare("SELECT json FROM saved WHERE kind=?1 ORDER BY saved_at DESC, rowid DESC")?;
+        let rows = st.query_map([kind], |r| r.get::<_, String>(0))?;
+        Ok(rows.filter_map(|r| r.ok()).filter_map(|j| serde_json::from_str(&j).ok()).collect())
+    }
+
     // ---- listening history ------------------------------------------------------------------
 
     pub fn record_play(&self, track: &Track, ctx: Option<&PlayContext>) -> Result<()> {
@@ -472,6 +502,22 @@ mod tests {
         assert_eq!(db.playlists().unwrap()[0].track_count, Some(4));
         db.playlist_delete(&p.id).unwrap();
         assert!(db.playlist_tracks(&p.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn saved_albums_and_artists() {
+        use crate::model::{Album, Artist};
+        let db = Db::open_in_memory().unwrap();
+        let album = |id: &str| Album { id: id.into(), title: "T".into(), artist: "A".into(), artist_id: None, year: None, artwork: None, kind: None };
+        db.save_item("album", "plex:1", &album("plex:1")).unwrap();
+        db.save_item("album", "plex:2", &album("plex:2")).unwrap();
+        db.save_item("album", "plex:1", &album("plex:1")).unwrap(); // idempotent
+        db.save_item("artist", "plex:9", &Artist { id: "plex:9".into(), name: "N".into(), artwork: None }).unwrap();
+        let albums: Vec<Album> = db.saved_items("album").unwrap();
+        assert_eq!(albums.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["plex:2", "plex:1"]);
+        assert_eq!(db.saved_items::<Artist>("artist").unwrap().len(), 1);
+        db.unsave_item("plex:2").unwrap();
+        assert_eq!(db.saved_items::<Album>("album").unwrap().len(), 1);
     }
 
     #[test]

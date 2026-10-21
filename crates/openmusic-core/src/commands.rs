@@ -1115,3 +1115,47 @@ pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
     r.map_err(|e| Error::Invalid(e.to_string()))
 }
 
+// ---- likes ----------------------------------------------------------------------------------
+
+/// Track ids the user has liked on the provider, so the UI can show the like state.
+#[tauri::command]
+pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
+    match state.flavor {
+        Flavor::Plex => {
+            let sess = state.plex_session().await?;
+            Ok(state.plex.liked_track_ids(&sess).await)
+        }
+        Flavor::YouTube => {
+            // "LM" is the account's Liked Music playlist.
+            let page = yt_call!(app, state, |y| y.playlist("yt:LM"))?;
+            Ok(page.tracks.into_iter().map(|t| t.id).collect())
+        }
+    }
+}
+
+// ---- saved albums / artists ("Your Library") -----------------------------------------------
+
+/// Albums and artists the user saved in this app. Stored locally only, so saving never changes
+/// the Plex server or the YouTube account.
+#[tauri::command]
+pub fn saved_list(state: S) -> Result<Library> {
+    let db = state.db();
+    Ok(Library { albums: db.saved_items("album")?, artists: db.saved_items("artist")?, ..Default::default() })
+}
+
+#[tauri::command]
+pub fn save_album(app: AppHandle, state: S, album: Album, saved: bool) -> Result<()> {
+    let db = state.db();
+    if saved { db.save_item("album", &album.id, &album)? } else { db.unsave_item(&album.id)? }
+    let _ = app.emit("saved-changed", ());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn save_artist(app: AppHandle, state: S, artist: Artist, saved: bool) -> Result<()> {
+    let db = state.db();
+    if saved { db.save_item("artist", &artist.id, &artist)? } else { db.unsave_item(&artist.id)? }
+    let _ = app.emit("saved-changed", ());
+    Ok(())
+}
+

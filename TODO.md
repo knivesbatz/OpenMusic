@@ -33,6 +33,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Local files: folder add, incremental scan (unit-tested), playback via asset protocol
 - 🟡 Spotify import with PKCE, conservative matcher (unit-tested), report UI
 - 🟡 YTSpot permanent hide playlist (DB tested; UI confirm dialog)
+- 🟡 Save albums / follow artists to "Your Library" (local SQLite, migration v2, DB tested): save
+  button on album pages, Follow on artist pages, context menus, sidebar Albums/Artists filters.
+  Never written to Plex or YouTube
+- 🟡 Like state loaded from the provider (Plex rated tracks, YouTube Liked Music)
 
 ## Phase 6: Advanced player
 - 🟡 Fullscreen player with synced lyrics (LRCLIB)
@@ -60,8 +64,6 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ⬜ Upgrade-install test
 
 ## Known issues
-- Liked state isn't loaded from the provider, so the "Save to Liked" button starts unfilled until
-  you toggle it in this session.
 - YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
   with a toast.
 - Rust tests need GTK/WebKit dev packages on Linux (see CLAUDE.md); CI runs them on Windows.

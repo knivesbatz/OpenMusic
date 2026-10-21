@@ -3,10 +3,10 @@
 import { api, errorMessage, inTauri } from "./api";
 import { translate, type Key } from "./i18n";
 import * as P from "./player/engine";
-import { refreshLibrary, refreshPlaylists, useApp } from "./store/app";
+import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
 import { useSettings } from "./store/settings";
 import { confirmDialog, navigate, promptDialog, toast, useUi, type MenuItem } from "./store/ui";
-import type { Album, Playlist, Track } from "./types";
+import type { Album, Artist, Playlist, Track } from "./types";
 
 const t = (k: Key, v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
@@ -183,8 +183,28 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): Men
   return items;
 }
 
+/** Save or remove an album/artist from "Your Library" (local to the app). Optimistic. */
+export async function toggleSaved(item: { kind: "album"; v: Album } | { kind: "artist"; v: Artist }) {
+  const on = !isSaved(item.v.id);
+  const prev = useApp.getState().saved;
+  const next =
+    item.kind === "album"
+      ? { ...prev, albums: on ? [item.v, ...prev.albums] : prev.albums.filter((a) => a.id !== item.v.id) }
+      : { ...prev, artists: on ? [item.v, ...prev.artists] : prev.artists.filter((a) => a.id !== item.v.id) };
+  useApp.setState({ saved: next });
+  try {
+    if (inTauri) await (item.kind === "album" ? api.saveAlbum(item.v, on) : api.saveArtist(item.v, on));
+    toast(on ? t("savedToLibrary") : t("removedFromLibrary"));
+  } catch (e) {
+    useApp.setState({ saved: prev });
+    toast(errorMessage(e));
+    refreshSaved();
+  }
+}
+
 export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuItem[] {
   const items: MenuItem[] = [
+    { label: isSaved(album.id) ? t("removeFromLibrary") : t("saveToLibrary"), onClick: () => toggleSaved({ kind: "album", v: album }) },
     { label: t("addToQueue"), onClick: async () => P.addToQueue(await tracks()) },
     { label: t("addToPlaylist"), onClick: async () => createPlaylist(await tracks()) },
   ];
@@ -226,4 +246,8 @@ export async function hidePlaylist(pl: Playlist) {
   } catch (e) {
     toast(errorMessage(e));
   }
+}
+
+export function artistMenu(artist: Artist): MenuItem[] {
+  return [{ label: isSaved(artist.id) ? t("unfollow") : t("follow"), onClick: () => toggleSaved({ kind: "artist", v: artist }) }];
 }

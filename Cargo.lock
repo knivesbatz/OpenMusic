@@ -2836,6 +2836,8 @@ dependencies = [
  "openmusic-core",
  "tauri",
  "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
 ]
 
 [[package]]
@@ -5580,6 +5582,8 @@ dependencies = [
  "openmusic-core",
  "tauri",
  "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
 ]
 
 [[package]]

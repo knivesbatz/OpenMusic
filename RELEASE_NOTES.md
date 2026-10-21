@@ -25,6 +25,8 @@ installer downloads it.
 - Playback engine: two-deck `<audio>` with gapless preload, 0–12 s equal-power crossfade, Automix (no
   fades inside an album); YouTube through the official IFrame player
 - App playlists (SQLite, separate from Plex/Plexamp), YTSpot permanent hide with no-undo confirmation
+- Your Library: save albums (⊕ on album pages) and follow artists (Follow on artist pages); they appear
+  under Albums / Artists in the sidebar. Saved in the app only, never changed on Plex or YouTube
 - Local files, Plex downloads page, Spotify import with report, Last.fm settings, English/日本語,
   kana→romaji for lyrics, accessibility (text size, reduced motion, contrast, keyboard), TV mode with
   Xbox/DS4/Switch controller navigation and "Launch at startup in TV mode"
@@ -44,15 +46,17 @@ installer downloads it.
    "needs review" rows.
 10. **Last.fm**: connect, now playing, scrobble after half the track / 4 minutes, no duplicates.
 11. **Local files**: add folder, rescan, missing files.
-12. **TV mode**: controller D-pad/stick focus, A (select), B (back), X (queue), Y (fullscreen),
+12. **Saving**: save an album and follow an artist, check the sidebar filters, restart, unsave.
+    **Likes**: tracks you already liked in Plex / YouTube Music show as saved; toggling syncs back.
+13. **Japanese**: Settings → Japanese text → Romaji / Both changes titles, artists and lyrics.
+14. **TV mode**: controller D-pad/stick focus, A (select), B (back), X (queue), Y (fullscreen),
     LB/RB (previous/next), LT/RT (seek), Start (play/pause). Turn on "Launch at startup in TV mode",
     sign out of Windows and back in: the app should open fullscreen in TV mode.
-13. **Install/uninstall**: install both apps side by side, uninstall one, the other keeps working.
+15. **Install/uninstall**: install both apps side by side, uninstall one, the other keeps working.
 
 ## Known gaps / not finished
 - Nothing has been verified against real accounts (no Plex server or Google account in CI).
 - Kanji → romaji needs a dictionary; only kana is romanized for now.
 - Translated artist/album names need a licensed metadata source (not started).
 - No UI end-to-end tests yet (Playwright).
-- The "Save to Liked" button doesn't load existing likes from the provider yet.
 - Installers are unsigned, so SmartScreen warns ("More info" → "Run anyway").

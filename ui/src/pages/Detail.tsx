@@ -1,7 +1,7 @@
 // Artist, album and playlist pages.
 import { useState } from "react";
-import { albumMenu, downloadTracks, playlistMenu } from "../actions";
-import { api, errorMessage } from "../api";
+import { albumMenu, downloadTracks, playlistMenu, toggleSaved } from "../actions";
+import { api, artUrl, errorMessage } from "../api";
 import { Art, ErrorBox, JpText, Loading, PlayFab, useAsync } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
@@ -9,8 +9,8 @@ import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
-import { openMenu, toast } from "../store/ui";
-import type { Album, PlayContext, Track } from "../types";
+import { navigate, openMenu, toast } from "../store/ui";
+import type { Album, Artist, PlayContext, Track } from "../types";
 import { cls, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
 
@@ -83,13 +83,17 @@ export function AlbumPage({ id }: { id: string }) {
           </>
         }
       />
-      <ActionBar tracks={tracks} ctx={ctx} onMore={(e) => openMenu(e, albumMenu(album, async () => tracks))} />
+      <ActionBar
+        tracks={tracks}
+        ctx={ctx}
+        onMore={(e) => openMenu(e, albumMenu(album, async () => tracks))}
+        extra={<SaveAlbumButton album={album} />}
+      />
       <TrackList tracks={tracks} context={ctx} showAlbum={false} showArt={false} />
     </div>
   );
 }
 
-import { navigate } from "../store/ui";
 const navigateArtist = (id: string) => navigate({ name: "artist", id });
 
 type Disc = "popular" | "albums" | "singles" | "appears";
@@ -126,7 +130,7 @@ export function ArtistPage({ id }: { id: string }) {
           <JpText text={name} />
         </h1>
       </header>
-      <ActionBar tracks={data.topTracks} ctx={ctx} />
+      <ActionBar tracks={data.topTracks} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
       {data.topTracks.length > 0 && (
         <section>
           <h2>{t("popular")}</h2>
@@ -162,7 +166,6 @@ export function ArtistPage({ id }: { id: string }) {
   );
 }
 
-import { artUrl } from "../api";
 const artBg = (a: string) => artUrl(a, 1000) ?? "";
 
 function DiscChips({ disc, setDisc, hasAppears }: { disc: Disc; setDisc: (d: Disc) => void; hasAppears: boolean }) {
@@ -234,5 +237,26 @@ export function PlaylistPage({ id }: { id: string }) {
         <p className="muted pad">{editable ? t("playlistEmptyHint") : t("empty")}</p>
       )}
     </div>
+  );
+}
+
+function SaveAlbumButton({ album }: { album: Album }) {
+  const t = useT();
+  const saved = useApp((s) => s.saved.albums.some((a) => a.id === album.id));
+  const label = saved ? t("removeFromLibrary") : t("saveToLibrary");
+  return (
+    <button className={cls("icon-btn lg", saved && "saved")} aria-pressed={saved} aria-label={label} title={label} onClick={() => toggleSaved({ kind: "album", v: album })}>
+      {saved ? <I.IChecked size={30} /> : <I.IAddCircle size={30} />}
+    </button>
+  );
+}
+
+function FollowButton({ artist }: { artist: Artist }) {
+  const t = useT();
+  const saved = useApp((s) => s.saved.artists.some((a) => a.id === artist.id));
+  return (
+    <button className={cls("pill ghost small follow", saved && "on")} aria-pressed={saved} onClick={() => toggleSaved({ kind: "artist", v: artist })}>
+      {saved ? t("following") : t("follow")}
+    </button>
   );
 }

@@ -1,7 +1,7 @@
 // Custom fullscreen player: large artwork with synced lyrics to its right when there is room.
 import { useEffect, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { api, inTauri } from "../api";
+import { api, artUrl, inTauri } from "../api";
 import { useT } from "../i18n";
 import { usePlayer } from "../player/engine";
 import * as P from "../player/engine";
@@ -149,5 +149,4 @@ export function Fullscreen() {
   );
 }
 
-import { artUrl } from "../api";
 const artBg = (a?: string | null) => artUrl(a, 120) ?? "";

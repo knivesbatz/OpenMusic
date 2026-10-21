@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { createPlaylist, playlistMenu } from "../actions";
+import { albumMenu, artistMenu, createPlaylist, playlistMenu } from "../actions";
 import { api } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
@@ -24,6 +24,7 @@ export function Sidebar() {
   const setSettings = useSettings((s) => s.set);
   const lib = useApp((s) => s.library);
   const appPls = useApp((s) => s.playlists);
+  const saved = useApp((s) => s.saved);
   const caps = useApp((s) => s.info?.capabilities);
   const flavor = useApp((s) => s.info?.flavor);
   const cur = useUi((s) => s.stack[s.pos]);
@@ -37,14 +38,21 @@ export function Sidebar() {
       for (const p of appPls) out.push({ k: "playlist", v: p });
       for (const p of lib?.playlists ?? []) out.push({ k: "playlist", v: p });
     }
-    if (filter === "all" || filter === "albums") for (const a of lib?.albums ?? []) out.push({ k: "album", v: a });
-    if (filter === "all" || filter === "artists") for (const a of lib?.artists ?? []) out.push({ k: "artist", v: a });
+    // Albums/artists in "Your Library" are the ones the user saved. On Plex the provider library is
+    // the whole server, so only YouTube's own library collection is merged in.
+    const seen = new Set<string>();
+    const uniq = <T extends { id: string }>(xs: T[]) => xs.filter((x) => !seen.has(x.id) && (seen.add(x.id), true));
+    const provider = flavor === "youtube";
+    if (filter === "all" || filter === "albums")
+      for (const a of uniq([...saved.albums, ...(provider ? lib?.albums ?? [] : [])])) out.push({ k: "album", v: a });
+    if (filter === "all" || filter === "artists")
+      for (const a of uniq([...saved.artists, ...(provider ? lib?.artists ?? [] : [])])) out.push({ k: "artist", v: a });
     if (filter === "all" || filter === "podcasts") for (const p of lib?.podcasts ?? []) out.push({ k: "podcast", v: p });
     const name = (e: Entry) => (e.k === "artist" ? e.v.name : e.v.title);
     const needle = q.trim().toLowerCase();
     const list = needle ? out.filter((e) => name(e).toLowerCase().includes(needle)) : out;
     return alpha ? list.slice().sort((a, b) => name(a).localeCompare(name(b))) : list;
-  }, [filter, lib, appPls, q, alpha]);
+  }, [filter, lib, appPls, saved, flavor, q, alpha]);
 
   const is = (r: Route) => JSON.stringify(r) === JSON.stringify(cur);
   const open = (e: Entry) => navigate(e.k === "album" ? { name: "album", id: e.v.id } : e.k === "artist" ? { name: "artist", id: e.v.id } : { name: "playlist", id: e.v.id });
@@ -131,7 +139,11 @@ export function Sidebar() {
               onContext={
                 e.k === "playlist"
                   ? (ev) => openMenu(ev, playlistMenu(e.v as Playlist, async () => (await api.playlist(e.v.id)).tracks))
-                  : undefined
+                  : e.k === "album"
+                    ? (ev) => openMenu(ev, albumMenu(e.v as Album, async () => (await api.album(e.v.id)).tracks))
+                    : e.k === "artist"
+                      ? (ev) => openMenu(ev, artistMenu(e.v as Artist))
+                      : undefined
               }
               onPlay={
                 e.k === "playlist"
