@@ -58,8 +58,12 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 ## Phase 9: Polish
 - 🟡 HTPC/TV mode: launch at startup (autostart plugin, `--htpc` opens fullscreen in TV mode), Gamepad API spatial navigation (A/B/X/Y, LB/RB, LT/RT, Start)
 - 🟡 Sleep timer, "View credits", "Share" (copy title/link) menu items
-- 🟡 Playwright screenshot run against a mock backend (`ui/e2e/`); no assertions yet
-- ⬜ Measure startup and memory on a 50k-track library
+- ✅ Playwright UI smoke tests against the production build with a mock backend (`npm run e2e`, CI job
+  `e2e`): home, search, Shift-click queue range + Delete, album context menu + save, artist follow,
+  fullscreen lyrics + Escape, language switch, 50k-track list
+- 🟡 Large-list measurement (mock data, headless Chromium): 50,000-track playlist renders first rows in
+  ~0.7–0.9 s, jump-scroll to row 40,000 in ~85 ms, 16 rows in the DOM, ~60–70 MB JS heap. Not yet
+  measured inside WebView2 on Windows or against a real 50k Plex library
 
 ## Phase 10: Release
 - ⬜ Code signing (needs a certificate)

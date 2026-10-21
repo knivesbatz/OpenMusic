@@ -50,8 +50,29 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace -- -D clippy::correctness
 
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: UI build
+        run: |
+          npm ci
+          npm run build
+        working-directory: ui
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: ui
+      - name: UI smoke tests (mock backend)
+        run: npm run e2e
+        working-directory: ui
+
   bundle:
-    needs: test
+    needs: [test, e2e]
     runs-on: windows-latest
     strategy:
       fail-fast: false
