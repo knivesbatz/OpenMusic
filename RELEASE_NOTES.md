@@ -1,8 +1,11 @@
-# OpenMusic 0.1.0-beta.1 — first usable beta
+# OpenMusic 1.0.0
 
-**Pre-release (beta). Not yet verified against real Plex or YouTube Music accounts.** Please run
-through the checklist below and report anything that breaks. The final release follows once these
-flows are confirmed.
+First full release of YTSpot and PLEXSpot. Every build passes Windows unit tests, lint, 8 UI tests, and an
+automated upgrade test on a clean Windows machine (0.1.0-beta.1 → 1.0.0, launch, uninstall).
+
+**Not yet verified against real Plex or YouTube Music accounts** (CI has no provider accounts). The
+checklist below lists what to try first; please report anything that breaks. Installation and
+troubleshooting: [docs/INSTALL.md](https://github.com/knivesbatz/OpenMusic/blob/main/docs/INSTALL.md).
 
 ## Downloads
 - `YTSpot_*_x64-setup.exe`: YouTube Music client (`app.openmusic.ytspot`)
@@ -60,5 +63,6 @@ installer downloads it.
 - Nothing has been verified against real accounts (no Plex server or Google account in CI).
 - Kanji → romaji needs a dictionary; only kana is romanized for now.
 - Translated names cover artists that have a MusicBrainz alias; album titles stay as published.
-- No UI end-to-end tests yet (Playwright).
-- Installers are unsigned, so SmartScreen warns ("More info" → "Run anyway").
+- Installers are unsigned, so SmartScreen warns ("More info" → "Run anyway"). Signing is wired in CI
+  and activates when a certificate is added as a repository secret.
+- Upgrading from 0.1.0-beta.1 keeps your playlists, settings, downloads and sign-in.

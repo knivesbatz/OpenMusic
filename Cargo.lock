@@ -2626,7 +2626,7 @@ dependencies = [
 
 [[package]]
 name = "openmusic-core"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -2831,7 +2831,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plexspot"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "openmusic-core",
  "tauri",
@@ -5577,7 +5577,7 @@ dependencies = [
 
 [[package]]
 name = "ytspot"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "openmusic-core",
  "tauri",
