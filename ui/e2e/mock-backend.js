@@ -35,7 +35,8 @@
     },
     queue_load: { tracks: tracks.map((t, i) => ({ t, m: i === 1 || i === 2 })), index: 0, context: { kind: "playlist", id: "plex:pl0", title: "autumn" }, position: 83, shuffle: false, repeat: "all" },
     album: { album: albums[0], tracks: tracks.slice(0, 10).map((t) => ({ ...t, album: albums[0].title, artwork: albums[0].artwork })) },
-    artist: { artist: artists[0], description: "Sample artist used for UI screenshots.", topTracks: tracks.slice(0, 10), albums: albums.slice(0, 5), singles: albums.slice(5), appearsOn: albums.slice(2, 6), related: artists.slice(1) },
+    artist: { artist: artists[0], description: "Sample artist used for UI screenshots.", topTracks: tracks.slice(0, 10), albums: albums.slice(0, 5), singles: albums.slice(5), appearsOn: albums.slice(2, 6), related: artists.slice(1),
+      localTracks: [{ ...tracks[0], id: "local:abc", source: "local", title: "Slow Lights (home demo)", artwork: null }], localAlbums: [] },
     // "plex:big" is a 50,000-track playlist for the large-list performance check.
     playlist: (args) =>
       args && args.id === "plex:big"
@@ -48,7 +49,8 @@
     download_list: [],
     liked_ids: [],
     localized_artist_names: {},
-    search: { top: { type: "artist", ...artists[0] }, tracks: tracks.slice(0, 6), albums: albums.slice(0, 4), artists: artists.slice(0, 4), playlists: playlists.slice(0, 3), podcasts: [], episodes: [] },
+    search_kind: (a) => ({ top: null, tracks: a.kind === "songs" ? [...tracks, ...tracks.map((t) => ({ ...t, id: t.id + "b", title: t.title + " (more)" }))] : [], albums: a.kind === "albums" ? albums : [], artists: a.kind === "artists" ? artists : [], playlists: [], podcasts: [], episodes: [] }),
+    search: { top: { type: "artist", ...artists[0] }, tracks: [...tracks.slice(0, 6), { ...tracks[0], id: "local:abc", source: "local", title: "Slow Lights (home demo)", artwork: null }], albums: albums.slice(0, 4), artists: artists.slice(0, 4), playlists: playlists.slice(0, 3), podcasts: [], episodes: [] },
     get_lyrics: { synced: true, source: "LRCLIB (sample)", lines: [
       { timeMs: 50000, text: "Headlights fold into the rain" }, { timeMs: 60000, text: "Every sign a different name" },
       { timeMs: 70000, text: "夜明けまで走り続ける" }, { timeMs: 80000, text: "Slow lights, carry me home" },

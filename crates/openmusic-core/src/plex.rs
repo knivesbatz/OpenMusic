@@ -483,10 +483,15 @@ impl Plex {
     }
 
     pub async fn search(&self, sess: &Session, q: &str) -> Result<SearchResults> {
+        self.search_limit(sess, q, 20).await
+    }
+
+    /// Search with a per-type result limit (`limit` items per hub).
+    pub async fn search_limit(&self, sess: &Session, q: &str, limit: u32) -> Result<SearchResults> {
         let mut out = SearchResults::default();
         let q = urlencoding::encode(q);
         for sid in &sess.sections {
-            let v = self.get(sess, &format!("/hubs/search?query={q}&limit=20&sectionId={sid}")).await?;
+            let v = self.get(sess, &format!("/hubs/search?query={q}&limit={limit}&sectionId={sid}")).await?;
             let hubs = v.get("MediaContainer").and_then(|m| m.get("Hub")).and_then(|h| h.as_array()).cloned();
             for hub in hubs.unwrap_or_default() {
                 let list = hub.get("Metadata").and_then(|m| m.as_array()).cloned().unwrap_or_default();
@@ -558,6 +563,24 @@ impl Plex {
         Ok(page)
     }
 
+    /// Tracks for Autoplay after `id`: sonically similar ones when the server has analysed the
+    /// library (Plex Pass), otherwise random tracks from the music libraries.
+    pub async fn autoplay(&self, sess: &Session, id: &str) -> Result<Vec<Track>> {
+        let rk = rating_key(id);
+        let similar = self
+            .list(sess, &format!("/library/metadata/{rk}/nearest?limit=50&maxDistance=0.25"))
+            .await
+            .unwrap_or_default();
+        let mut out: Vec<Track> = similar.iter().filter_map(to_track).collect();
+        if out.len() < 10 {
+            for sid in &sess.sections {
+                let random = self.list(sess, &format!("/library/sections/{sid}/all?type=10&sort=random&X-Plex-Container-Size=50")).await?;
+                out.extend(random.iter().filter_map(to_track));
+            }
+        }
+        Ok(out)
+    }
+
     pub async fn album(&self, sess: &Session, id: &str) -> Result<AlbumPage> {
         let rk = rating_key(id);
         let meta = self.list(sess, &format!("/library/metadata/{rk}")).await?;
@@ -596,21 +619,6 @@ impl Plex {
         }
         lib.playlists = self.playlists(sess).await.unwrap_or_default();
         Ok(lib)
-    }
-
-    /// Candidate tracks for import matching.
-    pub async fn search_tracks(&self, sess: &Session, q: &str) -> Result<Vec<Track>> {
-        let mut out = Vec::new();
-        let q = urlencoding::encode(q);
-        for sid in &sess.sections {
-            out.extend(
-                self.list(sess, &format!("/library/sections/{sid}/search?type=10&query={q}&X-Plex-Container-Size=25"))
-                    .await?
-                    .iter()
-                    .filter_map(to_track),
-            );
-        }
-        Ok(out)
     }
 
     /// Direct-play URL (original file) or a server-side transcode at `kbps`.

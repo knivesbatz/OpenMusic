@@ -12,7 +12,7 @@ use crate::db::PlayContext;
 use crate::error::{Error, Result};
 use crate::model::*;
 use crate::state::{AppState, Flavor};
-use crate::{downloads, lastfm, local, lyrics, matching, plex, spotify, ytm};
+use crate::{art, downloads, lastfm, local, lyrics, plex, ytm};
 
 type S<'a> = State<'a, Arc<AppState>>;
 
@@ -31,6 +31,8 @@ pub struct AppInfo {
     platform: &'static str,
     /// "auto" (after an unclean exit) or "manual" when GPU acceleration is off; null otherwise.
     safe_mode: Option<&'static str>,
+    /// Launched with `--self-test` (CI): the UI clicks through itself and logs each step.
+    self_test: bool,
 }
 
 pub fn capabilities(f: Flavor) -> Capabilities {
@@ -51,10 +53,11 @@ pub fn app_info(app: AppHandle, state: S) -> AppInfo {
         art_base: state.art_base.get().cloned(),
         platform: std::env::consts::OS,
         safe_mode: state.safe_mode.get().copied(),
+        self_test: std::env::args().any(|a| a == "--self-test"),
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn settings_get(state: S) -> Result<Value> {
     Ok(state.db().kv_get::<Value>("settings")?.unwrap_or(Value::Object(Default::default())))
 }
@@ -67,12 +70,12 @@ pub async fn settings_set(state: S<'_>, settings: Value) -> Result<()> {
     state.db().kv_set("settings", &settings)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn kv_get(state: S, key: String) -> Result<Option<Value>> {
     state.db().kv_get(&format!("ui.{key}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn kv_set(state: S, key: String, value: Value) -> Result<()> {
     state.db().kv_set(&format!("ui.{key}"), &value)
 }
@@ -491,13 +494,68 @@ pub async fn search(app: AppHandle, state: S<'_>, query: String) -> Result<Searc
     };
     let hidden = state.db().hidden_playlists()?;
     res.playlists.retain(|p| !hidden.contains(&p.id));
-    // Local files and app playlists are searched too.
-    let local = local::search(&state.db(), q, 20)?;
-    res.tracks.extend(local);
+    // Local files and app playlists are searched too (the UI shows local tracks in their own
+    // section, since provider songs come first).
+    {
+        let db = state.db();
+        res.tracks.extend(local::search(&db, q, 20)?);
+        res.albums.extend(local::search_albums(&db, q)?);
+        res.artists.extend(local::search_artists(&db, q)?);
+    }
     let ql = q.to_lowercase();
     let app_pls: Vec<Playlist> = state.db().playlists()?.into_iter().filter(|p| p.title.to_lowercase().contains(&ql)).collect();
     res.playlists.splice(0..0, app_pls);
     Ok(res)
+}
+
+/// Full results for one type (the filter chips on the search page).
+#[tauri::command]
+pub async fn search_kind(app: AppHandle, state: S<'_>, query: String, kind: String) -> Result<SearchResults> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(SearchResults::default());
+    }
+    let key = format!("search:{kind}:{}", q.to_lowercase());
+    let cached = state.db().cache_get::<SearchResults>(&key, false)?;
+    let mut res = match cached {
+        Some(r) => r,
+        None => {
+            let r = match state.flavor {
+                Flavor::Plex => {
+                    let sess = state.plex_session().await?;
+                    state.plex.search_limit(&sess, q, 100).await?
+                }
+                Flavor::YouTube => yt_call!(app, state, |y| y.search_kind(q, &kind))?,
+            };
+            state.db().cache_put(&key, &r, 10 * 60)?;
+            r
+        }
+    };
+    let hidden = state.db().hidden_playlists()?;
+    res.playlists.retain(|p| !hidden.contains(&p.id));
+    let db = state.db();
+    match kind.as_str() {
+        "songs" => res.tracks.extend(local::search(&db, q, 200)?),
+        "albums" => res.albums.extend(local::search_albums(&db, q)?),
+        "artists" => res.artists.extend(local::search_artists(&db, q)?),
+        "playlists" => {
+            let ql = q.to_lowercase();
+            let app_pls: Vec<Playlist> = db.playlists()?.into_iter().filter(|p| p.title.to_lowercase().contains(&ql)).collect();
+            res.playlists.splice(0..0, app_pls);
+        }
+        _ => {}
+    }
+    Ok(res)
+}
+
+/// Add local files by the same artist name to a provider artist page.
+fn with_local(state: &AppState, mut page: ArtistPage) -> Result<ArtistPage> {
+    if let Some(name) = page.artist.as_ref().map(|a| a.name.clone()).filter(|n| !n.trim().is_empty()) {
+        let db = state.db();
+        page.local_tracks = local::tracks_by_artist_name(&db, &name)?;
+        page.local_albums = local::albums_by_artist_name(&db, &name)?;
+    }
+    Ok(page)
 }
 
 #[tauri::command]
@@ -515,8 +573,9 @@ pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPa
         });
     }
     let key = format!("artist:{id}");
-    if let Some(p) = state.db().cache_get(&key, false)? {
-        return Ok(p);
+    let cached = state.db().cache_get::<ArtistPage>(&key, false)?;
+    if let Some(p) = cached {
+        return with_local(&state, p);
     }
     let page = match state.flavor {
         Flavor::Plex => {
@@ -526,7 +585,7 @@ pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPa
         Flavor::YouTube => yt_call!(app, state, |y| y.artist(&id))?,
     };
     state.db().cache_put(&key, &page, 6 * 3600)?;
-    Ok(page)
+    with_local(&state, page)
 }
 
 #[tauri::command]
@@ -624,6 +683,29 @@ pub async fn radio(app: AppHandle, state: S<'_>, track: Track) -> Result<Vec<Tra
     }
 }
 
+/// Songs to keep playing when the queue runs out (Settings → Autoplay), seeded by the last
+/// track: YouTube Music radio, Plex sonically similar tracks (random library tracks when the
+/// server has no sonic analysis), or random local files. Skips anything in `exclude`.
+#[tauri::command]
+pub async fn autoplay_tracks(app: AppHandle, state: S<'_>, track: Track, exclude: Vec<String>) -> Result<Vec<Track>> {
+    let mut tracks = match track.source {
+        Source::Youtube => {
+            let vid = track.stream_key.clone().unwrap_or_default();
+            yt_call!(app, state, |y| y.radio(&vid))?
+        }
+        Source::Plex => {
+            let sess = state.plex_session().await?;
+            state.plex.autoplay(&sess, &track.id).await?
+        }
+        _ => local::random_tracks(&state.db(), &track.artist, 50)?,
+    };
+    let mut seen: std::collections::HashSet<String> = exclude.into_iter().collect();
+    seen.insert(track.id.clone());
+    tracks.retain(|t| seen.insert(t.id.clone()));
+    tracks.truncate(25);
+    Ok(tracks)
+}
+
 // ---- playback -------------------------------------------------------------------------------
 
 /// For a YouTube music video, the video id of its song (audio track) version, so playback uses
@@ -716,12 +798,12 @@ pub async fn rate(state: S<'_>, track: Track, liked: bool) -> Result<()> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_save(state: S, queue: Value) -> Result<()> {
     state.db().kv_set("queue", &queue)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn queue_load(state: S) -> Result<Option<Value>> {
     state.db().kv_get("queue")
 }
@@ -739,12 +821,12 @@ pub async fn get_lyrics(state: S<'_>, track: Track) -> Result<Option<lyrics::Lyr
 
 // ---- app playlists --------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_list(state: S) -> Result<Vec<Playlist>> {
     state.db().playlists()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_create(app: AppHandle, state: S, name: String, tracks: Option<Vec<Track>>) -> Result<Playlist> {
     let mut db = state.db();
     let p = db.playlist_create(name.trim())?;
@@ -755,35 +837,35 @@ pub fn pl_create(app: AppHandle, state: S, name: String, tracks: Option<Vec<Trac
     Ok(p)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_update(app: AppHandle, state: S, id: String, name: String, description: Option<String>) -> Result<()> {
     state.db().playlist_update(&id, name.trim(), description.as_deref())?;
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_delete(app: AppHandle, state: S, id: String) -> Result<()> {
     state.db().playlist_delete(&id)?;
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_add(app: AppHandle, state: S, id: String, tracks: Vec<Track>) -> Result<usize> {
     let n = state.db().playlist_add(&id, &tracks)?;
     let _ = app.emit("playlists-changed", ());
     Ok(n)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pl_reorder(app: AppHandle, state: S, id: String, order: Vec<usize>) -> Result<()> {
     state.db().playlist_reorder(&id, &order)?;
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn hide_playlist(app: AppHandle, state: S, id: String, title: String) -> Result<()> {
     if id.starts_with("app:") {
         return Err(Error::Invalid("app playlists can be deleted instead".into()));
@@ -797,7 +879,7 @@ pub fn hide_playlist(app: AppHandle, state: S, id: String, title: String) -> Res
 
 // ---- local files ----------------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn local_folders(state: S) -> Result<Vec<String>> {
     let db = state.db();
     let mut st = db.conn.prepare("SELECT path FROM local_folders ORDER BY path")?;
@@ -849,7 +931,7 @@ pub struct LocalLibrary {
     artists: Vec<Artist>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn local_library(state: S) -> Result<LocalLibrary> {
     let db = state.db();
     Ok(LocalLibrary { tracks: local::tracks(&db)?, albums: local::albums(&db)?, artists: local::artists(&db)? })
@@ -871,7 +953,7 @@ fn lastfm_client(state: &AppState) -> Result<lastfm::LastFm> {
     Ok(lastfm::LastFm::new(state.http.clone(), keys))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lastfm_status(state: S) -> Result<LastFmStatus> {
     Ok(LastFmStatus {
         has_keys: state.secrets.get_large("lastfm.keys")?.is_some(),
@@ -881,7 +963,7 @@ pub fn lastfm_status(state: S) -> Result<LastFmStatus> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lastfm_set_keys(state: S, api_key: String, secret: String) -> Result<()> {
     state.secrets.set_json("lastfm.keys", &lastfm::Keys { api_key: api_key.trim().into(), secret: secret.trim().into() })
 }
@@ -902,7 +984,7 @@ pub async fn lastfm_connect_finish(state: S<'_>, token: String) -> Result<String
     Ok(user)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lastfm_disconnect(state: S) -> Result<()> {
     state.secrets.delete("lastfm.sk")?;
     state.db().kv_delete("lastfm.user")
@@ -976,149 +1058,16 @@ pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
     }
 }
 
-// ---- Spotify import -------------------------------------------------------------------------
-
-async fn spotify_token(state: &AppState) -> Result<String> {
-    let client_id: String = state.db().kv_get("spotify.clientId")?.ok_or(Error::NotSignedIn)?;
-    let tok: spotify::Token = state.secrets.get_json("spotify.token")?.ok_or(Error::NotSignedIn)?;
-    if tok.expires_at > crate::db::now() {
-        return Ok(tok.access_token);
-    }
-    let rt = tok.refresh_token.ok_or(Error::AuthExpired)?;
-    let fresh = spotify::refresh(&state.http, &client_id, &rt).await?;
-    state.secrets.set_json("spotify.token", &fresh)?;
-    Ok(fresh.access_token)
-}
-
-#[tauri::command]
-pub async fn spotify_status(state: S<'_>) -> Result<Option<String>> {
-    if state.secrets.get_large("spotify.token")?.is_none() {
-        return Ok(None);
-    }
-    state.db().kv_get("spotify.clientId")
-}
-
-#[tauri::command]
-pub async fn spotify_connect(app: AppHandle, state: S<'_>, client_id: Option<String>) -> Result<()> {
-    // The built-in Client ID unless the user entered their own.
-    let client_id = client_id
-        .map(|c| c.trim().to_string())
-        .filter(|c| !c.is_empty())
-        .or_else(|| spotify::builtin_client_id().map(String::from))
-        .ok_or_else(|| Error::Invalid("Spotify Client ID required".into()))?;
-    let (verifier, challenge) = spotify::pkce_pair();
-    let st = uuid::Uuid::new_v4().simple().to_string();
-    let url = spotify::authorize_url(&client_id, &challenge, &st);
-    let wait = tokio::spawn({
-        let st = st.clone();
-        async move { spotify::wait_for_code(&st).await }
-    });
-    use tauri_plugin_opener::OpenerExt;
-    let _ = app.opener().open_url(&url, None::<&str>);
-    let code = wait.await.map_err(|e| Error::Invalid(e.to_string()))??;
-    let tok = spotify::exchange(&state.http, &client_id, &code, &verifier).await?;
-    state.secrets.set_json("spotify.token", &tok)?;
-    state.db().kv_set("spotify.clientId", &client_id)?;
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn spotify_disconnect(state: S<'_>) -> Result<()> {
-    state.secrets.delete_large("spotify.token")
-}
-
-#[tauri::command]
-pub async fn spotify_playlists(state: S<'_>) -> Result<Vec<spotify::SpotifyPlaylist>> {
-    let token = spotify_token(&state).await?;
-    spotify::playlists(&state.http, &token).await
-}
-
-#[tauri::command]
-pub async fn spotify_import(app: AppHandle, state: S<'_>, playlist_id: String, name: String) -> Result<spotify::ImportReport> {
-    let token = spotify_token(&state).await?;
-    let wanted = spotify::playlist_tracks(&state.http, &token, &playlist_id).await?;
-    let mut report = spotify::ImportReport { name: name.clone(), ..Default::default() };
-    let mut seen = std::collections::HashSet::new();
-    let mut matched: Vec<Track> = Vec::new();
-    let total = wanted.len();
-    for (i, w) in wanted.iter().enumerate() {
-        let q = format!("{} {}", w.title, w.artists.first().cloned().unwrap_or_default());
-        let candidates = match state.flavor {
-            Flavor::Plex => {
-                let sess = state.plex_session().await?;
-                // Plex search is title-based; artist words would make it miss.
-                let mut c = state.plex.search_tracks(&sess, &w.title).await.unwrap_or_default();
-                if c.is_empty() {
-                    c = state.plex.search_tracks(&sess, &matching::normalize(&w.title)).await.unwrap_or_default();
-                }
-                c
-            }
-            Flavor::YouTube => {
-                let y = state.ytm().await;
-                y.search_tracks(&q).await.unwrap_or_default()
-            }
-        };
-        let mut row = spotify::ImportRow { title: w.title.clone(), artist: w.artists.join(", "), ..Default::default() };
-        match matching::best_match(w, &candidates) {
-            matching::Verdict::Match(t, s) => {
-                row.score = Some(s);
-                if seen.insert(t.id.clone()) {
-                    row.status = "imported".into();
-                    report.imported += 1;
-                    matched.push(t.clone());
-                } else {
-                    row.status = "duplicate".into();
-                    report.duplicates += 1;
-                }
-                row.matched = Some(t);
-            }
-            matching::Verdict::Ambiguous(t, s) => {
-                row.status = "ambiguous".into();
-                row.score = Some(s);
-                row.matched = Some(t);
-                report.ambiguous += 1;
-            }
-            matching::Verdict::NoMatch => {
-                row.status = "skipped".into();
-                report.skipped += 1;
-            }
-        }
-        report.rows.push(row);
-        let _ = app.emit("import-progress", serde_json::json!({ "done": i + 1, "total": total }));
-    }
-    if !matched.is_empty() {
-        let mut db = state.db();
-        let p = db.playlist_create(&name)?;
-        db.playlist_add(&p.id, &matched)?;
-        report.playlist_id = Some(p.id);
-        let _ = app.emit("playlists-changed", ());
-    }
-    Ok(report)
-}
-
-/// Add tracks the user confirmed from the "ambiguous" list of an import report.
-#[tauri::command]
-pub fn import_confirm(app: AppHandle, state: S, playlist_id: Option<String>, name: String, tracks: Vec<Track>) -> Result<String> {
-    let mut db = state.db();
-    let id = match playlist_id {
-        Some(id) => id,
-        None => db.playlist_create(&name)?.id,
-    };
-    db.playlist_add(&id, &tracks)?;
-    let _ = app.emit("playlists-changed", ());
-    Ok(id)
-}
-
 // ---- downloads / storage --------------------------------------------------------------------
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn download_tracks(app: AppHandle, state: S, tracks: Vec<Track>) -> Result<usize> {
     let n = downloads::enqueue(app.clone(), state.inner().clone(), tracks)?;
     let _ = app.emit("downloads-changed", ());
     Ok(n)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn download_list(state: S) -> Result<Vec<downloads::DownloadInfo>> {
     downloads::list(&state)
 }
@@ -1128,7 +1077,7 @@ pub fn download_cancel(state: S, id: String) {
     downloads::cancel(&state, &id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn download_remove(app: AppHandle, state: S, id: String) -> Result<()> {
     downloads::remove(&state, &id)?;
     let _ = app.emit("downloads-changed", ());
@@ -1218,14 +1167,14 @@ pub fn htpc_launch() -> bool {
 }
 
 #[cfg(desktop)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_get(app: AppHandle) -> Result<bool> {
     use tauri_plugin_autostart::ManagerExt;
     app.autolaunch().is_enabled().map_err(|e| Error::Invalid(e.to_string()))
 }
 
 #[cfg(desktop)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
     use tauri_plugin_autostart::ManagerExt;
     let al = app.autolaunch();
@@ -1234,13 +1183,13 @@ pub fn htpc_autostart_set(app: AppHandle, enabled: bool) -> Result<()> {
 }
 
 #[cfg(mobile)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_get(_app: AppHandle) -> Result<bool> {
     Err(Error::Unsupported("launch at startup".into()))
 }
 
 #[cfg(mobile)]
-#[tauri::command]
+#[tauri::command(async)]
 pub fn htpc_autostart_set(_app: AppHandle, _enabled: bool) -> Result<()> {
     Err(Error::Unsupported("launch at startup".into()))
 }
@@ -1267,13 +1216,13 @@ pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
 
 /// Albums and artists the user saved in this app. Stored locally only, so saving never changes
 /// the Plex server or the YouTube account.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn saved_list(state: S) -> Result<Library> {
     let db = state.db();
     Ok(Library { albums: db.saved_items("album")?, artists: db.saved_items("artist")?, ..Default::default() })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_album(app: AppHandle, state: S, album: Album, saved: bool) -> Result<()> {
     let db = state.db();
     if saved { db.save_item("album", &album.id, &album)? } else { db.unsave_item(&album.id)? }
@@ -1281,7 +1230,7 @@ pub fn save_album(app: AppHandle, state: S, album: Album, saved: bool) -> Result
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_artist(app: AppHandle, state: S, artist: Artist, saved: bool) -> Result<()> {
     let db = state.db();
     if saved { db.save_item("artist", &artist.id, &artist)? } else { db.unsave_item(&artist.id)? }
@@ -1424,7 +1373,7 @@ pub async fn yt_song_meta(
 }
 
 /// UI errors (uncaught exceptions, render errors) go to the same crash.log as native panics.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn log_ui_error(state: S, message: String) -> Result<()> {
     use std::io::Write;
     let path = state.dirs.data.join("crash.log");
@@ -1516,15 +1465,46 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
 }
 
 /// Turn the webview's GPU acceleration on or off; takes effect after a restart.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn gpu_set(state: S, enabled: bool) -> Result<()> {
     crate::safe_mode::set_gpu(&state.dirs.data, enabled)?;
     Ok(())
 }
 
-/// Whether this build has a Spotify Client ID built in (one-click "Sign in with Spotify").
+
+/// Mirror the player in the Android media notification (no-op on desktop, where the webview's
+/// Media Session already reaches the OS). `artwork` arrives as the track's `art://` reference.
 #[tauri::command]
-pub fn spotify_builtin() -> bool {
-    spotify::builtin_client_id().is_some()
+pub async fn media_update(app: AppHandle, state: S<'_>, mut now: tauri_plugin_openmusic_media::NowPlaying) -> Result<()> {
+    if cfg!(mobile) {
+        now.artwork = match now.artwork.take() {
+            Some(a) => art::cached_file(state.inner().clone(), &a, 512).await.map(|p| p.to_string_lossy().into_owned()),
+            None => None,
+        };
+        let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::update(&app, &now)).await;
+    }
+    Ok(())
 }
 
+#[tauri::command]
+pub async fn media_stop(app: AppHandle) -> Result<()> {
+    if cfg!(mobile) {
+        let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
+    }
+    Ok(())
+}
+
+/// Self-test progress (see ui/src/selftest.ts), appended to `selftest.log` in the data folder
+/// with a timestamp so a hang or crash shows which step it happened in.
+#[tauri::command(async)]
+pub fn self_test_log(state: S, line: String) -> Result<()> {
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(state.dirs.data.join("selftest.log"))?;
+    writeln!(f, "[{}] {line}", crate::db::now())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn self_test_exit(app: AppHandle) {
+    app.exit(0);
+}

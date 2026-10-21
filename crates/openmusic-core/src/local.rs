@@ -309,6 +309,41 @@ pub fn artist_tracks(db: &Db, artist_id: &str) -> Result<Vec<Track>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
+/// Local tracks by an artist name from another source (case-insensitive, exact name).
+pub fn tracks_by_artist_name(db: &Db, name: &str) -> Result<Vec<Track>> {
+    let mut st = db.conn.prepare(&format!(
+        "SELECT {TRACK_COLS} FROM local_tracks WHERE missing=0 AND (artist=?1 COLLATE NOCASE OR album_artist=?1 COLLATE NOCASE)
+         ORDER BY album COLLATE NOCASE, disc_no, track_no"
+    ))?;
+    let rows = st.query_map([name.trim()], row_to_track)?;
+    Ok(rows.collect::<std::result::Result<_, _>>()?)
+}
+
+/// Random local tracks for Autoplay, preferring the given artist's other songs first.
+pub fn random_tracks(db: &Db, artist: &str, limit: usize) -> Result<Vec<Track>> {
+    let mut st = db.conn.prepare(&format!(
+        "SELECT {TRACK_COLS} FROM local_tracks WHERE missing=0
+         ORDER BY (artist=?1 COLLATE NOCASE OR album_artist=?1 COLLATE NOCASE) DESC, RANDOM() LIMIT ?2"
+    ))?;
+    let rows = st.query_map(params![artist.trim(), limit as i64], row_to_track)?;
+    Ok(rows.collect::<std::result::Result<_, _>>()?)
+}
+
+pub fn albums_by_artist_name(db: &Db, name: &str) -> Result<Vec<Album>> {
+    let n = name.trim().to_lowercase();
+    Ok(albums(db)?.into_iter().filter(|a| a.artist.to_lowercase() == n).collect())
+}
+
+pub fn search_albums(db: &Db, q: &str) -> Result<Vec<Album>> {
+    let n = q.trim().to_lowercase();
+    Ok(albums(db)?.into_iter().filter(|a| a.title.to_lowercase().contains(&n) || a.artist.to_lowercase().contains(&n)).take(20).collect())
+}
+
+pub fn search_artists(db: &Db, q: &str) -> Result<Vec<Artist>> {
+    let n = q.trim().to_lowercase();
+    Ok(artists(db)?.into_iter().filter(|a| a.name.to_lowercase().contains(&n)).take(20).collect())
+}
+
 pub fn search(db: &Db, q: &str, limit: usize) -> Result<Vec<Track>> {
     let like = format!("%{}%", q.replace('%', "").replace('_', ""));
     let mut st = db.conn.prepare(&format!(
@@ -362,5 +397,28 @@ mod tests {
         // Removing the folder from the library drops its rows.
         scan(&db, &[], &art).unwrap();
         assert!(tracks(&db.lock().unwrap()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn matches_provider_artists_by_name() {
+        let db = Db::open_in_memory().unwrap();
+        let ins = |id: &str, title: &str, artist: &str, album_artist: Option<&str>, album: &str, missing: i64| {
+            db.conn
+                .execute(
+                    "INSERT INTO local_tracks(id,path,folder,mtime,size,title,artist,album,album_artist,missing) VALUES(?1,?2,'f',0,0,?3,?4,?5,?6,?7)",
+                    rusqlite::params![id, format!("/m/{id}.mp3"), title, artist, album, album_artist, missing],
+                )
+                .unwrap();
+        };
+        ins("local:1", "Helena", "My Chemical Romance", None, "Three Cheers", 0);
+        ins("local:2", "Feature", "Someone", Some("my chemical romance"), "Comp", 0);
+        ins("local:3", "Gone", "My Chemical Romance", None, "Old", 1);
+        ins("local:4", "Other", "My Chemical Romance Tribute", None, "X", 0);
+        let ids: Vec<_> = tracks_by_artist_name(&db, " MY CHEMICAL ROMANCE ").unwrap().into_iter().map(|t| t.id).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"local:1".to_string()) && ids.contains(&"local:2".to_string()));
+        let albums: Vec<_> = albums_by_artist_name(&db, "my chemical romance").unwrap().into_iter().map(|a| a.title).collect();
+        assert_eq!(albums.len(), 2);
+        assert_eq!(search_artists(&db, "chemical").unwrap().len(), 2);
     }
 }

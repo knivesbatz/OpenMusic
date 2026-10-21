@@ -85,4 +85,15 @@ describe("queue", () => {
     q = Q.clearUpcoming(q);
     expect(titles(q)).toEqual(["T1", "T2"]);
   });
+
+  it("autoplay extends the context after the last track and plays on", () => {
+    let q = Q.load([tr(1), tr(2)], 1);
+    expect(Q.nextIndex(q, "off", false)).toBe(-1);
+    q = Q.extend(q, [tr(7), tr(8)]);
+    expect(titles(q)).toEqual(["T1", "T2", "T7", "T8"]);
+    expect(Q.nextIndex(q, "off", false)).toBe(2);
+    // With shuffle on, turning it off keeps the autoplay songs at the end.
+    const sh = Q.extend(Q.load([tr(1), tr(2), tr(3)], 0, true), [tr(7)]);
+    expect(titles(Q.setShuffle(sh, false))).toEqual(["T1", "T2", "T3", "T7"]);
+  });
 });

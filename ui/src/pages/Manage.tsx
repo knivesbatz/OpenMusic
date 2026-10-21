@@ -1,18 +1,18 @@
-// Local files, downloads, Spotify import and settings.
+// Local files, downloads, playlist transfer and settings.
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorMessage, inTauri } from "../api";
-import { ErrorBox, Loading, Select, useAsync } from "../components/common";
+import { Loading, Select, useAsync } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
-import { isMobileApp, openProfilePicker, refreshPlaylists, setLocalOnly, useApp } from "../store/app";
+import { isMobileApp, openProfilePicker, refreshLibrary, setLocalOnly, useApp } from "../store/app";
 import { useSettings, type Quality } from "../store/settings";
-import { confirmDialog, navigate, toast } from "../store/ui";
-import type { DownloadInfo, ImportReport, LastFmStatus, ScanReport, SpotifyPlaylist, Track } from "../types";
+import { confirmDialog, toast } from "../store/ui";
+import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
 import { cls, fmtBytes } from "../util";
 import { CardShelf } from "./Browse";
 
@@ -181,186 +181,46 @@ export function DownloadsPage() {
   );
 }
 
-const REDIRECT = "http://127.0.0.1:43117/callback";
+const SOUNDIIZ = "https://soundiiz.com/";
 
+/**
+ * Transferring Spotify playlists is handed off to Soundiiz, which can write playlists to YouTube
+ * Music and to Plex. A built-in importer would need a registered Spotify developer app, so the
+ * app sends users to Soundiiz instead and picks the transferred playlists up from the library.
+ */
 export function ImportPage() {
   const t = useT();
-  const [user, setUser] = useState<string | null | undefined>(undefined);
-  const [clientId, setClientId] = useState("");
-  const [lists, setLists] = useState<SpotifyPlaylist[] | null>(null);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
-  const [report, setReport] = useState<ImportReport | null>(null);
-  const [pick, setPick] = useState<Set<number>>(new Set());
-  const [error, setError] = useState<string | null>(null);
-  const [builtin, setBuiltin] = useState(false);
-  const [ownId, setOwnId] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-
-  useEffect(() => {
-    if (!inTauri) return setUser(null);
-    api.spotifyBuiltin().then(setBuiltin, () => setBuiltin(false));
-    api.spotifyStatus().then(setUser, () => setUser(null));
-    const un = listen<{ done: number; total: number }>("import-progress", (e) => setProgress(e.payload));
-    return () => void un.then((f) => f());
-  }, []);
-  useEffect(() => {
-    if (user) api.spotifyPlaylists().then(setLists, (e) => setError(errorMessage(e)));
-  }, [user]);
-
-  async function connect(useOwn: boolean) {
-    setError(null);
-    setConnecting(true);
-    try {
-      await api.spotifyConnect(useOwn ? clientId.trim() : null);
-      setUser(await api.spotifyStatus());
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-    setConnecting(false);
-  }
-
-  async function run(p: SpotifyPlaylist) {
-    setError(null);
-    setReport(null);
-    setProgress({ done: 0, total: p.trackCount });
-    try {
-      const r = await api.spotifyImport(p.id, p.name);
-      setReport(r);
-      setPick(new Set(r.rows.map((row, i) => (row.status === "ambiguous" && row.matched ? i : -1)).filter((i) => i >= 0)));
-      refreshPlaylists();
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-    setProgress(null);
-  }
-
-  async function addAmbiguous() {
-    if (!report) return;
-    const tracks = report.rows.filter((_, i) => pick.has(i)).map((r) => r.matched!).filter(Boolean);
-    try {
-      const id = await api.importConfirm(report.playlistId ?? null, report.name, tracks);
-      toast(t("addedToPlaylist", { name: report.name }));
-      navigate({ name: "playlist", id });
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }
-
-  if (user === undefined) return <Loading />;
+  const flavor = useApp((s) => s.info?.flavor);
+  const [syncing, setSyncing] = useState(false);
+  const dest = flavor === "plex" ? "Plex" : "YouTube Music";
+  const steps: Key[] = ["transferStep1", "transferStep2", "transferStep3", "transferStep4"];
   return (
     <div className="page import">
-      <h1>{t("importSpotify")}</h1>
-      {error && <ErrorBox message={error} />}
-      {!user && builtin && !ownId ? (
-        <div className="form">
-          <p className="muted">{t("spotifySignInHint")}</p>
-          <div className="row gap">
-            <button className="pill primary" disabled={connecting} onClick={() => connect(false)}>
-              {connecting ? t("waitingApproval") : t("signInSpotify")}
-            </button>
-            <button className="link small" onClick={() => setOwnId(true)}>
-              {t("spotifyUseOwnId")}
-            </button>
-          </div>
-        </div>
-      ) : !user ? (
-        <div className="form">
-          <p className="muted">{t("spotifyHint")}</p>
-          <code className="redirect">{REDIRECT}</code>
-          <label className="field">
-            <span>{t("spotifyClientId")}</span>
-            <input value={clientId} onChange={(e) => setClientId(e.target.value)} spellCheck={false} />
-          </label>
-          <div className="row gap">
-            <button className="pill primary" disabled={!clientId.trim() || !inTauri || connecting} onClick={() => connect(true)}>
-              {connecting ? t("waitingApproval") : t("connect")}
-            </button>
-            <button className="link small" onClick={() => openUrl("https://developer.spotify.com/dashboard")}>
-              developer.spotify.com
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="row between">
-            <p className="muted">{t("connectedAs", { name: user })}</p>
-            <button className="link small" onClick={() => api.spotifyDisconnect().then(() => (setUser(null), setLists(null)))}>
-              {t("disconnect")}
-            </button>
-          </div>
-          <p className="muted small">{t("importSkipNote")}</p>
-          {progress && (
-            <div role="status" className="import-progress">
-              {t("importing", { done: progress.done, total: progress.total })}
-              <div className="bar">
-                <div style={{ width: progress.total ? (progress.done / progress.total) * 100 + "%" : "0" }} />
-              </div>
-            </div>
-          )}
-          {report && (
-            <section className="report">
-              <h2>{report.name}</h2>
-              <div className="stats">
-                <span className="ok">{t("imported")}: {report.imported}</span>
-                <span>{t("duplicates")}: {report.duplicates}</span>
-                <span className="warn">{t("ambiguous")}: {report.ambiguous}</span>
-                <span className="bad">{t("skipped")}: {report.skipped}</span>
-              </div>
-              <table className="report-table">
-                <tbody>
-                  {report.rows
-                    .map((r, i) => ({ r, i }))
-                    .filter(({ r }) => r.status !== "imported")
-                    .map(({ r, i }) => (
-                      <tr key={i} className={r.status}>
-                        <td>
-                          {r.status === "ambiguous" && r.matched && (
-                            <input
-                              type="checkbox"
-                              aria-label={t("addSelected")}
-                              checked={pick.has(i)}
-                              onChange={() => setPick((s) => {
-                                const n = new Set(s);
-                                if (n.has(i)) n.delete(i);
-                                else n.add(i);
-                                return n;
-                              })}
-                            />
-                          )}
-                        </td>
-                        <td>{r.title} — {r.artist}</td>
-                        <td className="muted">{r.matched ? `→ ${r.matched.title} — ${r.matched.artist}` : ""}</td>
-                        <td>{t(r.status === "ambiguous" ? "ambiguous" : r.status === "duplicate" ? "duplicates" : "skipped")}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-              {pick.size > 0 && (
-                <button className="pill primary" onClick={addAmbiguous}>
-                  {t("addSelected")}
-                </button>
-              )}
-            </section>
-          )}
-          {!lists ? (
-            <Loading />
-          ) : (
-            <ul className="sp-list">
-              {lists.map((p) => (
-                <li key={p.id}>
-                  <div className="grow">
-                    <div className="name">{p.name}</div>
-                    <div className="sub">{t("by", { name: p.owner })} • {t("songsCount", { n: p.trackCount })}</div>
-                  </div>
-                  <button className="pill ghost small" disabled={!!progress} onClick={() => run(p)}>
-                    {t("importAction")}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
-      )}
+      <h1>{t("transferPlaylists")}</h1>
+      <p className="muted">{t("transferIntro", { dest })}</p>
+      <ol className="steps">
+        {steps.map((k) => (
+          <li key={k}>{t(k, { dest })}</li>
+        ))}
+      </ol>
+      <div className="row gap">
+        <button className="pill primary" onClick={() => (inTauri ? openUrl(SOUNDIIZ) : window.open(SOUNDIIZ, "_blank"))}>
+          {t("openSoundiiz")}
+        </button>
+        <button
+          className="pill ghost"
+          disabled={syncing}
+          onClick={async () => {
+            setSyncing(true);
+            await refreshLibrary(true);
+            setSyncing(false);
+            toast(t("libraryRefreshed"));
+          }}
+        >
+          {syncing ? t("loading") : t("sync")}
+        </button>
+      </div>
+      <p className="muted small">{flavor === "plex" ? t("transferNotePlex") : t("transferNoteYt")}</p>
     </div>
   );
 }
@@ -385,7 +245,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplay" | "reducedMotion" | "highContrast" | "scrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplaySimilar" | "closeToTray" | "reducedMotion" | "highContrast" | "scrobble" | "htpc" | "translateNames"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -493,8 +353,15 @@ export function SettingsPage() {
         </label>
         <Toggle k="gapless" label={t("gapless")} hint={t("gaplessHint")} />
         <Toggle k="automix" label={t("automix")} hint={t("automixHint")} />
-        <Toggle k="autoplay" label={t("autoplay")} />
+        <Toggle k="autoplaySimilar" label={t("autoplay")} hint={t("autoplayHint")} />
       </section>
+
+      {!isMobileApp() && (
+        <section>
+          <h2>{t("window")}</h2>
+          <Toggle k="closeToTray" label={t("closeToTray")} hint={t("closeToTrayHint")} />
+        </section>
+      )}
 
       {inTauri && info?.platform === "windows" && (
         <section>
@@ -598,7 +465,10 @@ export function SettingsPage() {
         </button>
       </section>
 
-      <p className="muted small">{info && `${info.name} — ${t("version", { v: info.version })}`}</p>
+      <footer className="credits">
+        <p>{t("publishedBy", { name: "マッキニー マイヤ" })}</p>
+        <p className="muted small">{info && `${info.name} — ${t("version", { v: info.version })}`}</p>
+      </footer>
     </div>
   );
 }

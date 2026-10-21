@@ -18,7 +18,8 @@ export function errorCode(e: unknown): string | undefined {
   return undefined;
 }
 
-const isWindows = typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
+// Windows and Android webviews reach custom protocols as http://<scheme>.localhost.
+const httpSchemes = typeof navigator !== "undefined" && /Windows|Android/i.test(navigator.userAgent);
 
 /** Local artwork server (`http://127.0.0.1:<port>/<token>`), set from `app_info` at startup. */
 let artBase: string | null = null;
@@ -32,7 +33,7 @@ export function artUrl(ref: string | null | undefined, size = 300): string | und
   if (!ref.startsWith("art://")) return ref;
   const rest = ref.slice("art://".length);
   // Prefer the local HTTP server: image requests cancelled by scrolling are routine there.
-  const base = artBase ?? (isWindows ? "http://art.localhost/" : "art://localhost/");
+  const base = artBase ?? (httpSchemes ? "http://art.localhost/" : "art://localhost/");
   const sep = rest.includes("?") ? "&" : "?";
   return base + rest + sep + "s=" + size;
 }
@@ -57,11 +58,17 @@ export const api = {
 
   home: (refresh: boolean) => call<T.HomeData>("home", { refresh }),
   search: (query: string) => call<T.SearchResults>("search", { query }),
+  searchKind: (query: string, kind: string) => call<T.SearchResults>("search_kind", { query, kind }),
   artist: (id: string) => call<T.ArtistPage>("artist", { id }),
   album: (id: string) => call<T.AlbumPage>("album", { id }),
   playlist: (id: string) => call<T.PlaylistPage>("playlist", { id }),
   library: (refresh: boolean) => call<T.Library>("library", { refresh }),
   radio: (track: T.Track) => call<T.Track[]>("radio", { track }),
+  mediaUpdate: (now: T.NowPlaying) => call<void>("media_update", { now }),
+  mediaStop: () => call<void>("media_stop"),
+  selfTestLog: (line: string) => call<void>("self_test_log", { line }),
+  selfTestExit: () => call<void>("self_test_exit"),
+  autoplayTracks: (track: T.Track, exclude: string[]) => call<T.Track[]>("autoplay_tracks", { track, exclude }),
 
   resolveStream: (track: T.Track, quality: string) => call<T.Stream>("resolve_stream", { track, quality }),
   recordPlay: (track: T.Track, context: T.PlayContext | null) => call<void>("record_play", { track, context }),
@@ -104,14 +111,6 @@ export const api = {
   lastfmNowPlaying: (track: T.Track) => call<void>("lastfm_now_playing", { track }),
   lastfmScrobble: (track: T.Track, startedAt: number) => call<boolean>("lastfm_scrobble", { track, startedAt }),
 
-  spotifyStatus: () => call<string | null>("spotify_status"),
-  spotifyConnect: (clientId: string | null) => call<void>("spotify_connect", { clientId }),
-  spotifyBuiltin: () => call<boolean>("spotify_builtin"),
-  spotifyDisconnect: () => call<void>("spotify_disconnect"),
-  spotifyPlaylists: () => call<T.SpotifyPlaylist[]>("spotify_playlists"),
-  spotifyImport: (playlistId: string, name: string) => call<T.ImportReport>("spotify_import", { playlistId, name }),
-  importConfirm: (playlistId: string | null, name: string, tracks: T.Track[]) =>
-    call<string>("import_confirm", { playlistId, name, tracks }),
 
   downloadTracks: (tracks: T.Track[]) => call<number>("download_tracks", { tracks }),
   downloadList: () => call<T.DownloadInfo[]>("download_list"),

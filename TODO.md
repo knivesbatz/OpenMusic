@@ -31,7 +31,7 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 ## Phase 5: Library and import
 - ✅ App playlists CRUD + reorder in SQLite (unit-tested)
 - 🟡 Local files: folder add, incremental scan (unit-tested), playback via asset protocol
-- 🟡 Spotify import with PKCE, conservative matcher (unit-tested), report UI
+- ✅ Spotify playlists: handed off to Soundiiz (guided Transfer page + Sync now); built-in importer removed because it needed a registered Spotify developer app
 - 🟡 YTSpot permanent hide playlist (DB tested; UI confirm dialog)
 - 🟡 Save albums / follow artists to "Your Library" (local SQLite, migration v2, DB tested): save
   button on album pages, Follow on artist pages, context menus, sidebar Albums/Artists filters.
@@ -101,7 +101,21 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   reproduced; crash.log from the user will confirm
 - ✅ Lyrics effect keyed on track id (regression test as YTSpot with music videos)
 - ✅ YouTube: song versions played/displayed instead of music videos; title cleanup (tested)
-- 🟡 Spotify one-click sign-in with a built-in Client ID (`SPOTIFY_CLIENT_ID` repo secret)
+
+## After 1.0.2
+- ✅ Spotify import replaced by a Soundiiz transfer guide
+- ✅ Playlist folders (any playlist, local to the app) and Recents / Alphabetical / Custom order with
+  drag and drop in the sidebar (store unit-tested, e2e)
+- ✅ Search filter chips load the full list for that type (YouTube filtered search + 2 continuation
+  pages; Plex up to 100 per type)
+- ✅ Local files in search (blended into the results, no separate heading) and on provider artist
+  pages when the artist name matches (case-insensitive; tested)
+- ✅ Autoplay (off by default): YouTube radio / Plex `nearest` (random library tracks fallback) /
+  random local tracks, prefetched near the end of the last song (`autoplay_tracks`, `Q.extend`)
+- ✅ Desktop tray icon (Show, Play/Pause, Previous, Next, Quit) and Settings → Close to tray
+  (`tray.rs`; tray menu sends `media-action` like the Android notification)
+- 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
+  (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library
@@ -113,9 +127,13 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 YouTube sign-in on Android navigates the main webview to Google and back (Google may refuse
   embedded sign-in; fallback: OAuth device-code flow)
 - 🟡 CI `android` job builds and signs arm64 APKs (non-blocking; throwaway key unless
-  `ANDROID_KEYSTORE` secret is set). Not yet run; Android SDK isn't reachable from the dev container
-- ⬜ Local music folders on Android (needs Storage Access Framework), background playback service,
-  media notification controls
+  `ANDROID_KEYSTORE` secret is set). The Rust side compiles; the CLI runs through
+  `apps/*/src-tauri/package.json` (`npm run tauri`) so Gradle can call it back
+- 🟡 Background playback + media notification: `crates/tauri-plugin-openmusic-media` (Kotlin
+  foreground service, MediaSession, notification buttons → `media-action` event; re-resumes the
+  WebView after the activity pauses it). Untested on a device
+- 🟡 Android artwork uses the `art://` protocol (release builds block cleartext to the localhost server)
+- ⬜ Local music folders on Android (needs Storage Access Framework)
 
 ## Known issues
 - YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them

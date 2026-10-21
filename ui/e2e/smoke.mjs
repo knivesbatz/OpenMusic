@@ -13,12 +13,13 @@ const base = "http://localhost:4174/";
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
 const results = [];
 
-async function test(name, fn, { youtube = false } = {}) {
+async function test(name, fn, { youtube = false, init } = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript({ path: mock });
   if (youtube) await page.addInitScript({ path: ytOverrides });
+  if (init) await page.addInitScript(init);
   await page.goto(base);
   await page.waitForSelector(".playerbar");
   const t0 = Date.now();
@@ -43,6 +44,10 @@ await test("search shows top result and songs", async (p) => {
   await p.waitForSelector(".top-result .top-name");
   assert.equal((await p.locator(".top-result .top-name").textContent()).trim(), "Aster Vale");
   assert.ok((await p.locator(".top-songs .tl-row:not(.tl-head)").count()) > 0);
+  // Local files blend into Songs (with a badge); the Songs filter loads the full list.
+  await p.locator(".top-songs .tl-row .name", { hasText: "home demo" }).waitFor();
+  await p.click('.chips button:has-text("Songs")');
+  await p.locator(".tl-row .name", { hasText: "(more)" }).first().waitFor();
 });
 
 await test("queue: shift-click range selection and bulk remove", async (p) => {
@@ -77,6 +82,7 @@ await test("artist page: follow toggles", async (p) => {
   await p.waitForSelector(".hero-meta .link");
   await p.click(".hero-meta .link");
   await p.waitForSelector(".artist-hero");
+  await p.locator(".tl-row .name", { hasText: "home demo" }).waitFor();
   await p.click("button.follow");
   await p.waitForSelector('button.follow[aria-pressed="true"]');
   assert.equal((await p.locator("button.follow").textContent()).trim(), "Following");
@@ -126,6 +132,32 @@ await test("YouTube: settings toggles and Japanese text modes", async (p) => {
   await p.waitForSelector("text=Settings");
 }, { youtube: true });
 
+await test("playlist folders and custom order in the sidebar", async (p) => {
+  const lib = p.locator(".lib-list");
+  await p.click('button[aria-label="Create playlist"]');
+  await p.click('.menu button:has-text("Create folder")');
+  await p.fill(".dialog input", "Moods");
+  await p.click('.dialog button:has-text("Save")');
+  await lib.locator(".side-item", { hasText: "Moods" }).waitFor();
+  // Move "autumn" into the folder from its context menu.
+  await lib.locator(".side-item", { hasText: "autumn" }).click({ button: "right" });
+  await p.hover('.menu button:has-text("Move to folder")');
+  await p.click('.menu .menu button:has-text("Moods")');
+  await lib.locator(".side-item.nested", { hasText: "autumn" }).waitFor();
+  // Collapse and expand the folder.
+  await lib.locator(".side-item", { hasText: "Moods" }).click();
+  assert.equal(await lib.locator(".side-item.nested").count(), 0);
+  await lib.locator(".side-item", { hasText: "Moods" }).click();
+  assert.equal(await lib.locator(".side-item.nested").count(), 1);
+  // Custom order: drag "End" above "Moods".
+  for (let i = 0; i < 2; i++) await p.click(".lib-tools .link");
+  assert.equal((await p.locator(".lib-tools .link").textContent()).trim(), "Custom order");
+  const names = async () => (await lib.locator(".side-item .name").allTextContents()).filter((n) => n !== "Local files" && n !== "Downloads");
+  await lib.locator(".side-item", { hasText: /^End/ }).dragTo(lib.locator(".side-item", { hasText: "Moods" }), { targetPosition: { x: 40, y: 2 } });
+  const order = await names();
+  assert.ok(order.indexOf("End") < order.indexOf("Moods"), `order: ${order.join(", ")}`);
+});
+
 await test("language switch to Japanese", async (p) => {
   await p.click('button[aria-label="Settings"]');
   await p.click('button[aria-label="Language"]');
@@ -149,6 +181,27 @@ await test("50,000-track playlist stays virtualized and responsive", async (p) =
   assert.ok(renderMs < 3000, `slow first render: ${renderMs} ms`);
   assert.ok(scrollMs < 1000, `slow jump-scroll: ${scrollMs} ms`);
 });
+
+await test(
+  "in-app self-test (--self-test, used on Windows CI) reaches the end",
+  async (p) => {
+    await p.waitForFunction(() => window.__SELFTEST_EXIT, null, { timeout: 90000 });
+    const lines = await p.evaluate(() => window.__SELFTEST);
+    const fails = lines.filter((l) => l.startsWith("fail"));
+    console.log(`  self-test: ${lines.filter((l) => l.startsWith("ok")).length} steps ok${fails.length ? "; " + fails.join("; ") : ""}`);
+    assert.equal(lines.at(-1), "done");
+    assert.ok(lines.filter((l) => l.startsWith("ok switch")).length >= 5, "switches were not exercised");
+  },
+  {
+    init: () => {
+      window.__SELFTEST = [];
+      const d = window.__MOCK__;
+      d.app_info = { ...d.app_info, selfTest: true };
+      d.self_test_log = (a) => (window.__SELFTEST.push(a.line), null);
+      d.self_test_exit = () => ((window.__SELFTEST_EXIT = true), null);
+    },
+  },
+);
 
 await browser.close();
 server.httpServer.close();

@@ -107,9 +107,13 @@ export function ArtistPage({ id }: { id: string }) {
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const name = data.artist?.name ?? "";
+  // Local files by this artist blend into Popular and the discography (no separate section).
+  const localTracks = data.localTracks ?? [];
+  const popular = [...data.topTracks.slice(0, 5), ...localTracks, ...data.topTracks.slice(5)];
+  const albumsAll = [...data.albums, ...(data.localAlbums ?? [])];
   const ctx: PlayContext = { kind: "artist", id, title: name, artwork: data.artist?.artwork };
-  const all: Album[] = [...data.albums, ...data.singles];
-  const discItems = disc === "albums" ? data.albums : disc === "singles" ? data.singles : disc === "appears" ? data.appearsOn : all.slice().sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+  const all: Album[] = [...albumsAll, ...data.singles];
+  const discItems = disc === "albums" ? albumsAll : disc === "singles" ? data.singles : disc === "appears" ? data.appearsOn : all.slice().sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
   if (showAll)
     return (
       <div className="page">
@@ -130,12 +134,12 @@ export function ArtistPage({ id }: { id: string }) {
           <ArtistName name={name} />
         </h1>
       </header>
-      <ActionBar tracks={data.topTracks} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
-      {data.topTracks.length > 0 && (
+      <ActionBar tracks={popular} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
+      {popular.length > 0 && (
         <section>
           <h2>{t("popular")}</h2>
-          <TrackList tracks={data.topTracks} limit={more ? 10 : 5} context={ctx} showAlbum={false} />
-          {data.topTracks.length > 5 && (
+          <TrackList tracks={popular} limit={more ? 10 + localTracks.length : 5 + Math.min(localTracks.length, 5)} context={ctx} showAlbum={false} />
+          {popular.length > 5 + Math.min(localTracks.length, 5) && (
             <button className="link small" onClick={() => setMore(!more)}>
               {more ? t("showLess") : t("seeMore")}
             </button>

@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PLEXSpot",
   "mainBinaryName": "PLEXSpot",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "identifier": "app.openmusic.plexspot",
   "build": {
     "frontendDist": "../../../ui/dist",
@@ -30,11 +30,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "publisher": "OpenMusic",
+    "publisher": "マッキニー マイヤ",
     "shortDescription": "PLEXSpot music player",
     "longDescription": "PLEXSpot - a Spotify-style desktop music client.",
     "category": "Music",
-    "copyright": "OpenMusic contributors",
+    "copyright": "© マッキニー マイヤ",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper" },

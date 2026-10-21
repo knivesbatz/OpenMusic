@@ -82,6 +82,9 @@ export interface ArtistPage {
   singles: Album[];
   appearsOn: Album[];
   related: Artist[];
+  /** Local files by an artist with the same name. */
+  localTracks?: Track[];
+  localAlbums?: Album[];
 }
 
 export interface AlbumPage {
@@ -126,6 +129,8 @@ export interface AppInfo {
   platform?: string;
   /** GPU acceleration off: "auto" after an unclean exit, "manual" from Settings. */
   safeMode?: "auto" | "manual" | null;
+  /** Launched with --self-test (CI): run ui/src/selftest.ts. */
+  selfTest?: boolean;
 }
 
 export interface PlayContext {
@@ -187,32 +192,6 @@ export interface ScanReport {
   failed: number;
 }
 
-export interface SpotifyPlaylist {
-  id: string;
-  name: string;
-  owner: string;
-  trackCount: number;
-  image?: string | null;
-}
-
-export interface ImportRow {
-  title: string;
-  artist: string;
-  status: string;
-  matched?: Track | null;
-  score?: number | null;
-}
-
-export interface ImportReport {
-  playlistId?: string | null;
-  name: string;
-  imported: number;
-  duplicates: number;
-  ambiguous: number;
-  skipped: number;
-  rows: ImportRow[];
-}
-
 export interface LastFmStatus {
   hasKeys: boolean;
   connected: boolean;
@@ -251,3 +230,14 @@ export interface PlexUser {
   selected: boolean;
 }
 
+
+/** Android media notification state (mirrors `NowPlaying` in tauri-plugin-openmusic-media). */
+export interface NowPlaying {
+  title: string;
+  artist: string;
+  album: string | null;
+  artwork: string | null;
+  playing: boolean;
+  positionMs: number;
+  durationMs: number;
+}

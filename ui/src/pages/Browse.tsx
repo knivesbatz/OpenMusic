@@ -209,10 +209,41 @@ export function Search({ q }: { q: string }) {
     return () => clearTimeout(timer);
   }, [query]);
 
+  // A filter chip loads the full list for that type (not just the overview's first few).
+  const [kindRes, setKindRes] = useState<{ key: string; res: SearchResults } | null>(null);
+  const [kindLoading, setKindLoading] = useState(false);
+  const kindTok = useRef(0);
+  useEffect(() => {
+    if (!query || filter === "all" || !inTauri) return;
+    const key = filter + "\u0000" + query.toLowerCase();
+    const cached = searchCache.get(key);
+    if (cached) return setKindRes({ key, res: cached });
+    const my = ++kindTok.current;
+    setKindLoading(true);
+    const timer = setTimeout(() => {
+      api.searchKind(query, filter).then(
+        (r) => {
+          searchCache.set(key, r);
+          if (my === kindTok.current) (setKindRes({ key, res: r }), setKindLoading(false));
+        },
+        (e) => my === kindTok.current && (setError(errorMessage(e)), setKindLoading(false)),
+      );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, filter]);
+
   if (!query) return <BrowseEmpty />;
   const filters: SFilter[] = ["all", "songs", "artists", "albums", "playlists", ...(caps?.podcasts ? (["podcasts", "episodes"] as SFilter[]) : [])];
   const ctx: PlayContext = { kind: "search", id: query, title: query };
   const r = res;
+  // Full list for the active filter once loaded; the overview's results meanwhile.
+  const fr = filter !== "all" && kindRes?.key === filter + "\u0000" + query.toLowerCase() ? kindRes.res : r;
+  // Local files blend into the song list (they carry a "Local file" badge): up to 2 of the
+  // overview's 4 spots, so they're visible without a separate section.
+  const provider = r ? r.tracks.filter((x) => x.source !== "local") : [];
+  const local = r ? r.tracks.filter((x) => x.source === "local") : [];
+  const nLocal = Math.min(2, local.length);
+  const songs = [...provider.slice(0, 4 - nLocal), ...local.slice(0, nLocal), ...provider.slice(4 - nLocal), ...local.slice(nLocal)];
   return (
     <div className="page search">
       <div className="chips">
@@ -243,10 +274,10 @@ export function Search({ q }: { q: string }) {
                 </div>
               </section>
             )}
-            {r.tracks.length > 0 && (
+            {songs.length > 0 && (
               <section className="top-songs">
                 <h2>{t("songs")}</h2>
-                <TrackList tracks={r.tracks} limit={4} context={ctx} showAlbum={false} numbered={false} />
+                <TrackList tracks={songs} limit={4} context={ctx} showAlbum={false} numbered={false} />
               </section>
             )}
           </div>
@@ -262,12 +293,13 @@ export function Search({ q }: { q: string }) {
           )}
         </>
       )}
-      {r && filter === "songs" && <TrackList tracks={r.tracks} context={ctx} />}
-      {r && filter === "episodes" && <TrackList tracks={r.episodes} context={ctx} showAlbum={false} />}
-      {r && filter === "artists" && <Grid items={r.artists.map((a) => ({ type: "artist" as const, ...a }))} />}
-      {r && filter === "albums" && <Grid items={r.albums.map((a) => ({ type: "album" as const, ...a }))} />}
-      {r && filter === "playlists" && <Grid items={r.playlists.map((a) => ({ type: "playlist" as const, ...a }))} />}
-      {r && filter === "podcasts" && <Grid items={r.podcasts.map((a) => ({ type: "podcast" as const, ...a }))} />}
+      {filter !== "all" && kindLoading && fr === r && <p className="muted small">{t("loadingMore")}</p>}
+      {fr && filter === "songs" && <TrackList tracks={fr.tracks} context={ctx} />}
+      {fr && filter === "episodes" && <TrackList tracks={fr.episodes} context={ctx} showAlbum={false} />}
+      {fr && filter === "artists" && <Grid items={fr.artists.map((a) => ({ type: "artist" as const, ...a }))} />}
+      {fr && filter === "albums" && <Grid items={fr.albums.map((a) => ({ type: "album" as const, ...a }))} />}
+      {fr && filter === "playlists" && <Grid items={fr.playlists.map((a) => ({ type: "playlist" as const, ...a }))} />}
+      {fr && filter === "podcasts" && <Grid items={fr.podcasts.map((a) => ({ type: "podcast" as const, ...a }))} />}
     </div>
   );
 }
@@ -338,7 +370,7 @@ export function LibraryPage() {
           </button>
         )}
         <button className="pill ghost small" onClick={() => navigate({ name: "import" })}>
-          {t("importSpotify")}
+          {t("transferPlaylists")}
         </button>
         <button className="pill ghost small" onClick={() => navigate({ name: "settings" })}>
           {t("settings")}

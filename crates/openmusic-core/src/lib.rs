@@ -10,14 +10,14 @@ pub mod error;
 pub mod lastfm;
 pub mod local;
 pub mod lyrics;
-pub mod matching;
 pub mod model;
 pub mod safe_mode;
 pub mod names;
 pub mod plex;
 pub mod secrets;
-pub mod spotify;
 pub mod state;
+#[cfg(desktop)]
+mod tray;
 pub mod ytm;
 
 use std::sync::atomic::AtomicBool;
@@ -111,18 +111,16 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
     let builder = tauri::Builder::default();
     #[cfg(desktop)]
     let builder = builder
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-        }))
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| tray::show_main(app)))
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![commands::HTPC_ARG]),
         ));
     builder
+        // Android: media notification and background playback; button presses go to the UI.
+        .plugin(tauri_plugin_openmusic_media::init(|app, action| {
+            let _ = app.emit("media-action", action);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_asynchronous_uri_scheme_protocol("art", move |_ctx, request, responder| {
@@ -147,6 +145,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // webview's GPU acceleration off before it starts.
             let main_cfg = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("no main window in config")?;
             commands::with_browser_args(tauri::WebviewWindowBuilder::from_config(&handle, &main_cfg)?, &state).build()?;
+            // Desktop only: Android release builds block plain-HTTP requests from the webview, so
+            // there the UI uses the in-process art:// protocol.
+            #[cfg(desktop)]
             match art::start_server(state.clone()) {
                 Ok(base) => {
                     let _ = state.art_base.set(base);
@@ -155,6 +156,10 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 Err(e) => log::warn!("artwork server failed to start: {e}"),
             }
             app.manage(state.clone());
+            #[cfg(desktop)]
+            if let Err(e) = tray::create(&handle, &state) {
+                log::warn!("tray icon failed: {e}");
+            }
 
             downloads::recover(&state);
             // Local folders and the downloads dir are readable through the asset protocol.
@@ -190,10 +195,19 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the main window quits the app (and the mini player with it); closing the
-            // mini player only closes the mini player. Playback lives in the main window.
+            // Closing the main window quits the app (and the mini player with it), or hides it to
+            // the tray when that setting is on; closing the mini player only closes the mini
+            // player. Playback lives in the main window.
             match event {
-                tauri::WindowEvent::CloseRequested { .. } if window.label() == "main" => {
+                tauri::WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
+                    #[cfg(desktop)]
+                    if window.app_handle().try_state::<Arc<AppState>>().is_some_and(|s| tray::close_to_tray(&s)) {
+                        api.prevent_close();
+                        let _ = window.hide();
+                        return;
+                    }
+                    #[cfg(not(desktop))]
+                    let _ = api;
                     if let Some(p) = window.app_handle().get_webview_window("pip") {
                         let _ = p.close();
                     }
@@ -220,11 +234,17 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::sign_out,
             commands::home,
             commands::search,
+            commands::search_kind,
             commands::artist,
             commands::album,
             commands::playlist,
             commands::library,
             commands::radio,
+            commands::autoplay_tracks,
+            commands::media_update,
+            commands::media_stop,
+            commands::self_test_log,
+            commands::self_test_exit,
             commands::resolve_stream,
             commands::record_play,
             commands::mark_played,
@@ -251,13 +271,6 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::lastfm_disconnect,
             commands::lastfm_now_playing,
             commands::lastfm_scrobble,
-            commands::spotify_status,
-            commands::spotify_connect,
-            commands::spotify_builtin,
-            commands::spotify_disconnect,
-            commands::spotify_playlists,
-            commands::spotify_import,
-            commands::import_confirm,
             commands::download_tracks,
             commands::download_list,
             commands::download_cancel,
