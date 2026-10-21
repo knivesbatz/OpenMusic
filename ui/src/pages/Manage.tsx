@@ -26,8 +26,8 @@ export function LocalPage() {
   const load = async () => {
     if (!inTauri) return setLib({ tracks: [], albums: [], artists: [] });
     const [f, l] = await Promise.all([api.localFolders(), api.localLibrary()]);
-    setFolders(f);
-    setLib(l);
+    setFolders(f ?? []);
+    setLib({ tracks: l?.tracks ?? [], albums: l?.albums ?? [], artists: l?.artists ?? [] });
   };
   useEffect(() => {
     load().catch((e) => toast(errorMessage(e)));
@@ -380,7 +380,7 @@ export function SettingsPage() {
   async function signOut() {
     if (!(await confirmDialog({ title: t("signOut"), body: t("signOutBody"), confirm: t("signOut") }))) return;
     await api.signOut().catch(() => {});
-    await api.kvSet("yt.profileChosen", false).catch(() => {});
+    await api.kvSet(yt ? "yt.profileChosen" : "plex.profileChosen", false).catch(() => {});
     await setLocalOnly(false);
     useApp.setState({ auth: await api.authStatus(), library: null });
   }
@@ -401,11 +401,9 @@ export function SettingsPage() {
                   {t("changeServer")}
                 </button>
               )}
-              {yt && (
-                <button className="pill ghost small" onClick={openProfilePicker}>
-                  {t("switchProfile")}
-                </button>
-              )}
+              <button className="pill ghost small" onClick={openProfilePicker}>
+                {t("switchProfile")}
+              </button>
               <button className="pill ghost small" onClick={signOut}>
                 {t("signOut")}
               </button>
@@ -455,7 +453,7 @@ export function SettingsPage() {
         <label className="setting">
           <div className="grow">
             <div>{t("crossfade")}: {s.crossfade} s</div>
-            {yt && <div className="muted small">{t("crossfadeUnsupported")}</div>}
+            {yt && <div className="muted small">{t("crossfadeYouTube")}</div>}
           </div>
           <input type="range" className="slider wide" min={0} max={12} step={1} value={s.crossfade} style={{ ["--pct" as string]: (s.crossfade / 12) * 100 + "%" }} onChange={(e) => s.set({ crossfade: Number(e.target.value) })} aria-label={t("crossfade")} />
         </label>

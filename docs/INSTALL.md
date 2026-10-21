@@ -58,8 +58,8 @@ example after a password change). Sign in again from the prompt or Settings → 
 **A YouTube track is skipped with "the owner does not allow playback in other apps".** Some videos
 can't be played outside YouTube's own apps (embed restriction, errors 101/150). The app skips them.
 
-**No crossfade/gapless in YTSpot.** YouTube playback goes through the official YouTube player, which
-can't be mixed or preloaded. The settings explain this; they apply to local files.
+**A YouTube song switches instead of crossfading.** YTSpot blends YouTube songs with two YouTube
+players. If YouTube pauses one player when the other starts, that transition becomes a quick switch.
 
 **Audio quality setting is greyed out in YTSpot.** YouTube picks the stream quality itself; third-party
 players can't choose it.
@@ -71,8 +71,11 @@ developer app, add the redirect URI `http://127.0.0.1:43117/callback` exactly, t
 (whichever comes first), and only tracks longer than 30 s. Scrobbles made while offline are queued and
 sent later. Settings → Last.fm shows how many are waiting.
 
-**The app closed unexpectedly.** Native crashes are recorded in
+**The app closed unexpectedly.** Native crashes and UI errors are recorded in
 `%APPDATA%\app.openmusic.<app>\crash.log`; please attach it when reporting the problem.
+
+**PLEXSpot shows someone else's library.** Switch Plex Home user under Settings → Account → Switch
+profile (or click your name in the top bar). Protected users need their PIN.
 
 **YTSpot shows the wrong library.** If your Google account has several YouTube channels, pick the right
 one under Settings → Account → Switch profile (or click your name in the top bar).

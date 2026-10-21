@@ -189,7 +189,7 @@ pub struct Capabilities {
     pub downloads: bool,
     pub quality_control: bool,
     pub podcasts: bool,
-    /// Crossfade/gapless are only possible for sources played through `<audio>`.
+    /// Crossfade/gapless: two `<audio>` decks, or two YouTube IFrame players for YouTube.
     pub crossfade: bool,
     pub gapless: bool,
     pub favorites: bool,
@@ -218,5 +218,18 @@ pub struct SongMeta {
     pub artist_id: Option<String>,
     pub album: Option<String>,
     pub album_id: Option<String>,
+}
+
+/// A Plex Home user (profile) of the signed-in Plex account.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PlexUser {
+    pub uuid: String,
+    pub title: String,
+    pub thumb: Option<String>,
+    pub admin: bool,
+    /// Switching to this user needs their PIN.
+    pub protected: bool,
+    pub selected: bool,
 }
 

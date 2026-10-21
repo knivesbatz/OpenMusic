@@ -169,6 +169,28 @@ pub fn rating_key(id: &str) -> &str {
     id.trim_start_matches("plex:")
 }
 
+/// Users from `GET /api/v2/home/users` (`{"users": [...]}`).
+pub fn parse_home_users(v: &Value) -> Vec<PlexUser> {
+    v.get("users")
+        .and_then(|u| u.as_array())
+        .map(|users| {
+            users
+                .iter()
+                .filter_map(|u| {
+                    Some(PlexUser {
+                        uuid: s(u, "uuid")?,
+                        title: s(u, "title").or_else(|| s(u, "username")).unwrap_or_default(),
+                        thumb: s(u, "thumb").map(|t| format!("art://url/{}", urlencoding::encode(&t))),
+                        admin: u.get("admin").and_then(|b| b.as_bool()).unwrap_or(false),
+                        protected: u.get("protected").and_then(|b| b.as_bool()).unwrap_or(false),
+                        selected: false,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 impl Plex {
     pub fn new(http: reqwest::Client, client_id: String) -> Self {
         Plex { http, client_id }
@@ -226,6 +248,41 @@ impl Plex {
             .json()
             .await?;
         Ok(s(&v, "username").or_else(|| s(&v, "title")).unwrap_or_default())
+    }
+
+    /// Plex Home users of the account that owns `token` (just the account itself when it isn't
+    /// part of a Plex Home).
+    pub async fn home_users(&self, token: &str) -> Result<Vec<PlexUser>> {
+        let resp = self.headers(self.http.get(format!("{PLEX_TV}/api/v2/home/users"))).header("X-Plex-Token", token).send().await?;
+        match resp.status().as_u16() {
+            401 => return Err(Error::AuthExpired),
+            // Accounts without a Plex Home.
+            403 | 404 => return Ok(Vec::new()),
+            _ => {}
+        }
+        Ok(parse_home_users(&resp.error_for_status()?.json().await?))
+    }
+
+    /// Switch to a Plex Home user; returns that user's auth token. `pin` is needed for protected
+    /// users.
+    pub async fn switch_user(&self, home_token: &str, uuid: &str, pin: Option<&str>) -> Result<String> {
+        let mut form = Vec::new();
+        if let Some(p) = pin.filter(|p| !p.is_empty()) {
+            form.push(("pin", p.to_string()));
+        }
+        let resp = self
+            .headers(self.http.post(format!("{PLEX_TV}/api/v2/home/users/{}/switch", urlencoding::encode(uuid))))
+            .header("X-Plex-Token", home_token)
+            .form(&form)
+            .send()
+            .await?;
+        match resp.status().as_u16() {
+            401 | 403 => return Err(Error::Invalid("Wrong PIN".into())),
+            404 => return Err(Error::NotFound("Plex Home user".into())),
+            _ => {}
+        }
+        let v: Value = resp.error_for_status()?.json().await?;
+        s(&v, "authToken").or_else(|| s(&v, "authenticationToken")).ok_or_else(|| Error::Invalid("Plex did not return a token for this user".into()))
     }
 
     pub async fn servers(&self, token: &str) -> Result<Vec<Server>> {
@@ -623,6 +680,19 @@ impl Plex {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_home_users() {
+        let v = serde_json::json!({ "id": 1, "users": [
+            { "id": 1, "uuid": "aaa", "title": "Maya", "thumb": "https://plex.tv/users/aaa/avatar", "admin": true, "protected": false },
+            { "id": 2, "uuid": "bbb", "title": "Kid", "admin": false, "protected": true },
+            { "id": 3, "title": "no uuid" }
+        ] });
+        let u = parse_home_users(&v);
+        assert_eq!(u.len(), 2);
+        assert!(u[0].admin && !u[0].protected && u[0].thumb.as_deref().unwrap().starts_with("art://url/"));
+        assert_eq!((u[1].uuid.as_str(), u[1].protected), ("bbb", true));
+    }
     use serde_json::json;
 
     #[test]

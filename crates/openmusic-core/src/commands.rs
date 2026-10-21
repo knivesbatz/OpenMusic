@@ -25,12 +25,15 @@ pub struct AppInfo {
     name: String,
     version: String,
     capabilities: Capabilities,
+    /// Base URL of the local artwork server; the UI falls back to `art://` when absent.
+    art_base: Option<String>,
 }
 
 pub fn capabilities(f: Flavor) -> Capabilities {
     match f {
         Flavor::Plex => Capabilities { downloads: true, quality_control: true, podcasts: false, crossfade: true, gapless: true, favorites: true },
-        Flavor::YouTube => Capabilities { downloads: false, quality_control: false, podcasts: true, crossfade: false, gapless: false, favorites: true },
+        // YouTube blends with two IFrame players (see ui/src/player/engine.ts).
+        Flavor::YouTube => Capabilities { downloads: false, quality_control: false, podcasts: true, crossfade: true, gapless: true, favorites: true },
     }
 }
 
@@ -41,6 +44,7 @@ pub fn app_info(app: AppHandle, state: S) -> AppInfo {
         name: app.package_info().name.clone(),
         version: app.package_info().version.to_string(),
         capabilities: capabilities(state.flavor),
+        art_base: state.art_base.get().cloned(),
     }
 }
 
@@ -113,6 +117,8 @@ pub async fn plex_pin_start(app: AppHandle, state: S<'_>) -> Result<plex::Pin> {
 pub async fn plex_pin_poll(state: S<'_>, id: u64) -> Result<bool> {
     let Some(token) = state.plex.pin_check(id).await? else { return Ok(false) };
     state.secrets.set("plex.token", &token)?;
+    state.secrets.delete("plex.homeToken")?;
+    state.db().kv_delete("plex.userUuid")?;
     if let Ok(name) = state.plex.account_name(&token).await {
         state.db().kv_set("plex.account", &name)?;
     }
@@ -332,9 +338,11 @@ pub async fn sign_out(app: AppHandle, state: S<'_>) -> Result<()> {
     match state.flavor {
         Flavor::Plex => {
             state.secrets.delete("plex.token")?;
+            state.secrets.delete("plex.homeToken")?;
             state.secrets.delete_large("plex.session")?;
             *state.plex_session.write().await = None;
             state.db().kv_delete("plex.account")?;
+            state.db().kv_delete("plex.userUuid")?;
         }
         Flavor::YouTube => {
             state.secrets.delete_large("yt.cookie")?;
@@ -848,7 +856,12 @@ pub async fn lastfm_scrobble(app: AppHandle, state: S<'_>, track: Track, started
     Ok(queued)
 }
 
+/// One flush at a time: two concurrent flushes would read the same pending batch and send it
+/// twice (duplicate scrobbles).
+static SCROBBLE_FLUSH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
+    let _one_at_a_time = SCROBBLE_FLUSH.lock().await;
     let (Ok(Some(sk)), Ok(client)) = (state.secrets.get("lastfm.sk"), lastfm_client(state)) else { return };
     loop {
         let pending = match state.db().scrobble_pending(50) {
@@ -863,6 +876,9 @@ pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
             }
             Err(lastfm::CallError::Temporary(_)) => return, // stays queued; retried later
             Err(lastfm::CallError::Auth) => {
+                // The session was revoked: forget it so Settings offers "Connect" again. Queued
+                // scrobbles stay and are sent after reconnecting.
+                let _ = state.secrets.delete("lastfm.sk");
                 let _ = app.emit("lastfm-auth-expired", ());
                 return;
             }
@@ -1291,5 +1307,81 @@ pub async fn yt_song_meta(
         }
     }
     Ok(out)
+}
+
+/// UI errors (uncaught exceptions, render errors) go to the same crash.log as native panics.
+#[tauri::command]
+pub fn log_ui_error(state: S, message: String) -> Result<()> {
+    use std::io::Write;
+    let path = state.dirs.data.join("crash.log");
+    // Keep the log bounded: start over past 1 MB.
+    if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
+        let _ = std::fs::remove_file(&path);
+    }
+    let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
+    writeln!(f, "[{}] v{} ui: {}", crate::db::now(), env!("CARGO_PKG_VERSION"), message.chars().take(4000).collect::<String>())?;
+    Ok(())
+}
+
+// ---- Plex Home users (profiles) -------------------------------------------------------------
+
+/// The account token that can list and switch Plex Home users: the admin token saved before
+/// the first switch, else the signed-in token.
+fn plex_home_token(state: &AppState) -> Result<String> {
+    match state.secrets.get("plex.homeToken")? {
+        Some(t) => Ok(t),
+        None => state.secrets.get("plex.token")?.ok_or(Error::NotSignedIn),
+    }
+}
+
+#[tauri::command]
+pub async fn plex_home_users(state: S<'_>) -> Result<Vec<PlexUser>> {
+    let token = plex_home_token(&state)?;
+    let mut users = state.plex.home_users(&token).await?;
+    let current: Option<String> = state.db().kv_get("plex.userUuid")?;
+    for u in &mut users {
+        // Before any switch, the signed-in account is the admin.
+        u.selected = match &current {
+            Some(c) => &u.uuid == c,
+            None => u.admin,
+        };
+    }
+    Ok(users)
+}
+
+/// Switch to a Plex Home user and reconnect to the same server with their access.
+#[tauri::command]
+pub async fn plex_switch_user(app: AppHandle, state: S<'_>, uuid: String, pin: Option<String>) -> Result<()> {
+    let home = plex_home_token(&state)?;
+    let users = state.plex.home_users(&home).await?;
+    let user = users.into_iter().find(|u| u.uuid == uuid).ok_or_else(|| Error::NotFound("Plex Home user".into()))?;
+    let token = state.plex.switch_user(&home, &uuid, pin.as_deref()).await?;
+    if state.secrets.get("plex.homeToken")?.is_none() {
+        state.secrets.set("plex.homeToken", &home)?;
+    }
+    state.secrets.set("plex.token", &token)?;
+    {
+        let db = state.db();
+        db.kv_set("plex.userUuid", &uuid)?;
+        db.kv_set("plex.account", &user.title)?;
+        db.cache_clear()?;
+        db.kv_delete("plex.library")?;
+    }
+    // Same server if this user can reach it; otherwise they choose one.
+    let previous = state.plex_session.read().await.as_ref().map(|s| s.server.client_identifier.clone());
+    *state.plex_session.write().await = None;
+    state.secrets.delete_large("plex.session")?;
+    if let Some(id) = previous {
+        if let Some(server) = state.plex.servers(&token).await?.into_iter().find(|s| s.client_identifier == id) {
+            if let Ok(sess) = state.plex.connect(&server).await {
+                if !sess.sections.is_empty() {
+                    state.secrets.set_json("plex.session", &sess)?;
+                    *state.plex_session.write().await = Some(sess);
+                }
+            }
+        }
+    }
+    let _ = app.emit("auth-changed", ());
+    Ok(())
 }
 

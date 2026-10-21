@@ -43,6 +43,9 @@
             tracks: Array.from({ length: 50000 }, (_, i) => ({ ...tracks[i % tracks.length], id: "plex:big" + i, title: tracks[i % tracks.length].title + " " + i })) }
         : { playlist: playlists[0], tracks },
     saved_list: { albums: [], artists: [], playlists: [], podcasts: [] },
+    local_folders: [],
+    local_library: { tracks: [], albums: [], artists: [] },
+    download_list: [],
     liked_ids: [],
     localized_artist_names: {},
     search: { top: { type: "artist", ...artists[0] }, tracks: tracks.slice(0, 6), albums: albums.slice(0, 4), artists: artists.slice(0, 4), playlists: playlists.slice(0, 3), podcasts: [], episodes: [] },

@@ -38,6 +38,8 @@ pub struct AppState {
     pub downloads: Mutex<HashMap<String, Arc<AtomicBool>>>,
     pub download_slots: Arc<Semaphore>,
     pub art_slots: Arc<Semaphore>,
+    /// Base URL of the local artwork server (`http://127.0.0.1:<port>/<token>`), once started.
+    pub art_base: std::sync::OnceLock<String>,
     pub scanning: AtomicBool,
     pub last_yt_refresh: Mutex<Option<std::time::Instant>>,
 }

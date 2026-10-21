@@ -84,6 +84,17 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Fullscreen crash: OS fullscreen no longer automatic; error boundary + native crash log. Root
   cause not reproduced (no Windows desktop here); confirm on the user's machine
 
+## 1.0.1 (crash and feedback fixes)
+- 🟡 Artwork served by a local HTTP server (127.0.0.1, random port + token) instead of the async
+  `art://` protocol: suspected cause of crashes on scroll/navigation (cancelled requests). Not
+  reproducible here (no Windows desktop); confirm on device
+- ✅ Root error boundary; UI errors and render errors appended to crash.log (`log_ui_error`)
+- 🟡 YouTube crossfade/Automix/near-gapless with two IFrame players (verify on device: YouTube may
+  pause one embed when another plays)
+- 🟡 Plex Home user picker (`/api/v2/home/users`, `/switch` with PIN); parser tested
+- ✅ Last.fm: serialized queue flush (duplicate-scrobble race), repeat-one rescrobble, official
+  artist for music videos, 10-min retry, revoked session handling
+
 ## Known issues
 - YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
   with a toast.

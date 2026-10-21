@@ -8,6 +8,22 @@ import { startBroadcast } from "./player/bridge";
 import { boot } from "./store/app";
 import { useSettings } from "./store/settings";
 import "./styles.css";
+import { api, inTauri, setArtBase } from "./api";
+import { useApp } from "./store/app";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+
+/** Uncaught UI errors go to crash.log too, so reports from users carry something to go on. */
+function installErrorLog() {
+  if (!inTauri) return;
+  let sent = 0;
+  const log = (msg: string) => sent++ < 20 && api.logUiError(msg.slice(0, 2000)).catch(() => {});
+  addEventListener("error", (e) => log(`${e.message} @ ${e.filename}:${e.lineno}:${e.colno}\n${e.error?.stack ?? ""}`));
+  addEventListener("unhandledrejection", (e) => {
+    const r = e.reason;
+    // Rejected API calls are handled where they're made; only log real exceptions.
+    if (r instanceof Error) log(`unhandled rejection: ${r.message}\n${r.stack ?? ""}`);
+  });
+}
 
 const isPip = location.hash === "#pip";
 
@@ -24,11 +40,21 @@ function Root() {
     el.classList.toggle("high-contrast", contrast);
     el.lang = lang;
   }, [scale, reduced, contrast, lang]);
-  return isPip ? <Pip /> : <App />;
+  return <ErrorBoundary>{isPip ? <Pip /> : <App />}</ErrorBoundary>;
 }
 
 async function start() {
+  installErrorLog();
   await useSettings.getState().load();
+  if (inTauri) {
+    try {
+      const info = await api.appInfo();
+      setArtBase(info.artBase);
+      if (!isPip) useApp.setState({ info });
+    } catch {
+      /* boot() reports it */
+    }
+  }
   if (isPip) document.documentElement.classList.add("pip-window");
   createRoot(document.getElementById("root")!).render(
     <StrictMode>

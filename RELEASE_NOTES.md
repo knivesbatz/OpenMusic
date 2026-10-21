@@ -1,20 +1,27 @@
-# OpenMusic 1.0.0
+# OpenMusic 1.0.1
 
-First full release of YTSpot and PLEXSpot. Every build passes Windows unit tests, lint, 8 UI tests, and an
-automated upgrade test on a clean Windows machine (0.1.0-beta.1 → 1.0.0, launch, uninstall).
+Fixes for crashes and issues reported on 1.0.0, plus YouTube crossfade and Plex profiles.
 
-**Not yet verified against real Plex or YouTube Music accounts** (CI has no provider accounts). The
-checklist below lists what to try first; please report anything that breaks. Installation and
-troubleshooting: [docs/INSTALL.md](https://github.com/knivesbatz/OpenMusic/blob/main/docs/INSTALL.md).
+## New in 1.0.1
+- **Crash fix (scrolling, opening pages, settings)**: artwork is now served by a small local web server
+  inside the app (127.0.0.1 only, with a random per-launch key in every URL) instead of a custom
+  protocol. Image requests cancelled while scrolling or switching pages, a likely cause of the crashes,
+  are now routine. If the app still closes unexpectedly, `crash.log` in the app data folder now records
+  UI errors too; please attach it.
+- **No more blank window on UI errors**: the whole app, not only pages and the fullscreen player, now
+  shows an error message with Retry instead of disappearing.
+- **YouTube crossfade and song blending**: YTSpot now crossfades (0–12 s, equal-power) and supports
+  Automix and near-gapless playback, using two YouTube players: the next song is cued silently and
+  faded in. Some videos may switch instead of fading if YouTube pauses the other player.
+- **Plex profiles**: PLEXSpot can switch between Plex Home users (with PIN for protected users) from the
+  profile picker, Settings → Account → Switch profile, or by clicking your name in the top bar. It asks
+  once after sign-in when the account has several users.
+- **Last.fm fixes**: no duplicate scrobbles when two tracks finish close together; repeat-one replays are
+  scrobbled; music videos scrobble the official artist (not the uploader); scrobbles that failed while
+  offline are retried every 10 minutes; a revoked Last.fm session now shows a message and reconnect
+  button instead of failing silently.
 
-## Downloads
-- `YTSpot_*_x64-setup.exe`: YouTube Music client (`app.openmusic.ytspot`)
-- `PLEXSpot_*_x64-setup.exe`: Plex client (`app.openmusic.plexspot`)
-
-They install per user, side by side, with separate data and credentials. If WebView2 is missing, the
-installer downloads it.
-
-## Fixed since 0.1.0-beta.1 (from beta testing)
+## Also in 1.0.0 (fixed since 0.1.0-beta.1)
 - **YTSpot profiles**: Google accounts with several YouTube channels (brand accounts) can pick which
   channel's library to use: asked once after sign-in, and any time from Settings → Account →
   Switch profile or by clicking your name in the top bar.
@@ -25,7 +32,7 @@ installer downloads it.
   Latin) and never use MusicBrainz search hints. Music videos use the official artist.
 - **Album pages**: show the album cover (not the artist photo); track rows show the artist (linked to
   the artist page) instead of the play count.
-- **Fullscreen player**: no longer switches Windows into fullscreen automatically (the crash report);
+- **Fullscreen player**: no longer switches Windows into fullscreen automatically;
   the player fills the app window, with a separate "Fill the screen" button. A display error now
   shows a message with Retry/Close instead of taking down the app, and native crashes are written
   to `crash.log` in the app data folder.
@@ -52,12 +59,13 @@ installer downloads it.
   Xbox/DS4/Switch controller navigation and "Launch at startup in TV mode"
 
 ## Please test
-1. **PLEXSpot sign-in**: Plex PIN sign-in, server list, server selection, reconnect after restart.
+1. **PLEXSpot sign-in**: Plex PIN sign-in, Plex Home profile picker (and PIN), server list, server
+   selection, reconnect after restart.
 2. **YTSpot sign-in**: Google sign-in window closes by itself, the profile picker appears if your
    account has several channels, and the chosen channel's library loads.
 3. **Playback**: Plex streams at each quality; YouTube IFrame playback (some videos block embedding);
    local files; next/previous, seek, repeat and shuffle.
-4. **Crossfade, gapless, Automix** on Plex/local tracks.
+4. **Crossfade, gapless, Automix** on Plex/local tracks and on YouTube songs (YTSpot).
 5. **Queue**: Shift-click ranges, drag reorder of several rows, Delete key, clear queue, restart restores
    the queue.
 6. **Mini player**: resize, controls, closing it doesn't stop music.
@@ -83,4 +91,4 @@ installer downloads it.
 - Translated names cover artists that have a MusicBrainz alias; album titles stay as published.
 - Installers are unsigned, so SmartScreen warns ("More info" → "Run anyway"). Signing is wired in CI
   and activates when a certificate is added as a repository secret.
-- Upgrading from 0.1.0-beta.1 keeps your playlists, settings, downloads and sign-in.
+- Upgrading keeps your playlists, settings, downloads and sign-in.

@@ -55,7 +55,7 @@ export function TopBar() {
       <div className="row gap">
         {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
         {auth?.account &&
-          (flavor === "youtube" ? (
+          (flavor ? (
             <button className="link small account" title={t("switchProfile")} onClick={openProfilePicker}>
               {auth.account}
             </button>
