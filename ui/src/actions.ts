@@ -7,6 +7,7 @@ import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from 
 import { useSettings } from "./store/settings";
 import { confirmDialog, navigate, promptDialog, toast, useUi, type MenuItem } from "./store/ui";
 import type { Album, Artist, Playlist, Track } from "./types";
+import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 
 const t = (k: Key, v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
@@ -166,9 +167,47 @@ export function trackMenu(track: Track, o: TrackMenuOpts = {}): MenuItem[] {
   return items;
 }
 
+export async function newFolder(withPlaylist?: string): Promise<string | null> {
+  const name = await promptDialog({ title: t("createFolder"), body: "", confirm: t("save"), input: { label: t("folderName"), value: t("newFolder") } });
+  if (!name) return null;
+  const id = createFolder(name);
+  if (withPlaylist) putInFolder(withPlaylist, id);
+  return id;
+}
+
+export function folderMenu(f: Folder): MenuItem[] {
+  return [
+    {
+      label: t("renameFolder"),
+      onClick: async () => {
+        const name = await promptDialog({ title: t("renameFolder"), body: "", confirm: t("save"), input: { label: t("folderName"), value: f.name } });
+        if (name) renameFolder(f.id, name);
+      },
+    },
+    {
+      label: t("deleteFolder"),
+      danger: true,
+      onClick: async () => {
+        if (await confirmDialog({ title: t("deleteFolder"), body: t("deleteFolderBody", { name: f.name }), confirm: t("delete"), danger: true })) deleteFolder(f.id);
+      },
+    },
+  ];
+}
+
+function moveToFolderSubmenu(pl: Playlist): MenuItem[] {
+  const { folders } = useFolders.getState();
+  const current = folderOf(pl.id);
+  return [
+    { label: t("newFolder"), onClick: () => newFolder(pl.id) },
+    ...(folders.length ? [{ label: "", separator: true }] : []),
+    ...folders.map((f) => ({ label: (current?.id === f.id ? "✓ " : "") + f.name, onClick: () => putInFolder(pl.id, f.id) })),
+    ...(current ? [{ label: "", separator: true }, { label: t("removeFromFolder"), onClick: () => takeOutOfFolder(pl.id) }] : []),
+  ];
+}
+
 export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): MenuItem[] {
   const flavor = useApp.getState().info?.flavor;
-  const items: MenuItem[] = [];
+  const items: MenuItem[] = [{ label: t("moveToFolder"), submenu: moveToFolderSubmenu(pl) }];
   if (tracks) {
     items.push({ label: t("addToQueue"), onClick: async () => P.addToQueue(await tracks()) });
     if (useApp.getState().info?.capabilities.downloads)

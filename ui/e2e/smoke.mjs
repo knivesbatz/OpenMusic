@@ -126,6 +126,32 @@ await test("YouTube: settings toggles and Japanese text modes", async (p) => {
   await p.waitForSelector("text=Settings");
 }, { youtube: true });
 
+await test("playlist folders and custom order in the sidebar", async (p) => {
+  const lib = p.locator(".lib-list");
+  await p.click('button[aria-label="Create playlist"]');
+  await p.click('.menu button:has-text("Create folder")');
+  await p.fill(".dialog input", "Moods");
+  await p.click('.dialog button:has-text("Save")');
+  await lib.locator(".side-item", { hasText: "Moods" }).waitFor();
+  // Move "autumn" into the folder from its context menu.
+  await lib.locator(".side-item", { hasText: "autumn" }).click({ button: "right" });
+  await p.hover('.menu button:has-text("Move to folder")');
+  await p.click('.menu .menu button:has-text("Moods")');
+  await lib.locator(".side-item.nested", { hasText: "autumn" }).waitFor();
+  // Collapse and expand the folder.
+  await lib.locator(".side-item", { hasText: "Moods" }).click();
+  assert.equal(await lib.locator(".side-item.nested").count(), 0);
+  await lib.locator(".side-item", { hasText: "Moods" }).click();
+  assert.equal(await lib.locator(".side-item.nested").count(), 1);
+  // Custom order: drag "End" above "Moods".
+  for (let i = 0; i < 2; i++) await p.click(".lib-tools .link");
+  assert.equal((await p.locator(".lib-tools .link").textContent()).trim(), "Custom order");
+  const names = async () => (await lib.locator(".side-item .name").allTextContents()).filter((n) => n !== "Local files" && n !== "Downloads");
+  await lib.locator(".side-item", { hasText: /^End/ }).dragTo(lib.locator(".side-item", { hasText: "Moods" }), { targetPosition: { x: 40, y: 2 } });
+  const order = await names();
+  assert.ok(order.indexOf("End") < order.indexOf("Moods"), `order: ${order.join(", ")}`);
+});
+
 await test("language switch to Japanese", async (p) => {
   await p.click('button[aria-label="Settings"]');
   await p.click('button[aria-label="Language"]');

@@ -102,6 +102,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Lyrics effect keyed on track id (regression test as YTSpot with music videos)
 - ✅ YouTube: song versions played/displayed instead of music videos; title cleanup (tested)
 
+## After 1.0.2
+- ✅ Spotify import replaced by a Soundiiz transfer guide
+- ✅ Playlist folders (any playlist, local to the app) and Recents / Alphabetical / Custom order with
+  drag and drop in the sidebar (store unit-tested, e2e)
+
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library
 - 🟡 Desktop-only features gated (`desktop`/`mobile` cfg from core build.rs; `OPENMUSIC_CHECK_MOBILE=1

@@ -7,6 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { translate } from "../i18n";
 import { useSettings } from "./settings";
 import { toast } from "./ui";
+import { loadFolders } from "./folders";
 
 interface AppStore {
   info: AppInfo | null;
@@ -80,6 +81,7 @@ export async function boot() {
   }
   refreshPlaylists();
   refreshSaved();
+  loadFolders();
   listen("saved-changed", refreshSaved);
   if (auth?.signedIn && !auth.needsServer) refreshLibrary(false);
   maybeAskProfile();
