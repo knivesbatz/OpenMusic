@@ -850,3 +850,13 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .card-art .art { border-radius: 8px; }
 .shortcut { border-radius: 8px; }
 .toast { border-radius: 10px; }
+
+/* ---- seek bar (Spotify reference): thicker track, green fill, handle at the end, time bubble ----- */
+.seek-track { position: relative; flex: 1; display: flex; align-items: center; min-width: 0; }
+.seek-track .slider { width: 100%; height: 16px; }
+.seek .slider::-webkit-slider-runnable-track { height: 5px; border-radius: 3px; background: linear-gradient(90deg, #fff var(--pct), #4d4d4d var(--pct)); }
+.seek .slider:hover::-webkit-slider-runnable-track, .seek .slider:active::-webkit-slider-runnable-track, .seek .slider:focus-visible::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--green) var(--pct), #4d4d4d var(--pct)); }
+.seek .slider::-webkit-slider-thumb { width: 13px; height: 13px; margin-top: -4px; opacity: 1; transition: transform 0.12s; }
+.seek .slider:hover::-webkit-slider-thumb, .seek .slider:active::-webkit-slider-thumb { transform: scale(1.15); }
+.seek .slider::-moz-range-track { height: 5px; border-radius: 3px; }
+.seek-tip { position: absolute; bottom: 18px; transform: translateX(-50%); padding: 3px 7px; border-radius: 6px; background: #282828; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px #0008; animation: om-fade 0.1s ease-out; }

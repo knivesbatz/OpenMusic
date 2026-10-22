@@ -21,9 +21,22 @@ export function Seek({ compact }: { compact?: boolean }) {
   const t = useT();
   const value = drag ?? pos;
   const pct = dur ? (value / dur) * 100 : 0;
+  // Hover/drag bubble above the bar showing the time under the pointer.
+  const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
+  const track = (e: React.PointerEvent<HTMLInputElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    setHover({ x: f * 100, t: f * dur });
+  };
   return (
     <div className={cls("seek", compact && "compact")}>
       {!compact && <span className="time">{fmtTime(value)}</span>}
+      <div className="seek-track">
+        {!compact && dur > 0 && (hover || drag !== null) && (
+          <span className="seek-tip" style={{ left: `${drag !== null ? pct : hover!.x}%` }} aria-hidden="true">
+            {fmtTime(drag ?? hover!.t)}
+          </span>
+        )}
       <input
         type="range"
         className="slider"
@@ -35,10 +48,14 @@ export function Seek({ compact }: { compact?: boolean }) {
         aria-valuetext={`${fmtTime(value)} / ${fmtTime(dur)}`}
         style={{ ["--pct" as string]: pct + "%" }}
         onChange={(e) => setDrag(Number(e.target.value))}
+        onPointerMove={track}
+        onPointerLeave={() => setHover(null)}
         onPointerUp={() => drag !== null && (P.seek(drag), setDrag(null))}
         onKeyUp={() => drag !== null && (P.seek(drag), setDrag(null))}
       />
-      {!compact && <span className="time">{fmtTime(dur)}</span>}
+      </div>
+      {/* Remaining time, like Spotify: "-2:56". */}
+      {!compact && <span className="time">{dur ? "-" + fmtTime(Math.max(0, dur - value)) : fmtTime(0)}</span>}
     </div>
   );
 }
