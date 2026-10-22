@@ -170,6 +170,9 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                     commands::main_page_loaded(p.url());
                 }
             });
+            // Windows: the UI draws a Spotify-style title bar with its own window buttons.
+            #[cfg(windows)]
+            let main = main.decorations(false);
             main.build()?;
             // Desktop only: Android release builds block plain-HTTP requests from the webview, so
             // there the UI uses the in-process art:// protocol.
@@ -281,6 +284,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::pl_remove_track,
             commands::yt_playlist_edit,
             commands::save_text_file,
+            commands::new_releases,
             commands::self_test_log,
             commands::update_check,
             commands::update_download,

@@ -63,6 +63,7 @@ export const IHandle = make(<path d="M4 8h16M4 12h16M4 16h16" />);
 export const IDrag = make(<path d="M5 9h14M5 15h14" />);
 export const IDisc = make(<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2.5" /></>);
 export const IMoon = make(<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />);
+export const IBell = make(<><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>);
 export const IClock = make(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
 export const IMic = make(<><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>);
 export const IImport = make(<><path d="M12 3v12M7 10l5 5 5-5" /><path d="M4 17v3h16v-3" /></>);

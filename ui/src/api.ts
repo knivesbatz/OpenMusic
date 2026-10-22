@@ -57,6 +57,7 @@ export const api = {
   signOut: () => call<void>("sign_out"),
 
   home: (refresh: boolean) => call<T.HomeData>("home", { refresh }),
+  newReleases: (refresh: boolean) => call<T.Shelf[]>("new_releases", { refresh }),
   search: (query: string) => call<T.SearchResults>("search", { query }),
   searchKind: (query: string, kind: string) => call<T.SearchResults>("search_kind", { query, kind }),
   artist: (id: string) => call<T.ArtistPage>("artist", { id }),

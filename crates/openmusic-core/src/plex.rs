@@ -461,6 +461,16 @@ impl Plex {
         Ok(fp)
     }
 
+    /// Newest releases in the library (by release date), for the What's New page.
+    pub async fn latest_releases(&self, sess: &Session) -> Vec<Album> {
+        self.per_section(sess, "type=9&sort=originallyAvailableAt:desc&X-Plex-Container-Size=30", to_album).await
+    }
+
+    /// Albums most recently added to the library.
+    pub async fn recently_added(&self, sess: &Session) -> Vec<Album> {
+        self.per_section(sess, "type=9&sort=addedAt:desc&X-Plex-Container-Size=30", to_album).await
+    }
+
     pub async fn home(&self, sess: &Session) -> Result<Vec<Shelf>> {
         let mut shelves = Vec::new();
         let mk = |title: &str, items: Vec<MediaItem>| Shelf { title: title.into(), subtitle: None, items };

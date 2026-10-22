@@ -869,3 +869,23 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .pl-find { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; margin-right: 4px; border-radius: 8px; background: var(--surface-3); color: var(--muted); animation: om-fade 0.12s ease-out; }
 .pl-find input { width: 180px; background: transparent; border: 0; outline: none; color: var(--text); font-size: 0.875rem; }
 @media (max-width: 760px) { .pl-find input { width: 120px; } }
+
+/* ---- Windows title bar (the window has no system frame there) ------------------------------ */
+.app.titled { display: flex; flex-direction: column; }
+.app.titled > .layout, .app.titled > .login { flex: 1; min-height: 0; height: auto; }
+.app.titled > .layout { padding-top: 0; }
+.titlebar { flex: none; height: 64px; display: grid; grid-template-columns: 1fr minmax(280px, 520px) 1fr; align-items: center; gap: 16px; padding-left: 8px; background: var(--bg); user-select: none; -webkit-user-select: none; }
+.titlebar:not(:has(.search-box)) { grid-template-columns: 1fr; height: 48px; }
+.titlebar .tb-side { display: flex; align-items: center; gap: 4px; height: 100%; min-width: 0; }
+.titlebar .tb-side.right { justify-content: flex-end; gap: 8px; }
+.titlebar .search-box { max-width: none; }
+.tb-btn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
+.tb-btn:hover:not(:disabled) { color: var(--text); background: #ffffff12; }
+.tb-btn:disabled { opacity: 0.4; }
+.titlebar .round-btn:not(.home) { background: transparent; color: var(--muted); }
+.titlebar .round-btn:not(.home):hover, .titlebar .round-btn.on { color: var(--text); }
+.win-btns { display: flex; align-self: flex-start; height: 48px; margin-left: 8px; }
+.win-btn { width: 46px; height: 100%; display: grid; place-items: center; color: var(--text); border-radius: 0; }
+.win-btn:hover { background: #ffffff1a; }
+.win-btn.close:hover { background: #c42b1c; color: #fff; }
+.topbar.slim { min-height: 56px; padding-top: 8px; padding-bottom: 8px; }

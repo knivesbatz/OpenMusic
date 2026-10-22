@@ -810,6 +810,12 @@ impl Ytm {
         Ok(parse_song_meta(&v))
     }
 
+    /// YouTube Music's own "New releases" page (albums and singles; video shelves dropped).
+    pub async fn new_releases(&self) -> Result<Vec<Shelf>> {
+        let v = self.browse("FEmusic_new_releases").await?;
+        Ok(parse_shelves(&v).into_iter().filter_map(drop_videos).filter(|s| !s.items.is_empty()).collect())
+    }
+
     pub async fn home(&self) -> Result<Vec<Shelf>> {
         let pages = self.browse_all("FEmusic_home", 3).await?;
         Ok(pages.iter().flat_map(parse_shelves).filter_map(drop_videos).collect())

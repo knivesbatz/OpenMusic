@@ -49,6 +49,10 @@
     download_list: [],
     liked_ids: [],
     save_text_file: (a) => ((window.__EXPORT__ = a), "C:/Users/demo/" + a.name),
+    new_releases: [
+      { title: "fromArtistsYouFollow", items: albums.slice(5).map((a) => ({ type: "album", ...a })) },
+      { title: "latestReleases", items: albums.slice(0, 5).map((a) => ({ type: "album", ...a })) },
+    ],
     saved_in: { appPlaylists: ["app:1"], remote: [] },
     localized_artist_names: {},
     // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.

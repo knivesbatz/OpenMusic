@@ -4,6 +4,7 @@ import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
 import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
+import { TitleBar, useTitleBar } from "./components/TitleBar";
 import { TvNav } from "./components/TvNav";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
 import { SavedInPanel } from "./components/SavedIn";
@@ -19,7 +20,7 @@ import * as P from "./player/engine";
 import { isMobileApp, useApp } from "./store/app";
 import { PANEL_W, SIDEBAR_W, useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
-import { Home, LibraryPage, Search } from "./pages/Browse";
+import { Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
 import { Login } from "./pages/Login";
 import { cls } from "./util";
@@ -49,6 +50,8 @@ function Page() {
       return <AlbumPage id={r.id} />;
     case "playlist":
       return r.id.startsWith("yt:MPSP") ? <PodcastPage id={r.id} /> : <PlaylistPage id={r.id} />;
+    case "new":
+      return <WhatsNewPage />;
     case "episodes":
       return <EpisodesPage />;
     case "local":
@@ -85,6 +88,7 @@ export function App() {
   const htpc = useSettings((s) => s.htpc) && !isMobileApp();
   const profilePicker = useApp((s) => s.profilePicker);
   const phone = usePhoneLayout();
+  const titleBar = useTitleBar();
   const scroll = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -152,10 +156,11 @@ export function App() {
   const needsLogin = !localOnly && (!auth?.signedIn || auth.needsServer);
 
   return (
-    <div className={cls("app", htpc && "htpc")}>
+    <div className={cls("app", htpc && "htpc", titleBar && "titled")}>
       <a className="skip" href="#main">
         {t("skipToContent")}
       </a>
+      {titleBar && !fullscreen && <TitleBar nav={!needsLogin && !htpc} />}
       {needsLogin ? (
         <Login />
       ) : (

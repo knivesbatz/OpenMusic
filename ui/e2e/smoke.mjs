@@ -13,24 +13,31 @@ const base = "http://localhost:4174/";
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
 const results = [];
 
+/** Rejects after `ms`: a crashed renderer can leave a Playwright call waiting forever. */
+const within = (ms, p, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms} ms`)), ms))]);
+
 async function test(name, fn, { youtube = false, init } = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.addInitScript({ path: mock });
-  if (youtube) await page.addInitScript({ path: ytOverrides });
-  if (init) await page.addInitScript(init);
-  await page.goto(base);
-  await page.waitForSelector(".playerbar");
+  let r;
   const t0 = Date.now();
   try {
-    await fn(page);
+    await page.addInitScript({ path: mock });
+    if (youtube) await page.addInitScript({ path: ytOverrides });
+    if (init) await page.addInitScript(init);
+    await page.goto(base);
+    await page.waitForSelector(".playerbar");
+    await within(150000, fn(page), "test");
     assert.deepEqual(errors, [], "uncaught page errors");
-    results.push({ name, ok: true, ms: Date.now() - t0 });
+    r = { name, ok: true, ms: Date.now() - t0 };
   } catch (e) {
-    results.push({ name, ok: false, error: e.message.split("\n")[0] });
+    r = { name, ok: false, error: e.message.split("\n")[0] };
   }
-  await page.close();
+  results.push(r);
+  console.log(`${r.ok ? "✓" : "✗"} ${r.name}${r.ok ? ` (${r.ms} ms)` : ` — ${r.error}`}`);
+  await within(10000, page.close(), "close").catch(() => {});
 }
 
 await test("home shows greeting, shortcuts and restored player", async (p) => {
@@ -307,6 +314,31 @@ await test("search inside a playlist filters its songs", async (p) => {
   await p.waitForSelector("text=No songs match");
 });
 
+await test("What's New shows releases from followed artists and the latest releases", async (p) => {
+  await p.click('.topbar button[aria-label="What\'s New"]');
+  await p.waitForSelector("h1:has-text(\"What's New\")");
+  const heads = (await p.locator(".shelf-head h2").allTextContents()).map((x) => x.trim());
+  assert.deepEqual(heads.slice(0, 2), ["From artists you follow", "Latest releases in your library"]);
+  assert.ok((await p.locator(".shelf .card").count()) >= 5);
+});
+
+await test("Windows gets a Spotify-style title bar with navigation, search and window buttons", async (p) => {
+  await p.waitForSelector(".titlebar #global-search");
+  assert.equal(await p.locator(".topbar #global-search").count(), 0, "search moved out of the page header");
+  assert.equal(await p.locator('.titlebar [data-tauri-drag-region]').count() >= 1, true);
+  await p.click('.titlebar button[aria-label="Minimize"]');
+  await p.click('.titlebar button[aria-label="Maximize"]');
+  const calls = await p.evaluate(() => window.__CALLS__);
+  assert.ok(calls.includes("plugin:window|minimize") && calls.includes("plugin:window|toggle_maximize"), calls.join());
+  await p.click('.titlebar button[aria-label="Menu"]');
+  await p.click('.menu button:has-text("Settings")');
+  await p.waitForSelector(".page h1:has-text('Settings')");
+  await p.click('.titlebar button[aria-label="Go back"]');
+  await p.waitForSelector(".greeting");
+  await p.fill(".titlebar #global-search", "slow");
+  await p.waitForSelector(".page .search-top, .page h2");
+}, { init: () => { window.__MOCK__.app_info.platform = "windows"; } });
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");
@@ -382,7 +414,6 @@ await test(
 
 await browser.close();
 server.httpServer.close();
-for (const r of results) console.log(`${r.ok ? "✓" : "✗"} ${r.name}${r.ok ? ` (${r.ms} ms)` : ` — ${r.error}`}`);
 const failed = results.filter((r) => !r.ok).length;
 console.log(`${results.length - failed}/${results.length} passed`);
 process.exit(failed ? 1 : 0);

@@ -691,6 +691,78 @@ pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPa
     with_local(&state, page)
 }
 
+/// Recent albums and singles from these artists (released this year or last), newest first.
+pub(crate) fn recent_releases(pages: Vec<ArtistPage>, this_year: u32) -> Vec<Album> {
+    let mut out: Vec<Album> = Vec::new();
+    for page in pages {
+        let name = page.artist.map(|a| a.name).unwrap_or_default();
+        for mut al in page.albums.into_iter().chain(page.singles) {
+            if al.year.is_some_and(|y| y + 1 >= this_year) && !out.iter().any(|x| x.id == al.id) {
+                if al.artist.is_empty() {
+                    al.artist = name.clone();
+                }
+                out.push(al);
+            }
+        }
+    }
+    // Stable: within a year, artists keep the order they were followed in.
+    out.sort_by_key(|a| std::cmp::Reverse(a.year));
+    out.truncate(40);
+    out
+}
+
+fn current_year() -> u32 {
+    let days = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() / 86400).unwrap_or(0);
+    // Close enough for "this year": off by at most a day around New Year.
+    (1970.0 + days as f64 / 365.2425) as u32
+}
+
+/// What's New: recent releases from followed artists, then the provider's own new-release feed
+/// (YouTube Music's New releases; for Plex, the library's newest releases and additions).
+/// Cached for an hour.
+#[tauri::command]
+pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Vec<Shelf>> {
+    let key = "newreleases";
+    if !refresh {
+        if let Some(c) = state.db().cache_get::<Vec<Shelf>>(key, false)? {
+            return Ok(c);
+        }
+    }
+    let followed: Vec<Artist> = state.db().saved_items("artist")?;
+    let mut pages = Vec::new();
+    // A few at a time: artist pages are cached for 6 hours, so this is quick after the first visit.
+    for chunk in followed.iter().take(30).collect::<Vec<_>>().chunks(5) {
+        let got = futures_util::future::join_all(chunk.iter().map(|a| artist(app.clone(), state.clone(), a.id.clone()))).await;
+        pages.extend(got.into_iter().filter_map(|r| r.ok()));
+    }
+    let mut shelves = Vec::new();
+    let mine = recent_releases(pages, current_year());
+    if !mine.is_empty() {
+        shelves.push(Shelf { title: "fromArtistsYouFollow".into(), subtitle: None, items: mine.into_iter().map(MediaItem::Album).collect() });
+    }
+    match state.flavor {
+        Flavor::Plex => {
+            if let Ok(sess) = state.plex_session().await {
+                let latest = state.plex.latest_releases(&sess).await;
+                if !latest.is_empty() {
+                    shelves.push(Shelf { title: "latestReleases".into(), subtitle: None, items: latest.into_iter().map(MediaItem::Album).collect() });
+                }
+                let added = state.plex.recently_added(&sess).await;
+                if !added.is_empty() {
+                    shelves.push(Shelf { title: "recentlyAdded".into(), subtitle: None, items: added.into_iter().map(MediaItem::Album).collect() });
+                }
+            }
+        }
+        Flavor::YouTube => {
+            if let Ok(feed) = yt_call!(app, state, |y| y.new_releases()) {
+                shelves.extend(feed);
+            }
+        }
+    }
+    state.db().cache_put(key, &shelves, 3600)?;
+    Ok(shelves)
+}
+
 #[tauri::command]
 pub async fn album(app: AppHandle, state: S<'_>, id: String) -> Result<AlbumPage> {
     if id.starts_with("local-album:") {
@@ -1843,6 +1915,28 @@ pub fn update_restart(app: AppHandle) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recent_releases_from_followed_artists() {
+        let al = |id: &str, year: Option<u32>| Album { id: id.into(), title: id.into(), artist: String::new(), artist_id: None, year, artwork: None, kind: None };
+        let page = |name: &str, albums: Vec<Album>, singles: Vec<Album>| ArtistPage {
+            artist: Some(Artist { id: name.into(), name: name.into(), artwork: None }),
+            albums,
+            singles,
+            ..Default::default()
+        };
+        let got = recent_releases(
+            vec![
+                page("A", vec![al("old", Some(2019)), al("last", Some(2025))], vec![al("single", Some(2026))]),
+                page("B", vec![al("dup", Some(2026)), al("noyear", None)], vec![al("dup", Some(2026))]),
+            ],
+            2026,
+        );
+        let ids: Vec<_> = got.iter().map(|a| a.id.as_str()).collect();
+        assert_eq!(ids, ["single", "dup", "last"]);
+        assert_eq!(got[0].artist, "A", "the artist's name fills in when the album has none");
+        assert!(current_year() >= 2025);
+    }
 
     #[test]
     fn keeps_only_youtube_session_cookies() {

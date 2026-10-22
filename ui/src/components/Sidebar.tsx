@@ -61,6 +61,7 @@ export function Sidebar() {
 
   // The classic Spotify "Your Library" list: one line per collection.
   const categories: Category[] = [
+    { key: "new", label: t("whatsNew"), route: { name: "new" }, icon: <I.IBell size={20} /> },
     { key: "recent", label: t("recentlyPlayed"), route: { name: "library", tab: "recent" }, icon: <I.IClock size={20} /> },
     ...(liked ? [{ key: "liked", label: t("likedSongs"), route: { name: "playlist", id: liked.id } as Route, icon: <I.IHeart size={20} /> }] : []),
     { key: "albums", label: t("albums"), route: { name: "library", tab: "albums" }, icon: <I.IMusic size={20} /> },

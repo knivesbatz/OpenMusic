@@ -371,6 +371,35 @@ export function Search({ q }: { q: string }) {
   );
 }
 
+/** What's New: recent releases from artists you follow, then the provider's new-release feed. */
+export function WhatsNewPage() {
+  const t = useT();
+  const lang = useSettings((s) => s.language);
+  const [refresh, setRefresh] = useState(0);
+  const { data, error, loading } = useAsync(() => (inTauri ? api.newReleases(refresh > 0) : Promise.resolve([])), [refresh]);
+  usePageTitle(t("whatsNew"));
+  return (
+    <div className="page">
+      <div className="row between">
+        <h1>{t("whatsNew")}</h1>
+        <button className="pill ghost small" onClick={() => setRefresh((n) => n + 1)} disabled={loading}>
+          {t("sync")}
+        </button>
+      </div>
+      <p className="muted">{t("whatsNewHint")}</p>
+      {loading && !data ? (
+        <Loading />
+      ) : error ? (
+        <ErrorBox message={error} onRetry={() => setRefresh((n) => n + 1)} />
+      ) : data && data.length ? (
+        data.map((s, i) => <CardShelf key={s.title + i} title={shelfTitle(lang, s.title)} items={s.items} />)
+      ) : (
+        <p className="muted">{t("whatsNewEmpty")}</p>
+      )}
+    </div>
+  );
+}
+
 /** Search with nothing typed: Spotify's colourful "Browse all" tiles, here for your library. */
 function BrowseEmpty() {
   const t = useT();
@@ -379,6 +408,7 @@ function BrowseEmpty() {
   const liked = pls?.find((p) => /^yt:(VL)?LM$/.test(p.id));
   const tiles: { label: string; color: string; go: () => void; icon: React.ReactNode }[] = [
     ...(liked ? [{ label: t("likedSongs"), color: "#5038a0", go: () => navigate({ name: "playlist", id: liked.id }), icon: <I.IHeartFill size={36} /> }] : []),
+    { label: t("whatsNew"), color: "#e13300", go: () => navigate({ name: "new" }), icon: <I.IBell size={36} /> },
     { label: t("recentlyPlayed"), color: "#1e3264", go: () => navigate({ name: "library", tab: "recent" }), icon: <I.IClock size={36} /> },
     { label: t("playlists"), color: "#8d67ab", go: () => navigate({ name: "library", tab: "playlists" }), icon: <I.IQueue size={36} /> },
     { label: t("albums"), color: "#e8115b", go: () => navigate({ name: "library", tab: "albums" }), icon: <I.IMusic size={36} /> },
