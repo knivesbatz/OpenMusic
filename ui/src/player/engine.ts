@@ -69,7 +69,12 @@ function ytDeck(i = ytActive): YouTubeOutput {
       new YouTubeOutput({
         onTime: (t, d) => mine() && onTime(t, d),
         onEnded: () => mine() && onEnded(),
-        onState: (p) => mine() && !fading && set({ playing: p }),
+        onState: (p) => {
+          if (!mine() || fading) return;
+          if (p) wantPlay = true;
+          else if (undoBackgroundPause()) return;
+          set({ playing: p });
+        },
         onError: (m) => mine() && onError(m),
       }),
     );
@@ -87,6 +92,38 @@ function deck(i = active) {
   return decks[i];
 }
 
+// ---- Android: keep playing when the app goes to the background ---------------------------------
+// Leaving the app (swiping home or to another app) pauses the web view, and with it the song:
+// the <audio> element pauses, and YouTube's mobile player pauses a page that turns hidden. The
+// media plugin calls __omBackground() when the activity pauses or stops; for a few seconds after
+// that, a pause the listener didn't ask for is undone. Pausing from the notification, headphones
+// or the app goes through pause(), which clears `wantPlay`, so those are never undone.
+let wantPlay = false;
+let backgroundGuardUntil = 0;
+
+function undoBackgroundPause(): boolean {
+  if (!wantPlay || Date.now() > backgroundGuardUntil) return false;
+  setTimeout(resumeAfterBackground, 250);
+  return true;
+}
+
+function resumeAfterBackground() {
+  if (!wantPlay) return;
+  if (get().output === "youtube") {
+    if (ytDecks.length) ytDeck().play();
+  } else if (decks.length) {
+    const a = deck();
+    if (a.src && a.paused && !a.ended) a.play().catch(() => {});
+  }
+}
+
+/** The app just left the screen (Android). */
+export function onAppBackground() {
+  if (!wantPlay || !get().playing) return;
+  backgroundGuardUntil = Date.now() + 5000;
+  for (const ms of [300, 1200, 3000]) setTimeout(resumeAfterBackground, ms);
+}
+
 function ensureDecks() {
   if (decks.length) return;
   for (let i = 0; i < 2; i++) {
@@ -96,8 +133,8 @@ function ensureDecks() {
     const idx = i;
     a.addEventListener("timeupdate", () => idx === active && onTime(a.currentTime, a.duration));
     a.addEventListener("durationchange", () => idx === active && onTime(a.currentTime, a.duration));
-    a.addEventListener("play", () => idx === active && set({ playing: true }));
-    a.addEventListener("pause", () => idx === active && !fading && set({ playing: false }));
+    a.addEventListener("play", () => idx === active && ((wantPlay = true), set({ playing: true })));
+    a.addEventListener("pause", () => idx === active && !fading && !undoBackgroundPause() && set({ playing: false }));
     a.addEventListener("ended", () => idx === active && onEnded());
     a.addEventListener("error", () => idx === active && a.src && onError(a.error?.message || "media error"));
     decks.push(a);
@@ -153,6 +190,7 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
   clearInterval(fadeTimer);
   fading = false;
   if (!item) {
+    wantPlay = false;
     stopAll();
     set({ playing: false, position: 0, duration: 0, output: null });
     return;
@@ -421,6 +459,7 @@ async function autoplayRadio() {
   const s = get();
   const i = added ? Q.nextIndex(s.queue, s.repeat, true) : -1;
   if (i < 0 || i === s.queue.index) {
+    wantPlay = false;
     set({ playing: false, loading: false });
     return;
   }
@@ -530,6 +569,7 @@ export function play() {
 }
 
 export function pause() {
+  wantPlay = false;
   // Pausing mid-fade finishes the transition: the outgoing track stops, the new one keeps its place.
   const midFade = fading;
   if (midFade) {
@@ -666,6 +706,7 @@ export function initRemoteControls() {
     else if (payload.action === "seek" && payload.positionMs != null) seek(payload.positionMs / 1000);
   });
   if (!/Android/i.test(navigator.userAgent)) return initDiscordPresence();
+  (window as unknown as { __omBackground?: () => void }).__omBackground = onAppBackground;
   let sent = { id: "", playing: false, at: 0, position: 0 };
   usePlayer.subscribe((s) => {
     const cur = Q.current(s.queue)?.track;
