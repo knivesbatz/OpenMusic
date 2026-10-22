@@ -77,6 +77,10 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE playlists ADD COLUMN cover TEXT;
     DELETE FROM cache WHERE key LIKE 'artist:%';
     "#,
+    // v5: tracks carry their disc number; cached album pages are refetched to get it.
+    r#"
+    DELETE FROM cache WHERE key LIKE 'album:%';
+    "#,
 ];
 
 pub fn now() -> i64 {
@@ -524,6 +528,7 @@ mod tests {
             published: None,
             year: None,
             added_at: None,
+            disc_number: None,
         }
     }
 

@@ -155,8 +155,37 @@ export function AlbumPage({ id }: { id: string }) {
         onMore={(e) => openMenu(e, albumMenu(album, async () => tracks))}
         extra={<SaveAlbumButton album={album} />}
       />
-      <TrackList tracks={tracks} context={ctx} showAlbum={false} showArt={false} />
+      <DiscTracks tracks={tracks} ctx={ctx} />
     </div>
+  );
+}
+
+/** Album tracks, split under "Disc 1", "Disc 2"… headings when the album has several discs. */
+function DiscTracks({ tracks, ctx }: { tracks: Track[]; ctx: PlayContext }) {
+  const t = useT();
+  const discs = useMemo(() => {
+    const out: { disc: number; tracks: Track[]; offset: number }[] = [];
+    tracks.forEach((tr, i) => {
+      const d = tr.discNumber ?? 1;
+      const last = out[out.length - 1];
+      if (last && last.disc === d) last.tracks.push(tr);
+      else out.push({ disc: d, tracks: [tr], offset: i });
+    });
+    return out;
+  }, [tracks]);
+  if (discs.length < 2) return <TrackList tracks={tracks} context={ctx} showAlbum={false} showArt={false} />;
+  return (
+    <>
+      {discs.map((d) => (
+        <section key={d.disc + ":" + d.offset} className="disc">
+          <h3 className="disc-head">
+            <I.IDisc size={18} />
+            {t("discN", { n: d.disc })}
+          </h3>
+          <TrackList tracks={d.tracks} context={ctx} showAlbum={false} showArt={false} queue={{ tracks, offset: d.offset }} />
+        </section>
+      ))}
+    </>
   );
 }
 

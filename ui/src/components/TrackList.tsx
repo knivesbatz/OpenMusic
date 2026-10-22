@@ -29,11 +29,13 @@ interface Props {
   onReorder?: (order: number[]) => void;
   menuOpts?: TrackMenuOpts;
   limit?: number;
+  /** Part of a longer list (one disc of an album): play from here through `queue`. */
+  queue?: { tracks: Track[]; offset: number };
 }
 
 const ROW = 56;
 
-export function TrackList({ tracks, context, showAlbum = true, showArt = true, numbered = true, onRemove, onReorder, limit }: Props) {
+export function TrackList({ tracks, context, showAlbum = true, showArt = true, numbered = true, onRemove, onReorder, limit, queue }: Props) {
   const t = useT();
   const scrollRef = useContext(ScrollCtx);
   const listRef = useRef<HTMLDivElement>(null);
@@ -57,7 +59,10 @@ export function TrackList({ tracks, context, showAlbum = true, showArt = true, n
     scrollMargin: margin,
   });
 
-  const play = useCallback((i: number) => P.playTracks(list, i, context ?? null), [list, context]);
+  const play = useCallback(
+    (i: number) => (queue ? P.playTracks(queue.tracks, queue.offset + i, context ?? null) : P.playTracks(list, i, context ?? null)),
+    [list, context, queue],
+  );
   const selectedTracks = () => list.filter((_, i) => sel.selected.has(keys[i]));
   const selectedIdx = () => list.map((_, i) => i).filter((i) => sel.selected.has(keys[i]));
 

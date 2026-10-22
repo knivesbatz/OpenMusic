@@ -112,6 +112,8 @@ pub fn to_track(v: &Value) -> Option<Track> {
         published: None,
         year: n(v, "parentYear").or_else(|| n(v, "year")).map(|y| y as i32),
         added_at: None,
+        // A track's parent is its album, and parentIndex its disc.
+        disc_number: n(v, "parentIndex").map(|x| x as u32),
     })
 }
 

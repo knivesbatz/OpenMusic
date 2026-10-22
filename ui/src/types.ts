@@ -23,6 +23,8 @@ export interface Track {
   year?: number | null;
   /** App playlists: when the song was added (unix seconds). */
   addedAt?: number | null;
+  /** Disc of a multi-disc album (Plex, local files). */
+  discNumber?: number | null;
 }
 
 export interface Album {

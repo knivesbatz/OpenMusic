@@ -860,3 +860,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .seek .slider:hover::-webkit-slider-thumb, .seek .slider:active::-webkit-slider-thumb { transform: scale(1.15); }
 .seek .slider::-moz-range-track { height: 5px; border-radius: 3px; }
 .seek-tip { position: absolute; bottom: 18px; transform: translateX(-50%); padding: 3px 7px; border-radius: 6px; background: #282828; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px #0008; animation: om-fade 0.1s ease-out; }
+
+/* Multi-disc albums: a heading above each disc's tracks. */
+.disc + .disc { margin-top: 12px; }
+.disc-head { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; padding: 0 16px; color: var(--muted); font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.01em; }

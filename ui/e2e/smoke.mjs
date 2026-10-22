@@ -272,6 +272,34 @@ await test("playlist exports as Artist - Title text for Soundiiz", async (p) => 
   assert.match(lines[0], /^.+ - .+$/);
 });
 
+await test(
+  "multi-disc albums show a heading per disc and play through the whole album",
+  async (p) => {
+    await p.locator(".card").nth(8).click();
+    await p.waitForSelector(".disc-head");
+    assert.deepEqual((await p.locator(".disc-head").allTextContents()).map((x) => x.trim()), ["Disc 1", "Disc 2"]);
+    // The first song of disc 2 starts there. The sample backend has no audio, so the first
+    // message names the song that was tried first.
+    await p.locator(".disc").nth(1).locator(".tl-row:not(.tl-head)").first().dblclick();
+    await p.waitForSelector(".toast");
+    assert.match(await p.locator(".toast").first().textContent(), /Disc two opener/);
+  },
+  {
+    init: () => {
+      const d = window.__MOCK__;
+      const base = typeof d.album === "function" ? d.album({ id: "x" }) : d.album;
+      const tr = (n, disc, title) => ({ ...base.tracks[0], id: "plex:d" + disc + n, title, discNumber: disc, trackNumber: n });
+      d.album = () => ({ album: base.album, tracks: [tr(1, 1, "Disc one opener"), tr(2, 1, "Disc one closer"), tr(1, 2, "Disc two opener"), tr(2, 2, "Disc two closer")] });
+    },
+  },
+);
+
+await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
+  await p.click('.sidebar .side-cat:has-text("Albums")');
+  await p.waitForSelector(".page h1:has-text('Albums')");
+  assert.equal(await p.locator(".grid .card").count(), 0);
+});
+
 await test("Your Library albums sort by name or release year, and the choice sticks", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".grid .card");
@@ -287,7 +315,7 @@ await test("Your Library albums sort by name or release year, and the choice sti
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".grid .card");
   assert.equal(await first(), "Summer Static");
-});
+}, { youtube: true });
 
 await test("Saved in: check and uncheck playlists for the playing song", async (p) => {
   await p.click('.playerbar button[aria-label="Add to playlist"]');

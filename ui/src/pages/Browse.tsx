@@ -458,13 +458,16 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
 
   const playlists = dedupe([...pls, ...(lib?.playlists ?? [])]);
   const liked = playlists.find((p) => /^yt:(VL)?LM$/.test(p.id));
+  // Albums/Artists are what you saved. YouTube Music's library is the account's own saved
+  // collection, so it counts; Plex's "library" is the whole server, so it doesn't.
+  const ytLibrary = useApp.getState().info?.flavor === "youtube";
   const items: MediaItem[] =
     cur === "playlists"
       ? playlists.filter((p) => p !== liked).map((p) => ({ type: "playlist" as const, ...p }))
       : cur === "albums"
-        ? sortAlbums(dedupe([...saved.albums, ...(lib?.albums ?? [])]), albumSort).map((a) => ({ type: "album" as const, ...a }))
+        ? sortAlbums(dedupe([...saved.albums, ...(ytLibrary ? lib?.albums ?? [] : [])]), albumSort).map((a) => ({ type: "album" as const, ...a }))
         : cur === "artists"
-          ? sortArtists(dedupe([...saved.artists, ...(lib?.artists ?? [])]), artistSort).map((a) => ({ type: "artist" as const, ...a }))
+          ? sortArtists(dedupe([...saved.artists, ...(ytLibrary ? lib?.artists ?? [] : [])]), artistSort).map((a) => ({ type: "artist" as const, ...a }))
           : dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])]).map((a) => ({ type: "podcast" as const, ...a }));
   const needle = q.trim().toLowerCase();
   const shown = needle ? items.filter((it) => (it.type === "artist" ? it.name : it.title).toLowerCase().includes(needle)) : items;
