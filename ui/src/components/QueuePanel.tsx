@@ -9,7 +9,7 @@ import { usePlayer } from "../player/engine";
 import { select, type QItem } from "../player/queue";
 import { openMenu, useUi } from "../store/ui";
 import { cls, isTouch } from "../util";
-import { ArtistName, JpText, TrackArt } from "./common";
+import { ArtistName, TitleText, TrackArt } from "./common";
 import { useDisplayTrack } from "../store/songmeta";
 import type { Track } from "../types";
 import * as I from "./Icons";
@@ -179,7 +179,7 @@ function QueueText({ track, explicitLabel }: { track: Track; explicitLabel: stri
   return (
     <div className="q-text">
       <span className="name">
-        <JpText text={tr.title} />
+        <TitleText text={tr.title} />
       </span>
       <span className="sub">
         {tr.explicit && <span className="badge">{explicitLabel}</span>}

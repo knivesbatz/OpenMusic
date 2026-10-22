@@ -17,6 +17,7 @@ pub mod names;
 pub mod plex;
 pub mod secrets;
 pub mod state;
+pub mod translate;
 #[cfg(desktop)]
 mod tray;
 pub mod updater;
@@ -164,7 +165,11 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // Android: Google refuses sign-in in anything that identifies as a WebView ("; wv"),
             // and YouTube sign-in happens in this window there. Present as mobile Chrome.
             #[cfg(target_os = "android")]
-            let main = main.user_agent(ANDROID_USER_AGENT);
+            let main = main.user_agent(ANDROID_USER_AGENT).on_page_load(|_w, p| {
+                if p.event() == tauri::webview::PageLoadEvent::Finished {
+                    commands::main_page_loaded(p.url());
+                }
+            });
             main.build()?;
             // Desktop only: Android release builds block plain-HTTP requests from the webview, so
             // there the UI uses the in-process art:// protocol.
@@ -267,6 +272,11 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::media_stop,
             commands::presence_update,
             commands::presence_clear,
+            commands::translate_texts,
+            commands::saved_in,
+            commands::pl_remove_track,
+            commands::yt_playlist_edit,
+            commands::save_text_file,
             commands::self_test_log,
             commands::update_check,
             commands::update_download,

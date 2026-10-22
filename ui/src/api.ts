@@ -85,6 +85,7 @@ export const api = {
   ytAccounts: () => call<T.YtAccount[]>("yt_accounts"),
   ytSelectAccount: (pageId: string | null, name: string) => call<void>("yt_select_account", { pageId, name }),
   ytSongMeta: (videoIds: string[]) => call<Record<string, T.SongMeta>>("yt_song_meta", { videoIds }),
+  translateTexts: (texts: string[], locale: string) => call<(string | null)[]>("translate_texts", { texts, locale }),
   localizedArtistNames: (names: string[], locale: string) =>
     call<Record<string, string>>("localized_artist_names", { names, locale }),
   savedList: () => call<T.Library>("saved_list"),
@@ -103,6 +104,10 @@ export const api = {
   plSetCover: (id: string, image: number[] | null) => call<void>("pl_set_cover", { id, image }),
   plAdd: (id: string, tracks: T.Track[]) => call<number>("pl_add", { id, tracks }),
   plReorder: (id: string, order: number[]) => call<void>("pl_reorder", { id, order }),
+  saveTextFile: (name: string, content: string) => call<string | null>("save_text_file", { name, content }),
+  plRemoveTrack: (id: string, trackId: string) => call<number>("pl_remove_track", { id, trackId }),
+  savedIn: (track: T.Track) => call<{ appPlaylists: string[]; remote: { id: string; title: string; contains: boolean }[] }>("saved_in", { track }),
+  ytPlaylistEdit: (playlistId: string, track: T.Track, add: boolean) => call<void>("yt_playlist_edit", { playlistId, track, add }),
   hidePlaylist: (id: string, title: string) => call<void>("hide_playlist", { id, title }),
 
   localFolders: () => call<string[]>("local_folders"),

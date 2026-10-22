@@ -74,6 +74,31 @@ pub fn update<R: Runtime>(app: &AppHandle<R>, now: &NowPlaying) {
     let _ = (app, now);
 }
 
+/// The webview's cookies for `url` as a `Cookie` header ("name=value; …"); empty when there are
+/// none or off Android. Blocks until the UI thread answers; call it off the main thread.
+pub fn cookies<R: Runtime>(app: &AppHandle<R>, url: &str) -> String {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        #[derive(Deserialize)]
+        struct Reply {
+            cookies: String,
+        }
+        if let Some(m) = app.try_state::<Media<R>>() {
+            match m.0.run_mobile_plugin::<Reply>("cookies", serde_json::json!({ "url": url })) {
+                Ok(r) => return r.cookies,
+                Err(e) => log_error(&e),
+            }
+        }
+        String::new()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, url);
+        String::new()
+    }
+}
+
 /// Remove the notification and stop the service (queue cleared or signed out).
 pub fn stop<R: Runtime>(app: &AppHandle<R>) {
     #[cfg(target_os = "android")]

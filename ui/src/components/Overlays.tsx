@@ -55,11 +55,16 @@ function MenuList({ items, x, y, root }: { items: MenuItem[]; x: number; y: numb
       {items.map((m, i) =>
         m.separator ? (
           <hr key={i} />
+        ) : m.heading ? (
+          <div key={i} className="menu-head">
+            {m.label}
+          </div>
         ) : (
           <button
             key={i}
-            role="menuitem"
-            className={cls(m.danger && "danger", m.submenu && "has-sub", open === i && "open")}
+            role={m.checked !== undefined ? "menuitemradio" : "menuitem"}
+            className={cls(m.danger && "danger", m.submenu && "has-sub", open === i && "open", m.checked && "on")}
+            aria-checked={m.checked}
             disabled={m.disabled}
             aria-haspopup={m.submenu ? "menu" : undefined}
             aria-expanded={m.submenu ? open === i : undefined}
@@ -88,6 +93,7 @@ function MenuList({ items, x, y, root }: { items: MenuItem[]; x: number; y: numb
           >
             <span>{m.label}</span>
             {m.submenu && <span aria-hidden="true">▸</span>}
+            {!m.submenu && (m.hint || m.checked) && <span aria-hidden="true">{m.hint ?? "✓"}</span>}
           </button>
         ),
       )}

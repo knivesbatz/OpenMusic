@@ -21,6 +21,11 @@ async function open({ youtube = false, phone = false } = {}) {
   page.on("pageerror", (e) => console.log("pageerror", e.message));
   await page.addInitScript({ path: mock });
   if (youtube) await page.addInitScript({ path: ytOverrides });
+  // Realistic sample translations instead of the tests' "[en] …" markers.
+  await page.addInitScript(() => {
+    const en = { 夜明けの歌: "Song of Dawn", ひかりの中で: "In the Light", "トーキョー・ナイト": "Tokyo Night", さくら: "Cherry Blossoms", 未来へ: "To the Future", 夜明けまで走り続ける: "I keep running until dawn" };
+    window.__MOCK__.translate_texts = (a) => a.texts.map((t) => en[t] ?? null);
+  });
   if (phone) await page.addInitScript(() => (window.__MOCK__.app_info = { ...window.__MOCK__.app_info, platform: "android" }));
   await page.goto(base);
   await page.waitForSelector(".playerbar");
@@ -54,13 +59,22 @@ await page.evaluate(() => document.querySelector(".hero-meta .link")?.click());
 await page.waitForSelector(".artist-hero");
 await page.waitForTimeout(500);
 await shot(page, "artist");
-await page.click('button[aria-label="Lyrics"]');
+await page.click('.playerbar button[aria-label="Lyrics"]');
+await page.waitForSelector(".lyrics-panel .lyrics .line");
+await page.waitForTimeout(600);
+await shot(page, "lyrics-panel");
+await page.click('.lyrics-panel button[aria-label="Full screen"]');
 await page.waitForTimeout(1200);
 await shot(page, "fullscreen");
 await page.close();
 
 // Desktop (Windows) — YTSpot: the classic library categories, including Podcasts.
 page = await open({ youtube: true });
+await page.click('.playerbar button[aria-label="Add to playlist"]');
+await page.waitForSelector(".savedin .si-row");
+await page.waitForTimeout(500);
+await shot(page, "saved-in");
+await page.keyboard.press("Escape");
 await page.click('.sidebar .side-cat:has-text("Podcasts")');
 await page.waitForSelector(".grid .card");
 await page.waitForTimeout(600);

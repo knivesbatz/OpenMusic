@@ -19,6 +19,10 @@ export interface Track {
   /** Episodes: show notes and release date as shown ("Oct 26"). */
   description?: string | null;
   published?: string | null;
+  /** Release year, where the provider knows it (Plex). */
+  year?: number | null;
+  /** App playlists: when the song was added (unix seconds). */
+  addedAt?: number | null;
 }
 
 export interface Album {

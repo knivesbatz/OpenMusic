@@ -178,6 +178,19 @@ impl Db {
         Ok(())
     }
 
+    /// Clear the cache except entries whose keys start with one of `keep`.
+    pub fn cache_clear_except(&self, keep: &[&str]) -> Result<()> {
+        let rows: Vec<String> = {
+            let mut st = self.conn.prepare("SELECT key FROM cache")?;
+            let keys = st.query_map([], |r| r.get::<_, String>(0))?.collect::<std::result::Result<Vec<_>, _>>()?;
+            keys
+        };
+        for k in rows.into_iter().filter(|k| !keep.iter().any(|p| k.starts_with(p))) {
+            self.conn.execute("DELETE FROM cache WHERE key=?1", [&k])?;
+        }
+        Ok(())
+    }
+
     /// Bounded cache: drop entries expired for more than a week.
     pub fn cache_prune(&self) -> Result<()> {
         self.conn.execute("DELETE FROM cache WHERE expires_at < ?1", [now() - 7 * 86400])?;
@@ -250,13 +263,15 @@ impl Db {
 
     pub fn playlist_tracks(&self, id: &str) -> Result<Vec<Track>> {
         let mut st = self.conn.prepare(
-            "SELECT track_json FROM playlist_items WHERE playlist_id=?1 ORDER BY position",
+            "SELECT track_json, added_at FROM playlist_items WHERE playlist_id=?1 ORDER BY position",
         )?;
-        let rows = st.query_map([id], |r| r.get::<_, String>(0))?;
+        let rows = st.query_map([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         let mut out = Vec::new();
-        for json in rows {
+        for row in rows {
+            let (json, added) = row?;
             // A corrupt row is skipped, never allowed to break the whole playlist.
-            if let Ok(t) = serde_json::from_str::<Track>(&json?) {
+            if let Ok(mut t) = serde_json::from_str::<Track>(&json) {
+                t.added_at = Some(added);
                 out.push(t);
             }
         }
@@ -282,6 +297,22 @@ impl Db {
         tx.execute("UPDATE playlists SET updated_at=?2 WHERE id=?1", params![id, t])?;
         tx.commit()?;
         Ok(tracks.len())
+    }
+
+    /// App playlists that contain the track.
+    pub fn playlists_containing(&self, track_id: &str) -> Result<Vec<String>> {
+        let mut st = self.conn.prepare("SELECT DISTINCT playlist_id FROM playlist_items WHERE track_id=?1")?;
+        let rows = st.query_map([track_id], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// Remove every copy of a track from a playlist; returns how many were removed.
+    pub fn playlist_remove_track(&mut self, id: &str, track_id: &str) -> Result<usize> {
+        let n = self.conn.execute("DELETE FROM playlist_items WHERE playlist_id=?1 AND track_id=?2", params![id, track_id])?;
+        if n > 0 {
+            self.conn.execute("UPDATE playlists SET updated_at=?2 WHERE id=?1", params![id, now()])?;
+        }
+        Ok(n)
     }
 
     /// Rewrite the playlist in a new order. `order` lists the current indices in their new order;
@@ -491,6 +522,8 @@ mod tests {
             episode: false,
             description: None,
             published: None,
+            year: None,
+            added_at: None,
         }
     }
 
@@ -518,6 +551,13 @@ mod tests {
         // duplicates of the same track are allowed and kept distinct
         db.playlist_add(&p.id, &[track("a")]).unwrap();
         assert_eq!(db.playlist_tracks(&p.id).unwrap().len(), 4);
+        assert_eq!(db.playlists_containing("a").unwrap(), [p.id.clone()]);
+        assert!(db.playlists_containing("zz").unwrap().is_empty());
+        // unchecking a song removes every copy, keeping the rest in order
+        assert_eq!(db.playlist_remove_track(&p.id, "a").unwrap(), 2);
+        let ids: Vec<_> = db.playlist_tracks(&p.id).unwrap().into_iter().map(|t| t.id).collect();
+        assert_eq!(ids, ["d", "c"]);
+        db.playlist_add(&p.id, &[track("a"), track("a")]).unwrap();
         assert_eq!(db.playlists().unwrap()[0].track_count, Some(4));
         db.playlist_delete(&p.id).unwrap();
         assert!(db.playlist_tracks(&p.id).unwrap().is_empty());

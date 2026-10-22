@@ -13,7 +13,7 @@ import { useDisplayTrack } from "../store/songmeta";
 import { openMenu, useUi } from "../store/ui";
 import { displayText } from "../romaji";
 import { cls, fmtTime } from "../util";
-import { Art, ArtistName, JpText } from "./common";
+import { Art, ArtistName, TitleText } from "./common";
 import { LyricsView, useLyrics } from "./Fullscreen";
 import * as I from "./Icons";
 import { SaveButton, Transport } from "./PlayerBar";
@@ -90,7 +90,7 @@ export function PhonePlayer() {
         <div className="pp-meta">
           <div className="pp-names">
             <div className="pp-title">
-              <JpText text={tr?.title} />
+              <TitleText text={tr?.title} />
             </div>
             <div className="pp-artist">
               <ArtistName name={tr?.artist} />
@@ -183,7 +183,7 @@ export function PhoneQueue() {
               <Art src={curTrack.artwork} size={120} className="sm" />
               <div className="pq-text">
                 <div className="name">
-                  <JpText text={curTrack.title} />
+                  <TitleText text={curTrack.title} />
                 </div>
                 <div className="sub">
                   <ArtistName name={curTrack.artist} />
@@ -241,7 +241,7 @@ function QueueRow(p: {
       <Art src={tr.artwork} size={120} className="sm" />
       <div className="pq-text">
         <div className="name">
-          <JpText text={tr.title} />
+          <TitleText text={tr.title} />
         </div>
         <div className="sub">
           <ArtistName name={tr.artist} />

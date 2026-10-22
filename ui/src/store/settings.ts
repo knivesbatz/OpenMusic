@@ -23,11 +23,18 @@ export interface Settings {
   reducedMotion: boolean;
   highContrast: boolean;
   jpMode: JpMode;
-  /** Show MusicBrainz aliases of artist names in the UI language. */
+  /** Names in the UI language: MusicBrainz aliases for artists, translations of titles in other scripts. */
   translateNames: boolean;
+  /** Show lyrics in another language with a translation under each line. */
+  translateLyrics: boolean;
+  /** Playlists "View as": Compact drops the artwork column. */
+  compactTracks: boolean;
   /** Scrobble to Last.fm once connected. Off by default (new key, so earlier "on" defaults reset). */
   lastfmScrobble: boolean;
   sidebarCollapsed: boolean;
+  /** Widths (px) of the library sidebar and the right-hand panel, set by dragging their edges. */
+  sidebarWidth: number;
+  panelWidth: number;
   htpc: boolean;
 }
 
@@ -47,8 +54,12 @@ export const defaults: Settings = {
   highContrast: false,
   jpMode: "original",
   translateNames: true,
+  translateLyrics: true,
+  compactTracks: false,
   lastfmScrobble: false,
   sidebarCollapsed: false,
+  sidebarWidth: 300,
+  panelWidth: 340,
   htpc: false,
 };
 
@@ -69,8 +80,17 @@ export function sanitize(raw: Record<string, unknown>): Settings {
   if (!["auto", "low", "medium", "high"].includes(s.quality)) s.quality = "auto";
   if (!["en", "ja"].includes(s.language)) s.language = defaults.language;
   if (!["original", "romaji", "both"].includes(s.jpMode)) s.jpMode = "original";
+  s.sidebarWidth = clampWidth(s.sidebarWidth, SIDEBAR_W, 300);
+  s.panelWidth = clampWidth(s.panelWidth, PANEL_W, 340);
   return s;
 }
+
+export const SIDEBAR_W = { min: 220, max: 520 };
+export const PANEL_W = { min: 280, max: 600 };
+export const clampWidth = (v: unknown, r: { min: number; max: number }, fallback: number) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.round(Math.max(r.min, Math.min(r.max, n))) : fallback;
+};
 
 function pick(s: Store): Settings {
   const out = {} as Settings;

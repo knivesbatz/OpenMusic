@@ -302,6 +302,8 @@ fn track_from(video_id: String, title: String, sub: &Sub, artwork: Option<String
         episode,
         description: None,
         published: None,
+        year: None,
+        added_at: None,
     }
 }
 
@@ -636,6 +638,18 @@ fn drop_videos(shelf: Shelf) -> Option<Shelf> {
 #[cfg(test)]
 mod home_tests {
     use super::*;
+
+    #[test]
+    fn save_to_playlist_options() {
+        let v = json!({ "contents": [{ "addToPlaylistRenderer": { "playlists": [
+            { "playlistAddToOptionRenderer": { "playlistId": "PLabc", "title": { "simpleText": "Road trip" }, "containsSelectedVideos": "ALL" } },
+            { "playlistAddToOptionRenderer": { "playlistId": "PLdef", "title": { "runs": [{ "text": "Focus" }] }, "containsSelectedVideos": "NONE" } }
+        ] } }] });
+        let opts = parse_playlist_options(&v);
+        assert_eq!(opts.len(), 2);
+        assert_eq!((opts[0].id.as_str(), opts[0].title.as_str(), opts[0].contains), ("yt:VLPLabc", "Road trip", true));
+        assert_eq!((opts[1].title.as_str(), opts[1].contains), ("Focus", false));
+    }
 
     #[test]
     fn artist_subscribers_become_followers() {
@@ -1133,6 +1147,53 @@ impl Ytm {
         let ep = if liked { "like/like" } else { "like/removelike" };
         self.post(ep, json!({ "target": { "videoId": video_id } }), "").await.map(|_| ())
     }
+
+    /// The signed-in user's playlists a song can be saved to, as YouTube Music's own "Save to
+    /// playlist" dialog lists them, with whether each already contains the song.
+    pub async fn playlist_options(&self, video_id: &str) -> Result<Vec<PlaylistOption>> {
+        let v = self.post("playlist/get_add_to_playlist", json!({ "videoIds": [video_id] }), "").await?;
+        Ok(parse_playlist_options(&v))
+    }
+
+    /// Add a song to, or remove it from, one of the user's YouTube playlists.
+    pub async fn edit_playlist(&self, playlist_id: &str, video_id: &str, add: bool) -> Result<()> {
+        let pid = playlist_id.trim_start_matches("yt:").trim_start_matches("VL");
+        let action = if add {
+            json!({ "action": "ACTION_ADD_VIDEO", "addedVideoId": video_id, "dedupeOption": "DEDUPE_OPTION_SKIP" })
+        } else {
+            json!({ "action": "ACTION_REMOVE_VIDEO_BY_VIDEO_ID", "removedVideoId": video_id })
+        };
+        let v = self.post("browse/edit_playlist", json!({ "playlistId": pid, "actions": [action] }), "").await?;
+        match v.get("status").and_then(|s| s.as_str()) {
+            Some(s) if s != "STATUS_SUCCEEDED" => Err(Error::Invalid(format!("YouTube refused the playlist change ({s})"))),
+            _ => Ok(()),
+        }
+    }
+}
+
+/// A playlist in YouTube Music's "Save to playlist" dialog.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistOption {
+    pub id: String,
+    pub title: String,
+    pub contains: bool,
+}
+
+fn parse_playlist_options(v: &Value) -> Vec<PlaylistOption> {
+    let mut found = Vec::new();
+    find_all(v, "playlistAddToOptionRenderer", &mut found);
+    found
+        .into_iter()
+        .filter_map(|o| {
+            let id = o.get("playlistId")?.as_str()?;
+            Some(PlaylistOption {
+                id: format!("yt:VL{}", id.trim_start_matches("VL")),
+                title: text(o.get("title")),
+                contains: o.get("containsSelectedVideos").and_then(|c| c.as_str()) == Some("ALL"),
+            })
+        })
+        .collect()
 }
 
 #[cfg(test)]

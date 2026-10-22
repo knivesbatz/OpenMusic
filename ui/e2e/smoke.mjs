@@ -88,8 +88,15 @@ await test("artist page: follow toggles", async (p) => {
   assert.equal((await p.locator("button.follow").textContent()).trim(), "Following");
 });
 
-await test("fullscreen opens with lyrics and closes on Escape", async (p) => {
-  await p.click('button[aria-label="Lyrics"]');
+await test("Lyrics open in the side panel, expand to fullscreen and close on Escape", async (p) => {
+  await p.click('.playerbar button[aria-label="Lyrics"]');
+  await p.waitForSelector(".lyrics-panel .lyrics .line");
+  assert.equal(await p.locator(".fullscreen").count(), 0, "lyrics must not jump straight to fullscreen");
+  // Queue and lyrics share the right-hand panel.
+  await p.click('.playerbar button[aria-label="Queue"]');
+  await p.waitForSelector(".lyrics-panel", { state: "detached" });
+  await p.click('.playerbar button[aria-label="Lyrics"]');
+  await p.click('.lyrics-panel button[aria-label="Full screen"]');
   await p.waitForSelector(".fullscreen .lyrics .line");
   await p.keyboard.press("Escape");
   await p.waitForSelector(".fullscreen", { state: "detached" });
@@ -99,14 +106,18 @@ await test("fullscreen opens with lyrics and closes on Escape", async (p) => {
 // render for YouTube music videos, so reopening lyrics (cache hit) looped forever and froze the app.
 await test("YouTube: reopening lyrics on a music video stays responsive", async (p) => {
   for (let i = 0; i < 2; i++) {
-    await p.click('button[aria-label="Lyrics"]');
+    await p.click('.playerbar button[aria-label="Lyrics"]');
+    await p.waitForSelector(".lyrics-panel .lyrics .line");
+    await p.click('.lyrics-panel button[aria-label="Full screen"]');
     await p.waitForSelector(".fullscreen .lyrics .line");
     await p.waitForTimeout(300);
     await p.keyboard.press("Escape");
     await p.waitForSelector(".fullscreen", { state: "detached" });
+    await p.click('.playerbar button[aria-label="Lyrics"]');
+    await p.waitForSelector(".lyrics-panel", { state: "detached" });
   }
-  await p.click('button[aria-label="Lyrics"]');
-  await p.waitForSelector(".fullscreen .lyrics .line");
+  await p.click('.playerbar button[aria-label="Lyrics"]');
+  await p.waitForSelector(".lyrics-panel .lyrics .line");
   const t0 = Date.now();
   await Promise.race([
     p.evaluate(() => new Promise((r) => setTimeout(r, 50))),
@@ -208,6 +219,84 @@ await test(
     await p.locator(".main .card").first().click();
     await p.waitForSelector(".artist-hero");
     assert.equal((await p.locator(".artist-followers").textContent()).trim(), "1.23M followers");
+  },
+  { youtube: true },
+);
+
+await test(
+  "titles in another script are translated, with the original on hover",
+  async (p) => {
+    const name = p.locator(".pb-meta .name span[title]");
+    await name.waitFor();
+    assert.equal(await name.getAttribute("title"), "夜明けの歌");
+    assert.equal((await name.textContent()).trim(), "[en] 夜明けの歌");
+  },
+  { youtube: true },
+);
+
+await test("side panels resize by dragging and remember their width", async (p) => {
+  const side = await p.locator(".sidebar").boundingBox();
+  const h = await p.locator(".side-resizer .resizer").boundingBox();
+  await p.mouse.move(h.x + 4, h.y + 200);
+  await p.mouse.down();
+  await p.mouse.move(h.x + 84, h.y + 200, { steps: 4 });
+  await p.mouse.up();
+  const after = await p.locator(".sidebar").boundingBox();
+  assert.ok(Math.abs(after.width - (side.width + 80)) <= 2, `sidebar ${side.width} -> ${after.width}`);
+  await p.click('.playerbar button[aria-label="Queue"]');
+  const q = await p.locator(".queue-panel").boundingBox();
+  const qh = await p.locator(".panel-resizer .resizer").boundingBox();
+  await p.mouse.move(qh.x + 4, qh.y + 200);
+  await p.mouse.down();
+  await p.mouse.move(qh.x - 56, qh.y + 200, { steps: 4 });
+  await p.mouse.up();
+  const q2 = await p.locator(".queue-panel").boundingBox();
+  assert.ok(Math.abs(q2.width - (q.width + 60)) <= 2, `queue ${q.width} -> ${q2.width}`);
+});
+
+await test("sleep timer has its own button", async (p) => {
+  await p.click('.playerbar button[aria-label="Sleep timer"]');
+  await p.click('.menu button:has-text("15 min")');
+  await p.waitForSelector('.playerbar button[aria-label^="Sleep timer: 15 min"][aria-pressed="true"]');
+});
+
+await test("playlist exports as Artist - Title text for Soundiiz", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "Road trip" }).click({ button: "right" });
+  await p.hover('.menu button:has-text("Export")');
+  await p.click('.menu .menu button:has-text("Text file")');
+  await p.waitForFunction(() => window.__EXPORT__);
+  const exp = await p.evaluate(() => window.__EXPORT__);
+  assert.equal(exp.name, "Road trip.txt");
+  const lines = exp.content.trim().split("\n");
+  assert.ok(lines.length > 0);
+  assert.match(lines[0], /^.+ - .+$/);
+});
+
+await test("Saved in: check and uncheck playlists for the playing song", async (p) => {
+  await p.click('.playerbar button[aria-label="Add to playlist"]');
+  const panel = p.locator(".savedin");
+  await panel.waitFor();
+  const row = (name) => panel.locator(".si-row", { hasText: name }).locator("input");
+  await row("Road trip").waitFor();
+  assert.equal(await row("Road trip").isChecked(), true);
+  assert.equal(await row("Rainy day").isChecked(), false);
+  await row("Road trip").click();
+  await row("Rainy day").click();
+  await p.waitForFunction(() => window.__CALLS__.includes("pl_remove_track") && window.__CALLS__.includes("pl_add"));
+  assert.equal(await row("Road trip").isChecked(), false);
+  assert.equal(await row("Rainy day").isChecked(), true);
+  await p.keyboard.press("Escape");
+  assert.equal(await panel.count(), 0);
+});
+
+await test(
+  "Saved in: YouTube playlists can be added to",
+  async (p) => {
+    await p.click('.playerbar button[aria-label="Add to playlist"]');
+    const box = p.locator(".savedin .si-row", { hasText: "My YouTube mix" }).locator("input");
+    await box.click();
+    await p.waitForFunction(() => window.__CALLS__.includes("yt_playlist_edit"));
+    assert.equal(await box.isChecked(), true);
   },
   { youtube: true },
 );

@@ -70,12 +70,13 @@ p { margin: 0 0 8px; }
   gap: 8px;
   padding: 8px 8px 0;
 }
-.layout.with-queue { grid-template-columns: auto 1fr 340px; grid-template-areas: "side main queue" "player player player"; }
+.layout { position: relative; }
+.layout.with-queue { grid-template-columns: auto 1fr var(--panel-w, 340px); grid-template-areas: "side main queue" "player player player"; }
 .main { grid-area: main; background: linear-gradient(180deg, #1f1f1f 0, var(--surface) 280px); border-radius: var(--radius); overflow-y: auto; overflow-x: hidden; position: relative; }
 .page { padding: 8px 24px 32px; }
 
 /* ---- sidebar ------------------------------------------------------------------------------ */
-.sidebar { grid-area: side; display: flex; flex-direction: column; gap: 8px; width: 300px; min-height: 0; }
+.sidebar { grid-area: side; display: flex; flex-direction: column; gap: 8px; width: var(--side-w, 300px); min-height: 0; }
 .sidebar.collapsed { width: 72px; }
 .side-box { background: var(--surface); border-radius: var(--radius); padding: 8px 12px; }
 .nav-box { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; }
@@ -326,6 +327,8 @@ p { margin: 0 0 8px; }
 .menu button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu button:hover, .menu button:focus-visible, .menu button.open { background: #3e3e3e; outline: none; }
 .menu button.danger { color: var(--danger); }
+.menu button.on { color: var(--green); }
+.menu-head { padding: 10px 12px 6px; color: var(--muted); font-size: 0.75rem; font-weight: 700; }
 .menu hr { border: 0; border-top: 1px solid #ffffff1a; margin: 2px 0; }
 .modal-bg { position: fixed; inset: 0; background: #000b; z-index: 60; display: grid; place-items: center; }
 .dialog { background: var(--surface-3); border-radius: 8px; padding: 24px; width: min(440px, 92vw); box-shadow: 0 16px 48px #000; }
@@ -377,6 +380,7 @@ p { margin: 0 0 8px; }
 .lyrics .line.past { color: #ffffffb3; }
 .lyrics .line.active { color: #fff; }
 .lyrics .line .alt { display: block; font-size: 0.6em; font-weight: 600; opacity: 0.8; }
+.lyrics .line .tr { display: block; margin-top: 4px; font-size: 0.55em; font-weight: 600; opacity: 0.75; }
 @media (max-width: 900px) { .fs-main.with-lyrics { flex-direction: column; } .fs-main.with-lyrics .fs-left { flex: 0 0 auto; } .fs-main.with-lyrics .fs-art { height: 28vh; } }
 
 /* ---- PiP window --------------------------------------------------------------------------- */
@@ -670,3 +674,41 @@ p { margin: 0 0 8px; }
 .lib-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .lib-row-text .name { font-weight: 700; font-size: 0.9375rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-row-text .sub { color: var(--muted); font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- playlist sort ---------------------------------------------------------------------------- */
+.ab-right { margin-left: auto; display: flex; align-items: center; }
+.sort-btn { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.875rem; font-weight: 500; padding: 6px 4px; transition: color 0.15s; }
+.sort-btn:hover { color: var(--text); }
+
+/* ---- "Saved in" panel ------------------------------------------------------------------------- */
+.savedin { position: fixed; z-index: 60; width: 300px; max-height: min(480px, 80vh); display: flex; flex-direction: column; background: #282828; border-radius: 8px; box-shadow: 0 16px 32px #00000080; padding: 6px; animation: om-pop-in 0.14s ease-out; }
+.si-head { padding: 10px 10px 6px; font-weight: 700; font-size: 0.875rem; }
+.si-new { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 4px; font-size: 0.875rem; color: var(--text); }
+.si-new:hover { background: #3e3e3e; }
+.si-list { overflow-y: auto; min-height: 0; border-top: 1px solid #ffffff14; padding-top: 4px; }
+.si-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+.si-row:hover { background: #3e3e3e; }
+.si-row.busy { opacity: 0.6; }
+.si-row > .art { width: 32px; height: 32px; flex: none; border-radius: 4px; }
+.si-title { flex: 1; min-width: 0; font-size: 0.875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-check { appearance: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--muted); display: grid; place-items: center; flex: none; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.si-check:checked { background: var(--green); border-color: var(--green); }
+.si-check:checked::after { content: ""; width: 5px; height: 9px; border: solid #000; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.si-sub { padding: 10px 10px 4px; color: var(--muted); font-size: 0.75rem; font-weight: 700; }
+.si-pad { padding: 8px 10px; }
+.si-foot { display: flex; justify-content: flex-end; padding: 8px 6px 4px; border-top: 1px solid #ffffff14; }
+.grad-yt, .art.grad-yt { background: linear-gradient(135deg, #ff0033, #8a0019); color: #fff; }
+
+/* ---- resizable side panels -------------------------------------------------------------------- */
+/* The handles sit in the 8px gaps beside the main view. */
+.side-resizer, .panel-resizer { position: absolute; top: 8px; bottom: var(--player-h); width: 8px; z-index: 4; }
+.side-resizer { left: calc(8px + var(--side-w, 300px)); }
+.panel-resizer { right: calc(8px + var(--panel-w, 340px)); }
+.resizer { height: 100%; cursor: col-resize; position: relative; outline: none; }
+.resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; border-radius: 1px; background: transparent; transition: background 0.15s; }
+.resizer:hover::after, .resizer:focus-visible::after, body.resizing .resizer::after { background: #ffffff59; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+.lyrics-panel .lp-track { padding: 0 16px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lyrics-panel .lp-body { flex: 1; min-height: 0; }
+.lyrics-panel .lyrics { padding: 24px 16px 40%; mask-image: linear-gradient(transparent, #000 8%, #000 85%, transparent); }
+.lyrics-panel .lyrics .line { font-size: 1.25rem; margin-bottom: 14px; }

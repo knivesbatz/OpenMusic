@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -33,6 +34,11 @@ class NowPlayingArgs {
   var playing: Boolean = false
   var positionMs: Long = 0
   var durationMs: Long = 0
+}
+
+@InvokeArg
+class CookiesArgs {
+  var url: String = ""
 }
 
 /** Shared between the plugin (webview side) and the playback service (notification side). */
@@ -88,6 +94,19 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
       }
     }
     invoke.resolve()
+  }
+
+  /**
+   * The webview's cookies for a URL ("name=value; …"), for adopting a sign-in. wry's own
+   * cookies_for_url panics on the UI thread when its caller has already timed out, which crashed
+   * the app while YouTube Music was loading after sign-in; this answers whenever it can.
+   */
+  @Command
+  fun cookies(invoke: Invoke) {
+    val url = invoke.parseArgs(CookiesArgs::class.java).url
+    val ret = JSObject()
+    ret.put("cookies", try { CookieManager.getInstance().getCookie(url) ?: "" } catch (e: Exception) { "" })
+    invoke.resolve(ret)
   }
 
   @Command

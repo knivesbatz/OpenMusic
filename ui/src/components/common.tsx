@@ -4,6 +4,7 @@ import { useT } from "../i18n";
 import { displayText } from "../romaji";
 import { isMobileApp } from "../store/app";
 import { useArtistAlias } from "../store/names";
+import { useTitleTranslation } from "../store/translate";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import type { MediaItem, Track } from "../types";
@@ -110,7 +111,7 @@ export const Card = memo(function Card({
         )}
       </div>
       <div className="card-title" title={title}>
-        {item.type === "artist" ? <ArtistName name={title} /> : <JpText text={title} />}
+        {item.type === "artist" ? <ArtistName name={title} /> : <TitleText text={title} />}
       </div>
       <div className="card-sub">
         <JpText text={itemSubtitle(item, t)} />
@@ -208,6 +209,17 @@ export const ArtistName = memo(function ArtistName({ name }: { name: string | nu
       <JpText text={alias} />
     </span>
   );
+});
+
+/**
+ * A song or album title in the UI language when it is written in another script (machine
+ * translated). The original stays visible as a tooltip; the "Japanese text" setting still applies.
+ */
+export const TitleText = memo(function TitleText({ text }: { text: string | null | undefined }) {
+  const tr = useTitleTranslation(text);
+  if (!text) return null;
+  if (!tr) return <JpText text={text} />;
+  return <span title={text}>{tr}</span>;
 });
 
 /** Artwork for a track, using album art instead of a YouTube video thumbnail when known. */

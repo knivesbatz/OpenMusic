@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { playlistSubmenu, toggleLike, trackMenu } from "../actions";
+import { sleepSubmenu, trackMenu, useSleep } from "../actions";
 import { api, inTauri } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
@@ -10,7 +10,8 @@ import { useDisplayTrack } from "../store/songmeta";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import { cls, fmtTime, isTouch } from "../util";
-import { Art, ArtistName, JpText } from "./common";
+import { Art, ArtistName, TitleText } from "./common";
+import { likeOrOpen, openSavedIn } from "./SavedIn";
 import * as I from "./Icons";
 
 export function Seek({ compact }: { compact?: boolean }) {
@@ -120,16 +121,16 @@ export function SaveButton() {
   if (caps?.favorites && track.source !== "local")
     return (
       <span className="save-group">
-        <button className={cls("icon-btn", liked && "on")} aria-pressed={liked} aria-label={liked ? t("unlike") : t("like")} title={liked ? t("unlike") : t("like")} onClick={() => toggleLike(track)}>
+        <button className={cls("icon-btn", liked && "on")} aria-pressed={liked} aria-label={liked ? t("savedIn") : t("like")} title={liked ? t("savedIn") : t("like")} onClick={(e) => likeOrOpen(e, track)}>
           {liked ? <I.IHeartFill size={18} /> : <I.IHeart size={18} />}
         </button>
-        <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openMenu(e, playlistSubmenu([track]))}>
+        <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openSavedIn(e, track)}>
           <I.IPlus size={18} />
         </button>
       </span>
     );
   return (
-    <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openMenu(e, playlistSubmenu([track]))}>
+    <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openSavedIn(e, track)}>
       <I.IAddCircle size={18} />
     </button>
   );
@@ -142,7 +143,7 @@ export function PlayerBar() {
   const quality = usePlayer((s) => s.quality);
   const offline = usePlayer((s) => s.offline);
   const queueOpen = useUi((s) => s.queueOpen);
-  const lyricsOpen = useUi((s) => s.lyricsOpen);
+  const lyricsPanel = useUi((s) => s.lyricsPanel);
   const [pip, setPip] = useState(false);
   const tr = shown;
 
@@ -172,7 +173,7 @@ export function PlayerBar() {
             </button>
             <div className="pb-meta" onContextMenu={(e) => openMenu(e, trackMenu(tr, { queueUid: undefined }))}>
               <button className="link name" onClick={() => (isTouch() ? useUi.setState({ fullscreen: true }) : tr.albumId && navigate({ name: "album", id: tr.albumId }))}>
-                <JpText text={tr.title} />
+                <TitleText text={tr.title} />
               </button>
               <button className="link sub" onClick={() => (isTouch() ? useUi.setState({ fullscreen: true }) : tr.artistId && navigate({ name: "artist", id: tr.artistId }))}>
                 <ArtistName name={tr.artist} />
@@ -194,12 +195,20 @@ export function PlayerBar() {
             {quality}
           </span>
         )}
-        <button className={cls("icon-btn", lyricsOpen && "on")} aria-pressed={lyricsOpen} aria-label={t("lyrics")} title={t("lyrics")} onClick={() => useUi.setState({ fullscreen: true, lyricsOpen: true })}>
+        <button
+          className={cls("icon-btn", lyricsPanel && !queueOpen && "on")}
+          aria-pressed={lyricsPanel && !queueOpen}
+          aria-label={t("lyrics")}
+          title={t("lyrics")}
+          // Lyrics open in the side panel first; its expand button goes fullscreen.
+          onClick={() => useUi.setState(lyricsPanel && !queueOpen ? { lyricsPanel: false } : { lyricsPanel: true, queueOpen: false })}
+        >
           <I.IMic size={18} />
         </button>
-        <button className={cls("icon-btn", queueOpen && "on")} aria-pressed={queueOpen} aria-label={t("queue")} title={t("queue")} onClick={() => useUi.setState({ queueOpen: !queueOpen })}>
+        <button className={cls("icon-btn", queueOpen && "on")} aria-pressed={queueOpen} aria-label={t("queue")} title={t("queue")} onClick={() => useUi.setState({ queueOpen: !queueOpen, lyricsPanel: false })}>
           <I.IQueue size={18} />
         </button>
+        <SleepButton />
         <Volume />
         {inTauri && !isMobileApp() && (
           <button className={cls("icon-btn", pip && "on")} aria-label={t("miniPlayer")} title={t("miniPlayer")} onClick={() => api.pipToggle().then(setPip)}>
@@ -211,6 +220,26 @@ export function PlayerBar() {
         </button>
       </div>
     </footer>
+  );
+}
+
+/** Sleep timer: green while set, with the time left in its tooltip. */
+function SleepButton() {
+  const t = useT();
+  const until = useSleep((s) => s.until);
+  // Re-render once a minute so the tooltip's countdown stays current.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (typeof until !== "number") return;
+    const id = setInterval(() => tick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, [until]);
+  const left = typeof until === "number" ? Math.max(1, Math.ceil((until - Date.now()) / 60_000)) : null;
+  const label = until === "track" ? t("sleepEndOfTrack") : left != null ? t("sleepLeft", { n: left }) : t("sleepTimer");
+  return (
+    <button className={cls("icon-btn", until != null && "on")} aria-pressed={until != null} aria-label={label} title={label} onClick={(e) => openMenu(e, sleepSubmenu())}>
+      <I.IMoon size={18} />
+    </button>
   );
 }
 
