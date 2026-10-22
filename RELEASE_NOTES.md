@@ -1,9 +1,40 @@
-# OpenMusic 1.0.5
+# OpenMusic 1.0.6
 
-A big polish release: Spotify-style search and library, podcasts in YTSpot, online synced lyrics,
-playlist covers, automatic updates, and crossfade / next-song fixes.
+YTSpot Android sign-in fix, translated lyrics and titles, playlist sorting, "Saved in"
+checkboxes, a lyrics side panel and resizable panels.
 
-## New in 1.0.5
+## New in 1.0.6
+- **YTSpot Android: fix for the crash after entering your password.** While YouTube Music loaded
+  after sign-in, the app asked the web view for its cookies and address every second; when the
+  phone was busy for more than 10 seconds those requests timed out and the web view library
+  crashed the app. Sign-in now follows page loads and reads cookies through the app itself.
+- **Translated lyrics**: lyrics in another language get a translation under each line, in
+  English or Japanese to match the app (Settings → Language, "Translate lyrics"). Free, no
+  account or key; each song is translated once and remembered.
+- **Names in your language**: song and album titles written in another script (e.g. Japanese
+  titles in the English app) are shown translated, with the original when you hover. YTSpot
+  also reloads YouTube Music in the new language when you switch.
+- **Playlist sorting that sticks**: Sort by Custom order, Title, Artist, Album, Recently added,
+  Release date or Duration (tap again to reverse), and View as List or Compact. Each playlist
+  keeps its sort until you change it.
+- **"Saved in"**: the heart likes a song in one tap; on a liked song, or with +, it opens a
+  list of Liked Songs and your playlists with checks to add or remove the song. YTSpot also
+  lists your own YouTube playlists, so you can add songs to them (and remove them) from here.
+- **Lyrics open in a side panel** instead of jumping to fullscreen; its expand button goes
+  fullscreen.
+- **Sleep timer button** next to Queue (green while set; hover for the time left).
+- **Resizable panels**: drag the edge of the library sidebar or the right panel (queue/lyrics);
+  the width is remembered, double-click resets it.
+- **Export playlists** (⋯ → Export): a text file of "Artist - Title" lines that Soundiiz and
+  TuneMyMusic import, a CSV, or copy as text. The Transfer page now also explains TuneMyMusic.
+
+## Not in this release
+- **Offline downloads in YTSpot**: YouTube Music only plays through YouTube's own player, which
+  can't save audio. Downloading would mean extracting streams the way unofficial downloaders
+  do, which breaks often and goes against YouTube's terms, so YTSpot keeps saying why instead.
+  PLEXSpot downloads are unchanged.
+
+## Also in 1.0.5
 - **Crossfade and the next song**: the next song now starts by itself (and crossfade works) on
   Windows and Android. The app's web view was blocking audio that didn't start from a click.
 - **Search** works like Spotify: a top result, songs, then rows of artists, albums and playlists

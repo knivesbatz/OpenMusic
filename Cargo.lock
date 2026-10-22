@@ -2644,7 +2644,7 @@ dependencies = [
 
 [[package]]
 name = "openmusic-core"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "futures-util",
  "hex",
@@ -2848,7 +2848,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "plexspot"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "openmusic-core",
  "tauri",
@@ -4188,7 +4188,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-openmusic-media"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "log",
  "serde",
@@ -5579,7 +5579,7 @@ dependencies = [
 
 [[package]]
 name = "ytspot"
-version = "1.0.5"
+version = "1.0.6"
 dependencies = [
  "openmusic-core",
  "tauri",

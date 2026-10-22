@@ -11,6 +11,7 @@ are sample data, not a real Plex or YouTube Music library.**
 | ![Home](home.png) Home: shortcuts, recently played, top tracks | ![Your Library](library.png) Your Library categories (YTSpot, Podcasts) |
 | ![Album](album-menu.png) Album page with the track context menu | ![Artist](artist.png) Artist page |
 | ![Queue](queue.png) Queue with a Shift-click range selected | ![Fullscreen](fullscreen.png) Fullscreen player with synced lyrics |
+| ![Lyrics panel](lyrics-panel.png) Lyrics side panel with translations | ![Saved in](saved-in.png) "Saved in" panel (YTSpot) |
 
 ## Android (phone)
 

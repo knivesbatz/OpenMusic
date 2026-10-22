@@ -17,6 +17,7 @@ Two Spotify-style music players for **Windows** and **Android**, sharing one Rus
 |---|---|
 | ![Your Library](docs/screenshots/library.png) Your Library: classic categories, including YTSpot podcasts | ![Artist](docs/screenshots/artist.png) Artist page |
 | ![Queue](docs/screenshots/queue.png) Queue | ![Fullscreen](docs/screenshots/fullscreen.png) Fullscreen player with synced lyrics |
+| ![Lyrics panel](docs/screenshots/lyrics-panel.png) Lyrics in the side panel, translated line by line | ![Saved in](docs/screenshots/saved-in.png) "Saved in": Liked Songs and playlists, including your YouTube playlists |
 
 ### Android
 
@@ -33,6 +34,8 @@ Screenshots are rendered with sample data. More are in [docs/screenshots](docs/s
 - Your Library: Recently played, Albums, Artists, Podcasts and Your Episodes (YTSpot), Local files, Downloads (PLEXSpot)
 - Crossfade and gapless playback, autoplay of similar songs, and a full queue editor
 - Synced lyrics: embedded or from Plex first, then looked up online (LRCLIB, NetEase); no API keys needed
+- Lyrics and other-script titles translated into your language (English or Japanese)
+- Playlist sorting that sticks, "Saved in" checkboxes for Liked Songs and playlists, export to text for Soundiiz
 - Custom playlist covers, local playlists and folders, local files
 - Last.fm scrobbling (off by default) and Discord Rich Presence
 - TV mode for controllers and remotes, a mini player and a tray icon on desktop
