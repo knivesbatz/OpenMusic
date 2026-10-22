@@ -260,6 +260,18 @@ await test("sleep timer has its own button", async (p) => {
   await p.waitForSelector('.playerbar button[aria-label^="Sleep timer: 15 min"][aria-pressed="true"]');
 });
 
+await test("playlist exports as Artist - Title text for Soundiiz", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "Road trip" }).click({ button: "right" });
+  await p.hover('.menu button:has-text("Export")');
+  await p.click('.menu .menu button:has-text("Text file")');
+  await p.waitForFunction(() => window.__EXPORT__);
+  const exp = await p.evaluate(() => window.__EXPORT__);
+  assert.equal(exp.name, "Road trip.txt");
+  const lines = exp.content.trim().split("\n");
+  assert.ok(lines.length > 0);
+  assert.match(lines[0], /^.+ - .+$/);
+});
+
 await test("Saved in: check and uncheck playlists for the playing song", async (p) => {
   await p.click('.playerbar button[aria-label="Add to playlist"]');
   const panel = p.locator(".savedin");

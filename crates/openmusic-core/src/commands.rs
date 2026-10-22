@@ -1043,6 +1043,26 @@ pub async fn yt_playlist_edit(app: AppHandle, state: S<'_>, playlist_id: String,
     yt_call!(app, state, |y| y.edit_playlist(&playlist_id, &vid, add))
 }
 
+/// Save a text export (a playlist as "Artist - Title" lines) where the user picks. Returns the
+/// path, or `None` when the dialog was cancelled. Only .txt/.csv names are written.
+#[tauri::command]
+pub async fn save_text_file(app: AppHandle, name: String, content: String) -> Result<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_file_name(&name).add_filter("Text", &["txt", "csv"]).save_file(move |p| {
+        let _ = tx.send(p);
+    });
+    let Some(picked) = rx.await.ok().flatten() else { return Ok(None) };
+    let path = picked.into_path().map_err(|e| Error::Invalid(e.to_string()))?;
+    let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    if !matches!(ext.as_deref(), Some("txt") | Some("csv")) {
+        return Err(Error::Invalid("exports are saved as .txt or .csv".into()));
+    }
+    // A BOM so Excel and Windows tools read Japanese titles as UTF-8.
+    std::fs::write(&path, format!("\u{feff}{content}"))?;
+    Ok(Some(path.display().to_string()))
+}
+
 #[tauri::command(async)]
 pub fn pl_reorder(app: AppHandle, state: S, id: String, order: Vec<usize>) -> Result<()> {
     state.db().playlist_reorder(&id, &order)?;

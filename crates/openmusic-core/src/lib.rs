@@ -276,6 +276,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::saved_in,
             commands::pl_remove_track,
             commands::yt_playlist_edit,
+            commands::save_text_file,
             commands::self_test_log,
             commands::update_check,
             commands::update_download,

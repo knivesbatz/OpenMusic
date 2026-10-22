@@ -256,6 +256,16 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): Men
     if (useApp.getState().info?.capabilities.downloads)
       items.push({ label: t("download"), onClick: async () => downloadTracks(await tracks()) });
   }
+  if (tracks) {
+    items.push({
+      label: t("exportPlaylist"),
+      submenu: [
+        { label: t("exportTxt"), onClick: async () => exportPlaylist(pl, await tracks(), "txt") },
+        { label: t("exportCsv"), onClick: async () => exportPlaylist(pl, await tracks(), "csv") },
+        { label: t("copyAsText"), onClick: async () => copy(playlistText(await tracks())) },
+      ],
+    });
+  }
   if (pl.local) {
     items.push({ label: t("editDetails"), onClick: () => renamePlaylist(pl) });
     items.push({ label: t("changeCover"), onClick: () => changeCover(pl) });
@@ -265,6 +275,32 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): Men
     items.push({ label: t("hidePlaylist"), danger: true, onClick: () => hidePlaylist(pl) });
   }
   return items;
+}
+
+// ---- export ------------------------------------------------------------------------------------
+
+/** One "Artist - Title" line per song: the plain-text format Soundiiz and TuneMyMusic import. */
+export function playlistText(tracks: Track[]): string {
+  return tracks.filter((x) => !x.episode).map((x) => (x.artist ? `${x.artist} - ${x.title}` : x.title)).join("\n") + "\n";
+}
+
+/** CSV with a header row (Title, Artist, Album), quoted as RFC 4180. */
+export function playlistCsv(tracks: Track[]): string {
+  const q = (s: string | null | undefined) => `"${(s ?? "").replace(/"/g, '""')}"`;
+  const rows = tracks.filter((x) => !x.episode).map((x) => [q(x.title), q(x.artist), q(x.album)].join(","));
+  return ["Title,Artist,Album", ...rows].join("\r\n") + "\r\n";
+}
+
+async function exportPlaylist(pl: Playlist, tracks: Track[], kind: "txt" | "csv") {
+  const content = kind === "txt" ? playlistText(tracks) : playlistCsv(tracks);
+  const name = `${pl.title.replace(/[\\/:*?"<>|]+/g, " ").trim() || "playlist"}.${kind}`;
+  try {
+    const path = inTauri ? await api.saveTextFile(name, content) : null;
+    if (path) toast(t("exported", { n: tracks.length }));
+  } catch {
+    // No file dialog (Android): the text goes to the clipboard to paste into Soundiiz instead.
+    copy(kind === "txt" ? content : playlistText(tracks));
+  }
 }
 
 /** Save or remove an album/artist from "Your Library" (local to the app). Optimistic. */

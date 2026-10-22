@@ -48,6 +48,7 @@
     local_library: { tracks: [], albums: [], artists: [] },
     download_list: [],
     liked_ids: [],
+    save_text_file: (a) => ((window.__EXPORT__ = a), "C:/Users/demo/" + a.name),
     saved_in: { appPlaylists: ["app:1"], remote: [] },
     localized_artist_names: {},
     // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.

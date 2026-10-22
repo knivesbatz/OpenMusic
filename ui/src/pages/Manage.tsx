@@ -185,6 +185,7 @@ export function DownloadsPage() {
 }
 
 const SOUNDIIZ = "https://soundiiz.com/";
+const TUNEMYMUSIC = "https://www.tunemymusic.com/transfer";
 
 /**
  * Transferring Spotify playlists is handed off to Soundiiz, which can write playlists to YouTube
@@ -224,6 +225,23 @@ export function ImportPage() {
         </button>
       </div>
       <p className="muted small">{flavor === "plex" ? t("transferNotePlex") : t("transferNoteYt")}</p>
+
+      <h2>{t("tmmTitle")}</h2>
+      <p className="muted">{t("tmmIntro")}</p>
+      <ol className="steps">
+        {(["tmmStep1", "tmmStep2", "tmmStep3", "tmmStep4"] as const).map((k) => (
+          <li key={k}>{t(k, { dest })}</li>
+        ))}
+      </ol>
+      <div className="row gap">
+        <button className="pill ghost" onClick={() => (inTauri ? openUrl(TUNEMYMUSIC) : window.open(TUNEMYMUSIC, "_blank"))}>
+          {t("openTuneMyMusic")}
+        </button>
+      </div>
+      <p className="muted small">{t("tmmNote", { dest })}</p>
+
+      <h2>{t("exportTitle")}</h2>
+      <p className="muted">{t("exportHint")}</p>
     </div>
   );
 }
