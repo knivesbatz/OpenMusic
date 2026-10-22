@@ -14,6 +14,7 @@ export type Route =
   | { name: "playlist"; id: string }
   | { name: "liked" }
   | { name: "episodes" }
+  | { name: "new" }
   | { name: "local" }
   | { name: "downloads" }
   | { name: "import" }

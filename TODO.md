@@ -117,6 +117,19 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.0.9
+- 🟡 Windows title bar: main window undecorated on Windows (`lib.rs`), `TitleBar.tsx` with ••• menu,
+  history, Home + search, actions and min/max/close (`core:window` capabilities). e2e with
+  platform "windows"; not yet seen on a real Windows desktop
+- 🟡 What's New (`new_releases`): saved artists' albums/singles from this year and last, plus Plex
+  latest releases / recently added or YouTube's new releases feed; cached 1 h (unit + e2e)
+- ✅ Multi-disc albums grouped by disc (`disc_number` from Plex `parentIndex` and local tags; e2e)
+- ✅ Search inside a playlist (e2e); PLEXSpot Albums/Artists show saved items only (e2e)
+- ✅ Spotify-style seek bar (handle, time bubble, remaining time) and chunkier skip icons
+- ⬜ YTSpot offline downloads (needs a stream downloader; see release notes)
+- ⬜ Keep Android sign-in across reinstalls: needs the `ANDROID_KEYSTORE` secrets so every APK has
+  the same signature
+
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library
 - 🟡 Desktop-only features gated (`desktop`/`mobile` cfg from core build.rs; `OPENMUSIC_CHECK_MOBILE=1

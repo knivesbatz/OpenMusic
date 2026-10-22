@@ -256,12 +256,13 @@ fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         episode: false,
         description: None,
         published: None,
-        year: None,
+        year: r.get(10)?,
         added_at: None,
+        disc_number: r.get(9)?,
     })
 }
 
-const TRACK_COLS: &str = "id,title,artist,album,album_artist,duration_ms,artwork,path,track_no";
+const TRACK_COLS: &str = "id,title,artist,album,album_artist,duration_ms,artwork,path,track_no,disc_no,year";
 
 pub fn tracks(db: &Db) -> Result<Vec<Track>> {
     let mut st = db.conn.prepare(&format!(

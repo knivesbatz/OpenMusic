@@ -850,3 +850,42 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .card-art .art { border-radius: 8px; }
 .shortcut { border-radius: 8px; }
 .toast { border-radius: 10px; }
+
+/* ---- seek bar (Spotify reference): thicker track, green fill, handle at the end, time bubble ----- */
+.seek-track { position: relative; flex: 1; display: flex; align-items: center; min-width: 0; }
+.seek-track .slider { width: 100%; height: 16px; }
+.seek .slider::-webkit-slider-runnable-track { height: 5px; border-radius: 3px; background: linear-gradient(90deg, #fff var(--pct), #4d4d4d var(--pct)); }
+.seek .slider:hover::-webkit-slider-runnable-track, .seek .slider:active::-webkit-slider-runnable-track, .seek .slider:focus-visible::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--green) var(--pct), #4d4d4d var(--pct)); }
+.seek .slider::-webkit-slider-thumb { width: 13px; height: 13px; margin-top: -4px; opacity: 1; transition: transform 0.12s; }
+.seek .slider:hover::-webkit-slider-thumb, .seek .slider:active::-webkit-slider-thumb { transform: scale(1.15); }
+.seek .slider::-moz-range-track { height: 5px; border-radius: 3px; }
+.seek-tip { position: absolute; bottom: 18px; transform: translateX(-50%); padding: 3px 7px; border-radius: 6px; background: #282828; color: var(--text); font-size: 0.75rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; box-shadow: 0 4px 12px #0008; animation: om-fade 0.1s ease-out; }
+
+/* Multi-disc albums: a heading above each disc's tracks. */
+.disc + .disc { margin-top: 12px; }
+.disc-head { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; padding: 0 16px; color: var(--muted); font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.01em; }
+
+/* Search in playlist: the icon opens a small field beside Sort. */
+.pl-find { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; margin-right: 4px; border-radius: 8px; background: var(--surface-3); color: var(--muted); animation: om-fade 0.12s ease-out; }
+.pl-find input { width: 180px; background: transparent; border: 0; outline: none; color: var(--text); font-size: 0.875rem; }
+@media (max-width: 760px) { .pl-find input { width: 120px; } }
+
+/* ---- Windows title bar (the window has no system frame there) ------------------------------ */
+.app.titled { display: flex; flex-direction: column; }
+.app.titled > .layout, .app.titled > .login { flex: 1; min-height: 0; height: auto; }
+.app.titled > .layout { padding-top: 0; }
+.titlebar { flex: none; height: 64px; display: grid; grid-template-columns: 1fr minmax(280px, 520px) 1fr; align-items: center; gap: 16px; padding-left: 8px; background: var(--bg); user-select: none; -webkit-user-select: none; }
+.titlebar:not(:has(.search-box)) { grid-template-columns: 1fr; height: 48px; }
+.titlebar .tb-side { display: flex; align-items: center; gap: 4px; height: 100%; min-width: 0; }
+.titlebar .tb-side.right { justify-content: flex-end; gap: 8px; }
+.titlebar .search-box { max-width: none; }
+.tb-btn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
+.tb-btn:hover:not(:disabled) { color: var(--text); background: #ffffff12; }
+.tb-btn:disabled { opacity: 0.4; }
+.titlebar .round-btn:not(.home) { background: transparent; color: var(--muted); }
+.titlebar .round-btn:not(.home):hover, .titlebar .round-btn.on { color: var(--text); }
+.win-btns { display: flex; align-self: flex-start; height: 48px; margin-left: 8px; }
+.win-btn { width: 46px; height: 100%; display: grid; place-items: center; color: var(--text); border-radius: 0; }
+.win-btn:hover { background: #ffffff1a; }
+.win-btn.close:hover { background: #c42b1c; color: #fff; }
+.topbar.slim { min-height: 56px; padding-top: 8px; padding-bottom: 8px; }

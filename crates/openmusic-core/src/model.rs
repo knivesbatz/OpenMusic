@@ -54,6 +54,9 @@ pub struct Track {
     /// App playlists: when the song was added (unix seconds), for sorting by "Recently added".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<i64>,
+    /// Disc of a multi-disc album (Plex, local files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disc_number: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

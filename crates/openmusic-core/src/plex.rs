@@ -112,6 +112,8 @@ pub fn to_track(v: &Value) -> Option<Track> {
         published: None,
         year: n(v, "parentYear").or_else(|| n(v, "year")).map(|y| y as i32),
         added_at: None,
+        // A track's parent is its album, and parentIndex its disc.
+        disc_number: n(v, "parentIndex").map(|x| x as u32),
     })
 }
 
@@ -457,6 +459,16 @@ impl Plex {
             }
         }
         Ok(fp)
+    }
+
+    /// Newest releases in the library (by release date), for the What's New page.
+    pub async fn latest_releases(&self, sess: &Session) -> Vec<Album> {
+        self.per_section(sess, "type=9&sort=originallyAvailableAt:desc&X-Plex-Container-Size=30", to_album).await
+    }
+
+    /// Albums most recently added to the library.
+    pub async fn recently_added(&self, sess: &Session) -> Vec<Album> {
+        self.per_section(sess, "type=9&sort=addedAt:desc&X-Plex-Container-Size=30", to_album).await
     }
 
     pub async fn home(&self, sess: &Session) -> Result<Vec<Shelf>> {

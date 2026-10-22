@@ -84,6 +84,32 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
   );
 }
 
+/** Spotify's search-in-playlist: an icon that opens a filter box. */
+function PlaylistFind({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const t = useT();
+  if (value === null)
+    return (
+      <button className="icon-btn" aria-label={t("searchInPlaylist")} title={t("searchInPlaylist")} onClick={() => onChange("")}>
+        <I.ISearch size={18} />
+      </button>
+    );
+  return (
+    <label className="pl-find">
+      <I.ISearch size={16} />
+      <input
+        autoFocus
+        type="search"
+        placeholder={t("searchInPlaylist")}
+        aria-label={t("searchInPlaylist")}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && onChange(null)}
+        onBlur={() => !value.trim() && onChange(null)}
+      />
+    </label>
+  );
+}
+
 /** Spotify's "Sort by" / "View as" menu for a playlist; the choice is kept until changed. */
 function SortButton({ id, tracks }: { id: string; tracks: Track[] }) {
   const t = useT();
@@ -155,8 +181,37 @@ export function AlbumPage({ id }: { id: string }) {
         onMore={(e) => openMenu(e, albumMenu(album, async () => tracks))}
         extra={<SaveAlbumButton album={album} />}
       />
-      <TrackList tracks={tracks} context={ctx} showAlbum={false} showArt={false} />
+      <DiscTracks tracks={tracks} ctx={ctx} />
     </div>
+  );
+}
+
+/** Album tracks, split under "Disc 1", "Disc 2"… headings when the album has several discs. */
+function DiscTracks({ tracks, ctx }: { tracks: Track[]; ctx: PlayContext }) {
+  const t = useT();
+  const discs = useMemo(() => {
+    const out: { disc: number; tracks: Track[]; offset: number }[] = [];
+    tracks.forEach((tr, i) => {
+      const d = tr.discNumber ?? 1;
+      const last = out[out.length - 1];
+      if (last && last.disc === d) last.tracks.push(tr);
+      else out.push({ disc: d, tracks: [tr], offset: i });
+    });
+    return out;
+  }, [tracks]);
+  if (discs.length < 2) return <TrackList tracks={tracks} context={ctx} showAlbum={false} showArt={false} />;
+  return (
+    <>
+      {discs.map((d) => (
+        <section key={d.disc + ":" + d.offset} className="disc">
+          <h3 className="disc-head">
+            <I.IDisc size={18} />
+            {t("discN", { n: d.disc })}
+          </h3>
+          <TrackList tracks={d.tracks} context={ctx} showAlbum={false} showArt={false} queue={{ tracks, offset: d.offset }} />
+        </section>
+      ))}
+    </>
   );
 }
 
@@ -268,7 +323,13 @@ export function PlaylistPage({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const sort = usePlaylistSort(id);
   const compact = useSettings((s) => s.compactTracks);
-  const rows = useMemo(() => sortTracks(data?.tracks ?? [], sort), [data, sort]);
+  const [find, setFind] = useState<string | null>(null);
+  const rows = useMemo(() => {
+    const sorted = sortTracks(data?.tracks ?? [], sort);
+    const q = (find ?? "").trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter(({ track: x }) => [x.title, x.artist, x.album].some((v) => v?.toLowerCase().includes(q)));
+  }, [data, sort, find]);
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const { playlist, tracks } = data;
@@ -318,9 +379,18 @@ export function PlaylistPage({ id }: { id: string }) {
         tracks={shown}
         ctx={ctx}
         onMore={(e) => openMenu(e, playlistMenu(playlist, async () => shown))}
-        right={tracks.length > 1 && <SortButton id={id} tracks={tracks} />}
+        right={
+          tracks.length > 1 && (
+            <>
+              <PlaylistFind value={find} onChange={setFind} />
+              <SortButton id={id} tracks={tracks} />
+            </>
+          )
+        }
       />
-      {tracks.length ? (
+      {tracks.length > 0 && !shown.length ? (
+        <p className="muted pad">{t("noMatches")}</p>
+      ) : tracks.length ? (
         <TrackList
           tracks={shown}
           context={ctx}
@@ -334,8 +404,8 @@ export function PlaylistPage({ id }: { id: string }) {
                 }
               : undefined
           }
-          // Dragging only makes sense in the playlist's own order.
-          onReorder={editable && !sorted ? reorder : undefined}
+          // Dragging only makes sense in the playlist's own order, unfiltered.
+          onReorder={editable && !sorted && !find?.trim() ? reorder : undefined}
         />
       ) : (
         <p className="muted pad">{editable ? t("playlistEmptyHint") : t("empty")}</p>

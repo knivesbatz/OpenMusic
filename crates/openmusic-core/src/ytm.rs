@@ -304,6 +304,7 @@ fn track_from(video_id: String, title: String, sub: &Sub, artwork: Option<String
         published: None,
         year: None,
         added_at: None,
+        disc_number: None,
     }
 }
 
@@ -807,6 +808,12 @@ impl Ytm {
     pub async fn song_meta(&self, video_id: &str) -> Result<Option<SongMeta>> {
         let v = self.post("next", json!({ "videoId": video_id, "isAudioOnly": true, "enablePersistentPlaylistPanel": true }), "").await?;
         Ok(parse_song_meta(&v))
+    }
+
+    /// YouTube Music's own "New releases" page (albums and singles; video shelves dropped).
+    pub async fn new_releases(&self) -> Result<Vec<Shelf>> {
+        let v = self.browse("FEmusic_new_releases").await?;
+        Ok(parse_shelves(&v).into_iter().filter_map(drop_videos).filter(|s| !s.items.is_empty()).collect())
     }
 
     pub async fn home(&self) -> Result<Vec<Shelf>> {

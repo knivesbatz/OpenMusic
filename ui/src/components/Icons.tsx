@@ -29,8 +29,9 @@ export const ILibrary = make(<><path d="M4 3v18M9 3v18" /><path d="m14 3.5 6 17"
 export const IPlus = make(<path d="M12 5v14M5 12h14" />);
 export const IPlay = make(<path d="M7 4.5v15a.5.5 0 0 0 .77.42l11.5-7.5a.5.5 0 0 0 0-.84L7.77 4.08A.5.5 0 0 0 7 4.5z" />, true);
 export const IPause = make(<><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></>, true);
-export const INext = make(<><path d="M5 4.5v15l11-7.5z" /><rect x="17" y="4" width="2.5" height="16" rx="1" /></>, true);
-export const IPrev = make(<><path d="M19 4.5v15L8 12z" /><rect x="4.5" y="4" width="2.5" height="16" rx="1" /></>, true);
+// Skip: a chunky triangle (the outline rounds its corners) and a thick bar, as in Spotify.
+export const INext = make(<><path d="M5.5 5.2v13.6a.8.8 0 0 0 1.25.66l9.6-6.8a.8.8 0 0 0 0-1.32l-9.6-6.8a.8.8 0 0 0-1.25.66z" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" /><rect x="16.6" y="4" width="3.4" height="16" rx="1.4" /></>, true);
+export const IPrev = make(<><path d="M18.5 5.2v13.6a.8.8 0 0 1-1.25.66l-9.6-6.8a.8.8 0 0 1 0-1.32l9.6-6.8a.8.8 0 0 1 1.25.66z" stroke="currentColor" strokeWidth={1.6} strokeLinejoin="round" /><rect x="4" y="4" width="3.4" height="16" rx="1.4" /></>, true);
 export const IShuffle = make(<><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5" /></>);
 export const IRepeat = make(<><path d="m17 2 4 4-4 4" /><path d="M3 11v-1a4 4 0 0 1 4-4h14" /><path d="m7 22-4-4 4-4" /><path d="M21 13v1a4 4 0 0 1-4 4H3" /></>);
 export const IQueue = make(<><path d="M3 6h13M3 12h13M3 18h9" /><path d="m17 15 4 3-4 3z" /></>);
@@ -60,7 +61,9 @@ export const IChevronDown = make(<path d="m6 9 6 6 6-6" />);
 export const IShare = make(<><path d="M12 15V3M7 8l5-5 5 5" /><path d="M5 12v8h14v-8" /></>);
 export const IHandle = make(<path d="M4 8h16M4 12h16M4 16h16" />);
 export const IDrag = make(<path d="M5 9h14M5 15h14" />);
+export const IDisc = make(<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2.5" /></>);
 export const IMoon = make(<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" />);
+export const IBell = make(<><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>);
 export const IClock = make(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
 export const IMic = make(<><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></>);
 export const IImport = make(<><path d="M12 3v12M7 10l5 5 5-5" /><path d="M4 17v3h16v-3" /></>);
