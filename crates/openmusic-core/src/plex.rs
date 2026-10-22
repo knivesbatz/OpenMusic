@@ -110,6 +110,8 @@ pub fn to_track(v: &Value) -> Option<Track> {
         episode: false,
         description: None,
         published: None,
+        year: n(v, "parentYear").or_else(|| n(v, "year")).map(|y| y as i32),
+        added_at: None,
     })
 }
 

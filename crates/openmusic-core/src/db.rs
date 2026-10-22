@@ -263,13 +263,15 @@ impl Db {
 
     pub fn playlist_tracks(&self, id: &str) -> Result<Vec<Track>> {
         let mut st = self.conn.prepare(
-            "SELECT track_json FROM playlist_items WHERE playlist_id=?1 ORDER BY position",
+            "SELECT track_json, added_at FROM playlist_items WHERE playlist_id=?1 ORDER BY position",
         )?;
-        let rows = st.query_map([id], |r| r.get::<_, String>(0))?;
+        let rows = st.query_map([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
         let mut out = Vec::new();
-        for json in rows {
+        for row in rows {
+            let (json, added) = row?;
             // A corrupt row is skipped, never allowed to break the whole playlist.
-            if let Ok(t) = serde_json::from_str::<Track>(&json?) {
+            if let Ok(mut t) = serde_json::from_str::<Track>(&json) {
+                t.added_at = Some(added);
                 out.push(t);
             }
         }
@@ -504,6 +506,8 @@ mod tests {
             episode: false,
             description: None,
             published: None,
+            year: None,
+            added_at: None,
         }
     }
 

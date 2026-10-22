@@ -27,6 +27,8 @@ export interface Settings {
   translateNames: boolean;
   /** Show lyrics in another language with a translation under each line. */
   translateLyrics: boolean;
+  /** Playlists "View as": Compact drops the artwork column. */
+  compactTracks: boolean;
   /** Scrobble to Last.fm once connected. Off by default (new key, so earlier "on" defaults reset). */
   lastfmScrobble: boolean;
   sidebarCollapsed: boolean;
@@ -50,6 +52,7 @@ export const defaults: Settings = {
   jpMode: "original",
   translateNames: true,
   translateLyrics: true,
+  compactTracks: false,
   lastfmScrobble: false,
   sidebarCollapsed: false,
   htpc: false,

@@ -48,6 +48,12 @@ pub struct Track {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published: Option<String>,
+    /// Release year, where the provider knows it (Plex).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub year: Option<i32>,
+    /// App playlists: when the song was added (unix seconds), for sorting by "Recently added".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

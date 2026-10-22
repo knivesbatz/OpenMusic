@@ -31,6 +31,12 @@ export interface MenuItem {
   danger?: boolean;
   disabled?: boolean;
   separator?: boolean;
+  /** A small section title ("Sort by"), not clickable. */
+  heading?: boolean;
+  /** Selected option: shown green with a mark on the right (or `hint` in its place). */
+  checked?: boolean;
+  /** Text on the right, e.g. a sort direction arrow. */
+  hint?: string;
 }
 
 interface Dialog {

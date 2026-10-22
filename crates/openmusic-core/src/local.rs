@@ -256,6 +256,8 @@ fn row_to_track(r: &rusqlite::Row) -> rusqlite::Result<Track> {
         episode: false,
         description: None,
         published: None,
+        year: None,
+        added_at: None,
     })
 }
 

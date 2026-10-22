@@ -1,5 +1,5 @@
 // Artist, album and playlist pages.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { albumMenu, changeCover, downloadTracks, playlistMenu, toggleSaved, trackMenu } from "../actions";
 import { api, artUrl, errorMessage } from "../api";
 import { Art, ArtistName, ErrorBox, Loading, PlayFab, TitleText, useAsync, usePageTitle } from "../components/common";
@@ -9,6 +9,8 @@ import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
+import { setPlaylistSort, sortTracks, usePlaylistSort, type SortKey } from "../store/playlistSort";
+import { useSettings } from "../store/settings";
 import { navigate, openMenu, toast } from "../store/ui";
 import type { Album, Artist, PlayContext, Track } from "../types";
 import { cls, fmtTime, totalDuration } from "../util";
@@ -49,7 +51,7 @@ function fmtLong(t: ReturnType<typeof useT>, sec: number): string {
   return h ? t("hoursMinutes", { h, m }) : t("minutesOnly", { m });
 }
 
-function ActionBar({ tracks, ctx, onMore, extra }: { tracks: Track[]; ctx: PlayContext; onMore?: (e: React.MouseEvent) => void; extra?: React.ReactNode }) {
+function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx: PlayContext; onMore?: (e: React.MouseEvent) => void; extra?: React.ReactNode; right?: React.ReactNode }) {
   const t = useT();
   const playingHere = usePlayer((s) => s.playing && s.context?.id === ctx.id);
   const shuffle = usePlayer((s) => s.shuffle);
@@ -77,7 +79,50 @@ function ActionBar({ tracks, ctx, onMore, extra }: { tracks: Track[]; ctx: PlayC
           <I.IMore size={26} />
         </button>
       )}
+      {right && <div className="ab-right">{right}</div>}
     </div>
+  );
+}
+
+/** Spotify's "Sort by" / "View as" menu for a playlist; the choice is kept until changed. */
+function SortButton({ id, tracks }: { id: string; tracks: Track[] }) {
+  const t = useT();
+  const sort = usePlaylistSort(id);
+  const compact = useSettings((s) => s.compactTracks);
+  const setSettings = useSettings((s) => s.set);
+  const keys: { key: SortKey; label: string; show: boolean }[] = [
+    { key: "custom", label: t("sortCustom"), show: true },
+    { key: "title", label: t("sortTitle"), show: true },
+    { key: "artist", label: t("sortArtist"), show: true },
+    { key: "album", label: t("sortAlbum"), show: true },
+    { key: "added", label: t("recentlyAdded"), show: tracks.some((x) => x.addedAt != null) },
+    { key: "year", label: t("sortReleaseDate"), show: tracks.some((x) => x.year != null) },
+    { key: "duration", label: t("sortDuration"), show: true },
+  ];
+  const current = keys.find((k) => k.key === sort.key) ?? keys[0];
+  const open = (e: React.MouseEvent) =>
+    openMenu(e, [
+      { label: t("sortMenu"), heading: true },
+      ...keys
+        .filter((k) => k.show)
+        .map((k) => ({
+          label: k.label,
+          checked: k.key === sort.key,
+          hint: k.key === sort.key && k.key !== "custom" ? (sort.desc ? "↓" : "↑") : undefined,
+          // Picking the current sort again flips its direction, like Spotify.
+          onClick: () => setPlaylistSort(id, { key: k.key, desc: k.key === sort.key ? !sort.desc : k.key === "added" }),
+        })),
+      { label: "", separator: true },
+      { label: t("viewAs"), heading: true },
+      { label: t("viewCompact"), checked: compact, onClick: () => setSettings({ compactTracks: true }) },
+      { label: t("viewList"), checked: !compact, onClick: () => setSettings({ compactTracks: false }) },
+    ]);
+  return (
+    <button className="sort-btn" aria-label={`${t("sortMenu")}: ${current.label}`} title={t("sortMenu")} onClick={open}>
+      <span>{current.label}</span>
+      {sort.key !== "custom" && <span aria-hidden="true">{sort.desc ? "↓" : "↑"}</span>}
+      <I.IQueue size={18} />
+    </button>
   );
 }
 
@@ -221,9 +266,14 @@ export function PlaylistPage({ id }: { id: string }) {
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
   usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }));
   const [busy, setBusy] = useState(false);
+  const sort = usePlaylistSort(id);
+  const compact = useSettings((s) => s.compactTracks);
+  const rows = useMemo(() => sortTracks(data?.tracks ?? [], sort), [data, sort]);
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const { playlist, tracks } = data;
+  const shown = rows.map((r) => r.track);
+  const sorted = sort.key !== "custom";
   const ctx: PlayContext = { kind: "playlist", id, title: playlist.title, artwork: playlist.artwork };
   const editable = playlist.local;
 
@@ -264,13 +314,28 @@ export function PlaylistPage({ id }: { id: string }) {
           </>
         }
       />
-      <ActionBar tracks={tracks} ctx={ctx} onMore={(e) => openMenu(e, playlistMenu(playlist, async () => tracks))} />
+      <ActionBar
+        tracks={shown}
+        ctx={ctx}
+        onMore={(e) => openMenu(e, playlistMenu(playlist, async () => shown))}
+        right={tracks.length > 1 && <SortButton id={id} tracks={tracks} />}
+      />
       {tracks.length ? (
         <TrackList
-          tracks={tracks}
+          tracks={shown}
           context={ctx}
-          onRemove={editable ? (idx) => reorder(tracks.map((_, i) => i).filter((i) => !idx.includes(i))) : undefined}
-          onReorder={editable ? reorder : undefined}
+          showArt={!compact}
+          onRemove={
+            editable
+              ? (idx) => {
+                  // Positions in the sorted view map back to the playlist's own order.
+                  const gone = new Set(idx.map((i) => rows[i].index));
+                  reorder(tracks.map((_, i) => i).filter((i) => !gone.has(i)));
+                }
+              : undefined
+          }
+          // Dragging only makes sense in the playlist's own order.
+          onReorder={editable && !sorted ? reorder : undefined}
         />
       ) : (
         <p className="muted pad">{editable ? t("playlistEmptyHint") : t("empty")}</p>

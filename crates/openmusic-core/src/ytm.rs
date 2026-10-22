@@ -302,6 +302,8 @@ fn track_from(video_id: String, title: String, sub: &Sub, artwork: Option<String
         episode,
         description: None,
         published: None,
+        year: None,
+        added_at: None,
     }
 }
 

@@ -326,6 +326,8 @@ p { margin: 0 0 8px; }
 .menu button span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu button:hover, .menu button:focus-visible, .menu button.open { background: #3e3e3e; outline: none; }
 .menu button.danger { color: var(--danger); }
+.menu button.on { color: var(--green); }
+.menu-head { padding: 10px 12px 6px; color: var(--muted); font-size: 0.75rem; font-weight: 700; }
 .menu hr { border: 0; border-top: 1px solid #ffffff1a; margin: 2px 0; }
 .modal-bg { position: fixed; inset: 0; background: #000b; z-index: 60; display: grid; place-items: center; }
 .dialog { background: var(--surface-3); border-radius: 8px; padding: 24px; width: min(440px, 92vw); box-shadow: 0 16px 48px #000; }
@@ -671,3 +673,8 @@ p { margin: 0 0 8px; }
 .lib-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .lib-row-text .name { font-weight: 700; font-size: 0.9375rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lib-row-text .sub { color: var(--muted); font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- playlist sort ---------------------------------------------------------------------------- */
+.ab-right { margin-left: auto; display: flex; align-items: center; }
+.sort-btn { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.875rem; font-weight: 500; padding: 6px 4px; transition: color 0.15s; }
+.sort-btn:hover { color: var(--text); }
