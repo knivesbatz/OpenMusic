@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { sleepSubmenu, trackMenu, useSleep } from "../actions";
-import { api, inTauri } from "../api";
+import { api, artUrl, inTauri } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
@@ -162,6 +162,8 @@ export function PlayerBar() {
     <footer
       className="playerbar"
       aria-label={t("nowPlaying")}
+      // Phone mini player: tinted with the cover's colour (a tiny cover stretched into a wash).
+      style={tr?.artwork ? ({ ["--pb-wash" as string]: `url("${artUrl(tr.artwork, 60)}")` } as React.CSSProperties) : undefined}
       // Phone: the whole mini player opens the song screen, except its own buttons.
       onClick={(e) => tr && isTouch() && !(e.target as HTMLElement).closest("button:not(.pb-art):not(.link), input") && useUi.setState({ fullscreen: true })}
     >
