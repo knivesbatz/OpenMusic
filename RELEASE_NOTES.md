@@ -1,9 +1,27 @@
-# OpenMusic 1.0.8
+# OpenMusic 1.0.9
 
-A new typeface closer to Spotify's, a comfier phone and desktop look, and sorting for your saved
-albums and artists.
+A Spotify-style title bar on Windows, a What's New feed, albums split by disc, search inside
+playlists, and a player bar that looks like Spotify's.
 
-## New in 1.0.8
+## New in 1.0.9
+- **Modern title bar on Windows**: the plain Windows frame is replaced by one bar like Spotify's
+  desktop app. It has a ••• menu, back and forward, Home and search in the middle, and What's New,
+  playlist transfer and settings on the right, with minimize, maximize and close at the end. Drag
+  any empty part to move the window; double-click it to maximize.
+- **What's New**: a feed of new albums and singles from the artists you follow (this year and
+  last), plus the latest releases in your Plex library or YouTube Music's new releases. Open it
+  from the bell in the top bar, from Your Library, or from Search. The feed is fetched again at
+  most once an hour; Sync refreshes it now.
+- **Multi-disc albums are split by disc**, with a "Disc 1", "Disc 2"… heading over each disc's
+  songs. Playing a song still plays on through the whole album.
+- **Search inside a playlist**: the magnifier next to a playlist's sort menu filters its songs by
+  title, artist or album. Esc closes it.
+- **Player bar like Spotify's**: a thicker seek bar with a round handle, a time bubble while you
+  hover or drag, the remaining time on the right, and chunkier skip buttons.
+- **PLEXSpot: Albums and Artists show only what you saved**, not every album and artist on the
+  server. Browse the whole server from Search or an artist page.
+
+## Also in 1.0.8
 - **New typeface: Figtree**, a geometric sans close to Spotify's look, bundled with the app so it
   renders the same on Windows and Android. Titles are heavier and tighter, body text is lighter,
   and times use even-width digits. Japanese text still uses the system's Japanese fonts.
