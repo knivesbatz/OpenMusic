@@ -13,7 +13,64 @@ use tauri::http::{header, Request, Response, StatusCode};
 
 use crate::state::AppState;
 
-const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_CACHE_BYTES: u64 = 256 * 1024 * 1024;
+/// Cached sizes: a request is rounded up to one of these, so each cover is stored a few times at
+/// most instead of once per pixel size the UI happens to ask for.
+const SIZES: [u32; 4] = [128, 300, 640, 1200];
+/// Marks a cache that only holds shrunk images (older versions kept full-size originals).
+const CACHE_VERSION: &str = ".v2";
+
+fn bucket(size: u32) -> u32 {
+    SIZES.into_iter().find(|&s| s >= size).unwrap_or(SIZES[SIZES.len() - 1])
+}
+
+/// YouTube Music artwork (googleusercontent / ggpht) is resized by its server: ask for the size
+/// that will be shown rather than downloading the default (often 544px or larger).
+fn sized_upstream(url: &str, size: u32) -> String {
+    let google = url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.ends_with("googleusercontent.com") || h.ends_with("ggpht.com")))
+        .unwrap_or(false);
+    if !google || url.contains('?') {
+        return url.to_string();
+    }
+    let base = match url.rfind('=') {
+        Some(i) if !url[i..].contains('/') => &url[..i],
+        _ => url,
+    };
+    format!("{base}=w{size}-h{size}-l90-rj")
+}
+
+/// Shrink artwork to at most `size` px on its longer side and store it as JPEG. `None` keeps the
+/// original: already small, not decodable, or not smaller after re-encoding.
+fn shrink(bytes: &[u8], size: u32) -> Option<Vec<u8>> {
+    let img = image::load_from_memory(bytes).ok()?;
+    let fits = img.width().max(img.height()) <= size;
+    if fits && bytes.len() <= 96 * 1024 {
+        return None;
+    }
+    let img = if fits { img } else { img.resize(size, size, image::imageops::FilterType::Triangle) };
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85).encode_image(&img.to_rgb8()).ok()?;
+    (out.len() < bytes.len()).then_some(out)
+}
+
+/// One-time cleanup when upgrading from a cache of full-size originals. Covers are fetched
+/// again (shrunk) as they're shown.
+pub fn upgrade_cache(dir: &Path) {
+    let marker = dir.join(CACHE_VERSION);
+    if marker.exists() {
+        return;
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+        }
+    }
+    let _ = std::fs::create_dir_all(dir);
+    let _ = std::fs::write(marker, b"");
+}
 
 fn mime(bytes: &[u8]) -> &'static str {
     match bytes {
@@ -124,7 +181,7 @@ pub async fn cached_file(state: Arc<AppState>, art: &str, size: u32) -> Option<P
         None if art.starts_with("https://") || art.starts_with("http://") => format!("/url/{}", urlencoding::encode(art)),
         None => return None,
     };
-    let size = size.clamp(32, 1200);
+    let size = bucket(size.clamp(32, 1200));
     serve(state.clone(), &path, &format!("s={size}")).await?;
     let file = match path.strip_prefix("/local/") {
         Some(name) => state.dirs.local_art.join(name),
@@ -142,6 +199,7 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
         .and_then(|(_, v)| v.parse().ok())
         .unwrap_or(300)
         .clamp(32, 1200);
+    let size = bucket(size);
 
     // Local embedded artwork extracted during scans.
     if let Some(name) = path.strip_prefix("/local/") {
@@ -166,7 +224,7 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
         }
     } else if let Some(enc) = path.strip_prefix("/url/") {
         match urlencoding::decode(enc) {
-            Ok(u) if u.starts_with("https://") || u.starts_with("http://") => vec![u.into_owned()],
+            Ok(u) if u.starts_with("https://") || u.starts_with("http://") => vec![sized_upstream(&u, size)],
             _ => return None,
         }
     } else {
@@ -189,8 +247,13 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
             Err(e) => note_failure(&state, upstream, &e.to_string()),
         };
     }
-    let bytes = bytes?;
+    let mut bytes = bytes?;
     if mime(&bytes).starts_with("image/") {
+        // Off the async workers: decoding a large cover takes a few milliseconds.
+        let original = bytes.clone();
+        if let Ok(Some(small)) = tokio::task::spawn_blocking(move || shrink(&original, size)).await {
+            bytes = small;
+        }
         if let Some(dir) = file.parent() {
             let _ = tokio::fs::create_dir_all(dir).await;
         }
@@ -243,6 +306,51 @@ pub fn prune(dir: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sizes_round_up_to_a_few_buckets() {
+        assert_eq!(bucket(32), 128);
+        assert_eq!(bucket(96), 128);
+        assert_eq!(bucket(240), 300);
+        assert_eq!(bucket(512), 640);
+        assert_eq!(bucket(2000), 1200);
+    }
+
+    #[test]
+    fn youtube_artwork_is_requested_at_the_shown_size() {
+        assert_eq!(sized_upstream("https://lh3.googleusercontent.com/abc=w544-h544-l90-rj", 300), "https://lh3.googleusercontent.com/abc=w300-h300-l90-rj");
+        assert_eq!(sized_upstream("https://yt3.ggpht.com/xyz=s88-c-k", 128), "https://yt3.ggpht.com/xyz=w128-h128-l90-rj");
+        assert_eq!(sized_upstream("https://lh3.googleusercontent.com/plain", 640), "https://lh3.googleusercontent.com/plain=w640-h640-l90-rj");
+        // Other hosts and video thumbnails are left alone.
+        let yt = "https://i.ytimg.com/vi/abc/hqdefault.jpg";
+        assert_eq!(sized_upstream(yt, 300), yt);
+    }
+
+    #[test]
+    fn large_covers_are_stored_small() {
+        let mut big = Vec::new();
+        let img = image::RgbImage::from_fn(1500, 1500, |x, y| image::Rgb([(x % 251) as u8, (y % 241) as u8, ((x * y) % 239) as u8]));
+        image::DynamicImage::ImageRgb8(img).write_to(&mut std::io::Cursor::new(&mut big), image::ImageFormat::Png).unwrap();
+        let small = shrink(&big, 300).expect("shrunk");
+        assert!(small.len() < big.len() / 4, "{} -> {}", big.len(), small.len());
+        let back = image::load_from_memory(&small).unwrap();
+        assert_eq!((back.width(), back.height()), (300, 300));
+        // Already small: kept as is.
+        assert!(shrink(&small, 640).is_none());
+        assert!(shrink(b"not an image", 300).is_none());
+    }
+
+    #[test]
+    fn upgrading_clears_old_full_size_cache_once() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("ab")).unwrap();
+        std::fs::write(dir.path().join("ab").join("old"), b"x").unwrap();
+        upgrade_cache(dir.path());
+        assert!(!dir.path().join("ab").exists());
+        std::fs::create_dir_all(dir.path().join("cd")).unwrap();
+        upgrade_cache(dir.path());
+        assert!(dir.path().join("cd").exists(), "only the first run clears");
+    }
 
     #[test]
     fn server_routes_only_tokened_urls() {
