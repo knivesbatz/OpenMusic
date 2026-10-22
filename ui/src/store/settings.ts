@@ -1,3 +1,4 @@
+import type { AlbumSortKey, ArtistSortKey, LibSort } from "./librarySort";
 import { create } from "zustand";
 import { api, inTauri } from "../api";
 
@@ -29,6 +30,9 @@ export interface Settings {
   translateLyrics: boolean;
   /** Playlists "View as": Compact drops the artwork column. */
   compactTracks: boolean;
+  /** Your Library → Albums / Artists "Sort by". */
+  albumSort: LibSort<AlbumSortKey>;
+  artistSort: LibSort<ArtistSortKey>;
   /** Scrobble to Last.fm once connected. Off by default (new key, so earlier "on" defaults reset). */
   lastfmScrobble: boolean;
   sidebarCollapsed: boolean;
@@ -56,6 +60,8 @@ export const defaults: Settings = {
   translateNames: true,
   translateLyrics: true,
   compactTracks: false,
+  albumSort: { key: "recent", desc: false },
+  artistSort: { key: "recent", desc: false },
   lastfmScrobble: false,
   sidebarCollapsed: false,
   sidebarWidth: 300,
@@ -80,9 +86,16 @@ export function sanitize(raw: Record<string, unknown>): Settings {
   if (!["auto", "low", "medium", "high"].includes(s.quality)) s.quality = "auto";
   if (!["en", "ja"].includes(s.language)) s.language = defaults.language;
   if (!["original", "romaji", "both"].includes(s.jpMode)) s.jpMode = "original";
+  s.albumSort = libSort(s.albumSort, ["recent", "alpha", "artist", "year"]);
+  s.artistSort = libSort(s.artistSort, ["recent", "alpha"]);
   s.sidebarWidth = clampWidth(s.sidebarWidth, SIDEBAR_W, 300);
   s.panelWidth = clampWidth(s.panelWidth, PANEL_W, 340);
   return s;
+}
+
+function libSort<K extends string>(v: unknown, keys: K[]): LibSort<K> {
+  const o = (v ?? {}) as { key?: unknown; desc?: unknown };
+  return { key: keys.includes(o.key as K) ? (o.key as K) : keys[0], desc: o.desc === true };
 }
 
 export const SIDEBAR_W = { min: 220, max: 520 };

@@ -272,6 +272,23 @@ await test("playlist exports as Artist - Title text for Soundiiz", async (p) => 
   assert.match(lines[0], /^.+ - .+$/);
 });
 
+await test("Your Library albums sort by name or release year, and the choice sticks", async (p) => {
+  await p.click('.sidebar .side-cat:has-text("Albums")');
+  await p.waitForSelector(".grid .card");
+  const first = async () => (await p.locator(".grid .card .card-title").first().textContent()).trim();
+  await p.click("button.lib-sort");
+  await p.click('.menu button:has-text("Alphabetical")');
+  await p.waitForFunction(() => document.querySelector(".grid .card .card-title")?.textContent?.trim() === "Autumn Tapes");
+  await p.click("button.lib-sort");
+  await p.click('.menu button:has-text("Release date")');
+  await p.waitForFunction(() => document.querySelector(".grid .card .card-title")?.textContent?.trim() === "Summer Static");
+  // Leave and come back: still newest first.
+  await p.click('.sidebar .side-cat:has-text("Artists")');
+  await p.click('.sidebar .side-cat:has-text("Albums")');
+  await p.waitForSelector(".grid .card");
+  assert.equal(await first(), "Summer Static");
+});
+
 await test("Saved in: check and uncheck playlists for the playing song", async (p) => {
   await p.click('.playerbar button[aria-label="Add to playlist"]');
   const panel = p.locator(".savedin");
