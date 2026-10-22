@@ -88,8 +88,15 @@ await test("artist page: follow toggles", async (p) => {
   assert.equal((await p.locator("button.follow").textContent()).trim(), "Following");
 });
 
-await test("fullscreen opens with lyrics and closes on Escape", async (p) => {
-  await p.click('button[aria-label="Lyrics"]');
+await test("Lyrics open in the side panel, expand to fullscreen and close on Escape", async (p) => {
+  await p.click('.playerbar button[aria-label="Lyrics"]');
+  await p.waitForSelector(".lyrics-panel .lyrics .line");
+  assert.equal(await p.locator(".fullscreen").count(), 0, "lyrics must not jump straight to fullscreen");
+  // Queue and lyrics share the right-hand panel.
+  await p.click('.playerbar button[aria-label="Queue"]');
+  await p.waitForSelector(".lyrics-panel", { state: "detached" });
+  await p.click('.playerbar button[aria-label="Lyrics"]');
+  await p.click('.lyrics-panel button[aria-label="Full screen"]');
   await p.waitForSelector(".fullscreen .lyrics .line");
   await p.keyboard.press("Escape");
   await p.waitForSelector(".fullscreen", { state: "detached" });
@@ -99,14 +106,18 @@ await test("fullscreen opens with lyrics and closes on Escape", async (p) => {
 // render for YouTube music videos, so reopening lyrics (cache hit) looped forever and froze the app.
 await test("YouTube: reopening lyrics on a music video stays responsive", async (p) => {
   for (let i = 0; i < 2; i++) {
-    await p.click('button[aria-label="Lyrics"]');
+    await p.click('.playerbar button[aria-label="Lyrics"]');
+    await p.waitForSelector(".lyrics-panel .lyrics .line");
+    await p.click('.lyrics-panel button[aria-label="Full screen"]');
     await p.waitForSelector(".fullscreen .lyrics .line");
     await p.waitForTimeout(300);
     await p.keyboard.press("Escape");
     await p.waitForSelector(".fullscreen", { state: "detached" });
+    await p.click('.playerbar button[aria-label="Lyrics"]');
+    await p.waitForSelector(".lyrics-panel", { state: "detached" });
   }
-  await p.click('button[aria-label="Lyrics"]');
-  await p.waitForSelector(".fullscreen .lyrics .line");
+  await p.click('.playerbar button[aria-label="Lyrics"]');
+  await p.waitForSelector(".lyrics-panel .lyrics .line");
   const t0 = Date.now();
   await Promise.race([
     p.evaluate(() => new Promise((r) => setTimeout(r, 50))),
@@ -222,6 +233,32 @@ await test(
   },
   { youtube: true },
 );
+
+await test("side panels resize by dragging and remember their width", async (p) => {
+  const side = await p.locator(".sidebar").boundingBox();
+  const h = await p.locator(".side-resizer .resizer").boundingBox();
+  await p.mouse.move(h.x + 4, h.y + 200);
+  await p.mouse.down();
+  await p.mouse.move(h.x + 84, h.y + 200, { steps: 4 });
+  await p.mouse.up();
+  const after = await p.locator(".sidebar").boundingBox();
+  assert.ok(Math.abs(after.width - (side.width + 80)) <= 2, `sidebar ${side.width} -> ${after.width}`);
+  await p.click('.playerbar button[aria-label="Queue"]');
+  const q = await p.locator(".queue-panel").boundingBox();
+  const qh = await p.locator(".panel-resizer .resizer").boundingBox();
+  await p.mouse.move(qh.x + 4, qh.y + 200);
+  await p.mouse.down();
+  await p.mouse.move(qh.x - 56, qh.y + 200, { steps: 4 });
+  await p.mouse.up();
+  const q2 = await p.locator(".queue-panel").boundingBox();
+  assert.ok(Math.abs(q2.width - (q.width + 60)) <= 2, `queue ${q.width} -> ${q2.width}`);
+});
+
+await test("sleep timer has its own button", async (p) => {
+  await p.click('.playerbar button[aria-label="Sleep timer"]');
+  await p.click('.menu button:has-text("15 min")');
+  await p.waitForSelector('.playerbar button[aria-label^="Sleep timer: 15 min"][aria-pressed="true"]');
+});
 
 await test("Saved in: check and uncheck playlists for the playing song", async (p) => {
   await p.click('.playerbar button[aria-label="Add to playlist"]');

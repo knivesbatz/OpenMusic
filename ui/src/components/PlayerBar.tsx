@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { trackMenu } from "../actions";
+import { sleepSubmenu, trackMenu, useSleep } from "../actions";
 import { api, inTauri } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
@@ -143,7 +143,7 @@ export function PlayerBar() {
   const quality = usePlayer((s) => s.quality);
   const offline = usePlayer((s) => s.offline);
   const queueOpen = useUi((s) => s.queueOpen);
-  const lyricsOpen = useUi((s) => s.lyricsOpen);
+  const lyricsPanel = useUi((s) => s.lyricsPanel);
   const [pip, setPip] = useState(false);
   const tr = shown;
 
@@ -195,12 +195,20 @@ export function PlayerBar() {
             {quality}
           </span>
         )}
-        <button className={cls("icon-btn", lyricsOpen && "on")} aria-pressed={lyricsOpen} aria-label={t("lyrics")} title={t("lyrics")} onClick={() => useUi.setState({ fullscreen: true, lyricsOpen: true })}>
+        <button
+          className={cls("icon-btn", lyricsPanel && !queueOpen && "on")}
+          aria-pressed={lyricsPanel && !queueOpen}
+          aria-label={t("lyrics")}
+          title={t("lyrics")}
+          // Lyrics open in the side panel first; its expand button goes fullscreen.
+          onClick={() => useUi.setState(lyricsPanel && !queueOpen ? { lyricsPanel: false } : { lyricsPanel: true, queueOpen: false })}
+        >
           <I.IMic size={18} />
         </button>
-        <button className={cls("icon-btn", queueOpen && "on")} aria-pressed={queueOpen} aria-label={t("queue")} title={t("queue")} onClick={() => useUi.setState({ queueOpen: !queueOpen })}>
+        <button className={cls("icon-btn", queueOpen && "on")} aria-pressed={queueOpen} aria-label={t("queue")} title={t("queue")} onClick={() => useUi.setState({ queueOpen: !queueOpen, lyricsPanel: false })}>
           <I.IQueue size={18} />
         </button>
+        <SleepButton />
         <Volume />
         {inTauri && !isMobileApp() && (
           <button className={cls("icon-btn", pip && "on")} aria-label={t("miniPlayer")} title={t("miniPlayer")} onClick={() => api.pipToggle().then(setPip)}>
@@ -212,6 +220,26 @@ export function PlayerBar() {
         </button>
       </div>
     </footer>
+  );
+}
+
+/** Sleep timer: green while set, with the time left in its tooltip. */
+function SleepButton() {
+  const t = useT();
+  const until = useSleep((s) => s.until);
+  // Re-render once a minute so the tooltip's countdown stays current.
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (typeof until !== "number") return;
+    const id = setInterval(() => tick((n) => n + 1), 30_000);
+    return () => clearInterval(id);
+  }, [until]);
+  const left = typeof until === "number" ? Math.max(1, Math.ceil((until - Date.now()) / 60_000)) : null;
+  const label = until === "track" ? t("sleepEndOfTrack") : left != null ? t("sleepLeft", { n: left }) : t("sleepTimer");
+  return (
+    <button className={cls("icon-btn", until != null && "on")} aria-pressed={until != null} aria-label={label} title={label} onClick={(e) => openMenu(e, sleepSubmenu())}>
+      <I.IMoon size={18} />
+    </button>
   );
 }
 

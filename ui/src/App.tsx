@@ -7,6 +7,8 @@ import { TopBar } from "./components/TopBar";
 import { TvNav } from "./components/TvNav";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
 import { SavedInPanel } from "./components/SavedIn";
+import { LyricsPanel } from "./components/LyricsPanel";
+import { Resizer } from "./components/Resizer";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfilePicker } from "./components/ProfilePicker";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -15,7 +17,7 @@ import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
 import * as P from "./player/engine";
 import { isMobileApp, useApp } from "./store/app";
-import { useSettings } from "./store/settings";
+import { PANEL_W, SIDEBAR_W, useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
 import { Home, LibraryPage, Search } from "./pages/Browse";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
@@ -72,6 +74,10 @@ export function App() {
   const info = useApp((s) => s.info);
   const auth = useApp((s) => s.auth);
   const localOnly = useApp((s) => s.localOnly);
+  const lyricsPanel = useUi((s) => s.lyricsPanel);
+  const sideW = useSettings((s) => s.sidebarWidth);
+  const panelW = useSettings((s) => s.panelWidth);
+  const sideCollapsed = useSettings((s) => s.sidebarCollapsed);
   const queueOpen = useUi((s) => s.queueOpen);
   const fullscreen = useUi((s) => s.fullscreen);
   const pos = useUi((s) => s.pos);
@@ -153,8 +159,16 @@ export function App() {
       {needsLogin ? (
         <Login />
       ) : (
-        <div className={cls("layout", queueOpen && "with-queue")}>
+        <div
+          className={cls("layout", (queueOpen || lyricsPanel) && !phone && "with-queue")}
+          style={{ ["--side-w" as string]: `${sideW}px`, ["--panel-w" as string]: `${panelW}px` }}
+        >
           {!htpc && <Sidebar />}
+          {!htpc && !phone && !sideCollapsed && (
+            <div className="side-resizer">
+              <Resizer setting="sidebarWidth" range={SIDEBAR_W} def={300} edge="right" onCollapse={() => useSettings.getState().set({ sidebarCollapsed: true })} />
+            </div>
+          )}
           <main id="main" className="main" ref={scroll} tabIndex={-1}>
             {htpc ? <TvNav /> : <TopBar />}
             <ScrollCtx.Provider value={scroll}>
@@ -166,6 +180,12 @@ export function App() {
             </ScrollCtx.Provider>
           </main>
           {queueOpen && !fullscreen && (phone ? <Suspense fallback={null}><PhoneQueue /></Suspense> : <QueuePanel />)}
+          {lyricsPanel && !queueOpen && !fullscreen && !phone && <LyricsPanel />}
+          {(queueOpen || lyricsPanel) && !fullscreen && !phone && (
+            <div className="panel-resizer">
+              <Resizer setting="panelWidth" range={PANEL_W} def={340} edge="left" />
+            </div>
+          )}
           <PlayerBar />
           <MobileTabs />
         </div>

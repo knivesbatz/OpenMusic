@@ -52,6 +52,8 @@ interface UiState {
   stack: Route[];
   pos: number;
   queueOpen: boolean;
+  /** Desktop: lyrics in the right-hand panel (instead of the queue). */
+  lyricsPanel: boolean;
   lyricsOpen: boolean;
   fullscreen: boolean;
   toasts: Toast[];
@@ -71,6 +73,7 @@ export const useUi = create<UiState>(() => ({
   stack: [{ name: "home" }],
   pos: 0,
   queueOpen: false,
+  lyricsPanel: false,
   lyricsOpen: false,
   fullscreen: false,
   toasts: [],

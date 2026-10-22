@@ -1,5 +1,6 @@
 // Shared actions behind context menus and buttons, so every surface (track rows, queue, player bar,
 // fullscreen, cards) offers the same behavior.
+import { create } from "zustand";
 import { api, errorMessage, inTauri } from "./api";
 import { translate, type Key } from "./i18n";
 import * as P from "./player/engine";
@@ -93,10 +94,13 @@ export async function startRadio(track: Track) {
 
 let sleepTimer: ReturnType<typeof setTimeout> | undefined;
 let sleepUnsub: (() => void) | undefined;
+/** When the sleep timer pauses: a time (ms), "track" for the end of the song, or null when off. */
+export const useSleep = create<{ until: number | "track" | null }>(() => ({ until: null }));
 export function setSleepTimer(minutes: number | "track" | null) {
   clearTimeout(sleepTimer);
   sleepUnsub?.();
   sleepUnsub = undefined;
+  useSleep.setState({ until: minutes === null ? null : minutes === "track" ? "track" : Date.now() + minutes * 60_000 });
   if (minutes === null) return toast(t("sleepOff"));
   if (minutes === "track") {
     const uid = P.usePlayer.getState().queue.items[P.usePlayer.getState().queue.index]?.uid;
@@ -105,19 +109,22 @@ export function setSleepTimer(minutes: number | "track" | null) {
         P.pause();
         sleepUnsub?.();
         sleepUnsub = undefined;
+        useSleep.setState({ until: null });
       }
     });
     return toast(t("sleepEndOfTrack"));
   }
-  sleepTimer = setTimeout(() => P.pause(), minutes * 60_000);
+  sleepTimer = setTimeout(() => (P.pause(), useSleep.setState({ until: null })), minutes * 60_000);
   toast(t("sleepSet", { n: minutes }));
 }
 
 export function sleepSubmenu(): MenuItem[] {
+  const until = useSleep.getState().until;
   return [
+    { label: t("sleepTimer"), heading: true },
     ...[5, 15, 30, 45, 60].map((n) => ({ label: t("minutes", { n }), onClick: () => setSleepTimer(n) })),
-    { label: t("sleepEndOfTrack"), onClick: () => setSleepTimer("track") },
-    { label: t("sleepOff"), onClick: () => setSleepTimer(null) },
+    { label: t("sleepEndOfTrack"), checked: until === "track", onClick: () => setSleepTimer("track") },
+    ...(until != null ? [{ label: "", separator: true }, { label: t("sleepOff"), onClick: () => setSleepTimer(null) }] : []),
   ];
 }
 

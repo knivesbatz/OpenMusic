@@ -70,12 +70,13 @@ p { margin: 0 0 8px; }
   gap: 8px;
   padding: 8px 8px 0;
 }
-.layout.with-queue { grid-template-columns: auto 1fr 340px; grid-template-areas: "side main queue" "player player player"; }
+.layout { position: relative; }
+.layout.with-queue { grid-template-columns: auto 1fr var(--panel-w, 340px); grid-template-areas: "side main queue" "player player player"; }
 .main { grid-area: main; background: linear-gradient(180deg, #1f1f1f 0, var(--surface) 280px); border-radius: var(--radius); overflow-y: auto; overflow-x: hidden; position: relative; }
 .page { padding: 8px 24px 32px; }
 
 /* ---- sidebar ------------------------------------------------------------------------------ */
-.sidebar { grid-area: side; display: flex; flex-direction: column; gap: 8px; width: 300px; min-height: 0; }
+.sidebar { grid-area: side; display: flex; flex-direction: column; gap: 8px; width: var(--side-w, 300px); min-height: 0; }
 .sidebar.collapsed { width: 72px; }
 .side-box { background: var(--surface); border-radius: var(--radius); padding: 8px 12px; }
 .nav-box { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; }
@@ -697,3 +698,17 @@ p { margin: 0 0 8px; }
 .si-pad { padding: 8px 10px; }
 .si-foot { display: flex; justify-content: flex-end; padding: 8px 6px 4px; border-top: 1px solid #ffffff14; }
 .grad-yt, .art.grad-yt { background: linear-gradient(135deg, #ff0033, #8a0019); color: #fff; }
+
+/* ---- resizable side panels -------------------------------------------------------------------- */
+/* The handles sit in the 8px gaps beside the main view. */
+.side-resizer, .panel-resizer { position: absolute; top: 8px; bottom: var(--player-h); width: 8px; z-index: 4; }
+.side-resizer { left: calc(8px + var(--side-w, 300px)); }
+.panel-resizer { right: calc(8px + var(--panel-w, 340px)); }
+.resizer { height: 100%; cursor: col-resize; position: relative; outline: none; }
+.resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; border-radius: 1px; background: transparent; transition: background 0.15s; }
+.resizer:hover::after, .resizer:focus-visible::after, body.resizing .resizer::after { background: #ffffff59; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+.lyrics-panel .lp-track { padding: 0 16px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lyrics-panel .lp-body { flex: 1; min-height: 0; }
+.lyrics-panel .lyrics { padding: 24px 16px 40%; mask-image: linear-gradient(transparent, #000 8%, #000 85%, transparent); }
+.lyrics-panel .lyrics .line { font-size: 1.25rem; margin-bottom: 14px; }
