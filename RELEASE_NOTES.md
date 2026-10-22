@@ -1,9 +1,19 @@
-# OpenMusic 1.0.6
+# OpenMusic 1.0.7
 
-YTSpot Android sign-in fix, translated lyrics and titles, playlist sorting, "Saved in"
-checkboxes, a lyrics side panel and resizable panels.
+Music keeps playing when you leave the app on Android, and the artwork cache takes far less space.
 
-## New in 1.0.6
+## New in 1.0.7
+- **Android: leaving the app no longer pauses the song.** Swiping home or to another app paused
+  the app's web view, which stopped the song (and YouTube's mobile player pauses pages that
+  aren't on screen). The app now keeps its player running in the background and picks a song
+  back up if it was paused on the way out. Pausing from the notification, headphones or the app
+  still works as before.
+- **Smaller artwork cache**: covers are now shrunk to the size they're shown at and stored as
+  compact JPEGs (usually many times smaller than before), YouTube Music art is downloaded at that size,
+  and each cover is kept at only a few sizes. The cache limit is now 256 MB. The old cache of
+  full-size images is cleared once after updating; covers download again as you browse.
+
+## Also in 1.0.6
 - **YTSpot Android: fix for the crash after entering your password.** While YouTube Music loaded
   after sign-in, the app asked the web view for its cookies and address every second; when the
   phone was busy for more than 10 seconds those requests timed out and the web view library
