@@ -8,6 +8,7 @@ import { TrackList } from "../components/TrackList";
 import { shelfTitle, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
+import { sortAlbums, sortArtists } from "../store/librarySort";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
 import { useDisplayTrack } from "../store/songmeta";
@@ -448,6 +449,8 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const caps = useApp((s) => s.info?.capabilities);
   const phone = usePhoneLayout();
   const [q, setQ] = useState("");
+  const albumSort = useSettings((s) => s.albumSort);
+  const artistSort = useSettings((s) => s.artistSort);
   useAsync(() => refreshLibrary(false), []);
   const cur: LibraryTab = tab ?? "playlists";
   if (cur === "recent") return <RecentPage />;
@@ -459,9 +462,9 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
     cur === "playlists"
       ? playlists.filter((p) => p !== liked).map((p) => ({ type: "playlist" as const, ...p }))
       : cur === "albums"
-        ? dedupe([...saved.albums, ...(lib?.albums ?? [])]).map((a) => ({ type: "album" as const, ...a }))
+        ? sortAlbums(dedupe([...saved.albums, ...(lib?.albums ?? [])]), albumSort).map((a) => ({ type: "album" as const, ...a }))
         : cur === "artists"
-          ? dedupe([...saved.artists, ...(lib?.artists ?? [])]).map((a) => ({ type: "artist" as const, ...a }))
+          ? sortArtists(dedupe([...saved.artists, ...(lib?.artists ?? [])]), artistSort).map((a) => ({ type: "artist" as const, ...a }))
           : dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])]).map((a) => ({ type: "podcast" as const, ...a }));
   const needle = q.trim().toLowerCase();
   const shown = needle ? items.filter((it) => (it.type === "artist" ? it.name : it.title).toLowerCase().includes(needle)) : items;
@@ -474,6 +477,7 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
         <div className="row between">
           <h1>{title}</h1>
           <div className="row" style={{ gap: 8 }}>
+            {(cur === "albums" || cur === "artists") && <LibrarySortButton tab={cur} />}
             <input className="lib-filter" style={{ width: 200 }} placeholder={t("filterLibrary")} aria-label={t("filterLibrary")} value={q} onChange={(e) => setQ(e.target.value)} />
             <button className="pill ghost small" onClick={() => refreshLibrary(true)}>
               {t("sync")}
@@ -516,7 +520,12 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
           ))}
         </div>
       )}
-      <div className="lib-rows" key={cur}>
+      {(cur === "albums" || cur === "artists") && (
+        <div className="lib-sort-row">
+          <LibrarySortButton tab={cur} />
+        </div>
+      )}
+      <div className="lib-rows" key={cur + albumSort.key + albumSort.desc + artistSort.key + artistSort.desc}>
         {cur === "playlists" && (
           <>
             <LibRow
@@ -551,6 +560,56 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** "Sort by" for Albums (Recently added, Alphabetical, Artist, Release year) and Artists. */
+function LibrarySortButton({ tab }: { tab: "albums" | "artists" }) {
+  const t = useT();
+  const albumSort = useSettings((s) => s.albumSort);
+  const artistSort = useSettings((s) => s.artistSort);
+  const set = useSettings((s) => s.set);
+  const options: { key: string; label: string }[] =
+    tab === "albums"
+      ? [
+          { key: "recent", label: t("recentlyAdded") },
+          { key: "alpha", label: t("sortAlpha") },
+          { key: "artist", label: t("sortArtist") },
+          { key: "year", label: t("sortReleaseDate") },
+        ]
+      : [
+          { key: "recent", label: t("recentlyAdded") },
+          { key: "alpha", label: t("sortAlpha") },
+        ];
+  const cur = tab === "albums" ? albumSort : artistSort;
+  const label = options.find((o) => o.key === cur.key)?.label ?? options[0].label;
+  const pick = (key: string) => {
+    // Picking the current sort again reverses it; Release year starts newest first.
+    const next = { key, desc: key === cur.key ? !cur.desc : key === "year" };
+    if (tab === "albums") set({ albumSort: next as typeof albumSort });
+    else set({ artistSort: next as typeof artistSort });
+  };
+  return (
+    <button
+      className="sort-btn lib-sort"
+      aria-label={`${t("sortMenu")}: ${label}`}
+      title={t("sortMenu")}
+      onClick={(e) =>
+        openMenu(e, [
+          { label: t("sortMenu"), heading: true },
+          ...options.map((o) => ({
+            label: o.label,
+            checked: o.key === cur.key,
+            hint: o.key === cur.key ? (cur.desc ? "↓" : "↑") : undefined,
+            onClick: () => pick(o.key),
+          })),
+        ])
+      }
+    >
+      <span>{label}</span>
+      <span aria-hidden="true">{cur.desc ? "↓" : "↑"}</span>
+      <I.IQueue size={18} />
+    </button>
   );
 }
 

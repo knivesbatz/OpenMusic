@@ -1,9 +1,15 @@
-# OpenMusic 1.0.7
+# OpenMusic 1.0.8
 
-Music keeps playing when you leave the app on Android, a cleaner phone layout, and the artwork
-cache takes far less space.
+Sort your saved albums and artists.
 
-## New in 1.0.7
+## New in 1.0.8
+- **Sort albums and artists in Your Library**: Albums can be sorted by Recently added,
+  Alphabetical, Artist (each artist's albums oldest first) or Release date; Artists by Recently
+  added or Alphabetical. Pick the same option again to reverse it. "The" is ignored when sorting
+  names, and your choice is remembered until you change it. On phones the sort button sits above
+  the Albums and Artists lists; on desktop next to the filter.
+
+## Also in 1.0.7
 - **Android: leaving the app no longer pauses the song.** Swiping home or to another app paused
   the app's web view, which stopped the song (and YouTube's mobile player pauses pages that
   aren't on screen). The app now keeps its player running in the background and picks a song

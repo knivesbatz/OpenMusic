@@ -764,7 +764,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .tl-dur .more { opacity: 0.7; }
 
   /* Playlist actions: the sort button is just its icon here. */
-  .sort-btn > span { display: none; }
+  .sort-btn:not(.lib-sort) > span { display: none; }
 
   /* Song screen: the current lyric line is a hint, not a second title. */
   .pp-line { margin: 18px 0 4px; font-size: 0.875rem; font-weight: 600; color: #ffffffb3; }
@@ -778,3 +778,6 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .browse-tile { font-size: 1rem; aspect-ratio: 1.75; }
   .bt-icon svg { width: 52px; height: 52px; }
 }
+
+/* Your Library (phone): the Albums / Artists sort sits above the list. */
+.lib-sort-row { display: flex; justify-content: flex-end; margin: -6px 0 6px; }
