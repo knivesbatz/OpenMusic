@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TopBar } from "./components/TopBar";
 import { TvNav } from "./components/TvNav";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
+import { SavedInPanel } from "./components/SavedIn";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfilePicker } from "./components/ProfilePicker";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -178,6 +179,7 @@ export function App() {
       )}
       {profilePicker && <ProfilePicker />}
       <ContextMenu />
+      <SavedInPanel />
       <DialogHost />
       <InfoDialog />
       <UpdateBanner />

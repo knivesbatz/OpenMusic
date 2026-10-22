@@ -48,6 +48,7 @@
     local_library: { tracks: [], albums: [], artists: [] },
     download_list: [],
     liked_ids: [],
+    saved_in: { appPlaylists: ["app:1"], remote: [] },
     localized_artist_names: {},
     // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.
     translate_texts: (a) => a.texts.map((t) => (/[\u3040-\u30ff\u4e00-\u9fff]/.test(t) ? "[en] " + t : null)),

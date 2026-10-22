@@ -678,3 +678,22 @@ p { margin: 0 0 8px; }
 .ab-right { margin-left: auto; display: flex; align-items: center; }
 .sort-btn { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 0.875rem; font-weight: 500; padding: 6px 4px; transition: color 0.15s; }
 .sort-btn:hover { color: var(--text); }
+
+/* ---- "Saved in" panel ------------------------------------------------------------------------- */
+.savedin { position: fixed; z-index: 60; width: 300px; max-height: min(480px, 80vh); display: flex; flex-direction: column; background: #282828; border-radius: 8px; box-shadow: 0 16px 32px #00000080; padding: 6px; animation: om-pop-in 0.14s ease-out; }
+.si-head { padding: 10px 10px 6px; font-weight: 700; font-size: 0.875rem; }
+.si-new { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 4px; font-size: 0.875rem; color: var(--text); }
+.si-new:hover { background: #3e3e3e; }
+.si-list { overflow-y: auto; min-height: 0; border-top: 1px solid #ffffff14; padding-top: 4px; }
+.si-row { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 4px; cursor: pointer; }
+.si-row:hover { background: #3e3e3e; }
+.si-row.busy { opacity: 0.6; }
+.si-row > .art { width: 32px; height: 32px; flex: none; border-radius: 4px; }
+.si-title { flex: 1; min-width: 0; font-size: 0.875rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si-check { appearance: none; width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--muted); display: grid; place-items: center; flex: none; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.si-check:checked { background: var(--green); border-color: var(--green); }
+.si-check:checked::after { content: ""; width: 5px; height: 9px; border: solid #000; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.si-sub { padding: 10px 10px 4px; color: var(--muted); font-size: 0.75rem; font-weight: 700; }
+.si-pad { padding: 8px 10px; }
+.si-foot { display: flex; justify-content: flex-end; padding: 8px 6px 4px; border-top: 1px solid #ffffff14; }
+.grad-yt, .art.grad-yt { background: linear-gradient(135deg, #ff0033, #8a0019); color: #fff; }

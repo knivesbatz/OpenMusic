@@ -28,6 +28,7 @@
   // YouTube Music artists carry a subscriber count, shown as followers.
   const baseArtist = d.artist;
   d.artist = (a) => ({ ...(typeof baseArtist === "function" ? baseArtist(a) : baseArtist), followers: "1.23M" });
+  d.saved_in = { appPlaylists: [], remote: [{ id: "yt:VLPLmine", title: "My YouTube mix", contains: false }] };
   const saved = { albums: [], artists: [], playlists: [], podcasts: [], episodes: [] };
   d.saved_list = () => saved;
   d.save_podcast = (a) => ((saved.podcasts = a.saved ? [a.podcast] : []), null);

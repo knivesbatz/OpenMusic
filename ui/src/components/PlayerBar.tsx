@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { playlistSubmenu, toggleLike, trackMenu } from "../actions";
+import { trackMenu } from "../actions";
 import { api, inTauri } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
@@ -11,6 +11,7 @@ import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import { cls, fmtTime, isTouch } from "../util";
 import { Art, ArtistName, TitleText } from "./common";
+import { likeOrOpen, openSavedIn } from "./SavedIn";
 import * as I from "./Icons";
 
 export function Seek({ compact }: { compact?: boolean }) {
@@ -120,16 +121,16 @@ export function SaveButton() {
   if (caps?.favorites && track.source !== "local")
     return (
       <span className="save-group">
-        <button className={cls("icon-btn", liked && "on")} aria-pressed={liked} aria-label={liked ? t("unlike") : t("like")} title={liked ? t("unlike") : t("like")} onClick={() => toggleLike(track)}>
+        <button className={cls("icon-btn", liked && "on")} aria-pressed={liked} aria-label={liked ? t("savedIn") : t("like")} title={liked ? t("savedIn") : t("like")} onClick={(e) => likeOrOpen(e, track)}>
           {liked ? <I.IHeartFill size={18} /> : <I.IHeart size={18} />}
         </button>
-        <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openMenu(e, playlistSubmenu([track]))}>
+        <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openSavedIn(e, track)}>
           <I.IPlus size={18} />
         </button>
       </span>
     );
   return (
-    <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openMenu(e, playlistSubmenu([track]))}>
+    <button className="icon-btn" aria-label={t("addToPlaylist")} title={t("addToPlaylist")} onClick={(e) => openSavedIn(e, track)}>
       <I.IAddCircle size={18} />
     </button>
   );

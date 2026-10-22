@@ -104,6 +104,9 @@ export const api = {
   plSetCover: (id: string, image: number[] | null) => call<void>("pl_set_cover", { id, image }),
   plAdd: (id: string, tracks: T.Track[]) => call<number>("pl_add", { id, tracks }),
   plReorder: (id: string, order: number[]) => call<void>("pl_reorder", { id, order }),
+  plRemoveTrack: (id: string, trackId: string) => call<number>("pl_remove_track", { id, trackId }),
+  savedIn: (track: T.Track) => call<{ appPlaylists: string[]; remote: { id: string; title: string; contains: boolean }[] }>("saved_in", { track }),
+  ytPlaylistEdit: (playlistId: string, track: T.Track, add: boolean) => call<void>("yt_playlist_edit", { playlistId, track, add }),
   hidePlaylist: (id: string, title: string) => call<void>("hide_playlist", { id, title }),
 
   localFolders: () => call<string[]>("local_folders"),

@@ -223,6 +223,35 @@ await test(
   { youtube: true },
 );
 
+await test("Saved in: check and uncheck playlists for the playing song", async (p) => {
+  await p.click('.playerbar button[aria-label="Add to playlist"]');
+  const panel = p.locator(".savedin");
+  await panel.waitFor();
+  const row = (name) => panel.locator(".si-row", { hasText: name }).locator("input");
+  await row("Road trip").waitFor();
+  assert.equal(await row("Road trip").isChecked(), true);
+  assert.equal(await row("Rainy day").isChecked(), false);
+  await row("Road trip").click();
+  await row("Rainy day").click();
+  await p.waitForFunction(() => window.__CALLS__.includes("pl_remove_track") && window.__CALLS__.includes("pl_add"));
+  assert.equal(await row("Road trip").isChecked(), false);
+  assert.equal(await row("Rainy day").isChecked(), true);
+  await p.keyboard.press("Escape");
+  assert.equal(await panel.count(), 0);
+});
+
+await test(
+  "Saved in: YouTube playlists can be added to",
+  async (p) => {
+    await p.click('.playerbar button[aria-label="Add to playlist"]');
+    const box = p.locator(".savedin .si-row", { hasText: "My YouTube mix" }).locator("input");
+    await box.click();
+    await p.waitForFunction(() => window.__CALLS__.includes("yt_playlist_edit"));
+    assert.equal(await box.isChecked(), true);
+  },
+  { youtube: true },
+);
+
 await test(
   "in-app self-test (--self-test, used on Windows CI) reaches the end",
   async (p) => {

@@ -1004,6 +1004,45 @@ pub fn pl_add(app: AppHandle, state: S, id: String, tracks: Vec<Track>) -> Resul
     Ok(n)
 }
 
+/// Where a song is saved, for the "Saved in" checkboxes: app playlists holding it, and on YouTube
+/// the user's own playlists from YouTube Music's "Save to playlist" list.
+#[tauri::command]
+pub async fn saved_in(app: AppHandle, state: S<'_>, track: Track) -> Result<SavedIn> {
+    let app_playlists = state.db().playlists_containing(&track.id)?;
+    let mut remote = Vec::new();
+    if state.flavor == Flavor::YouTube && track.source == Source::Youtube && !track.episode {
+        if let Some(vid) = track.stream_key.clone() {
+            // Signed out or refused: just no YouTube section.
+            remote = yt_call!(app, state, |y| y.playlist_options(&vid)).unwrap_or_default();
+        }
+    }
+    Ok(SavedIn { app_playlists, remote })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedIn {
+    app_playlists: Vec<String>,
+    remote: Vec<ytm::PlaylistOption>,
+}
+
+#[tauri::command(async)]
+pub fn pl_remove_track(app: AppHandle, state: S, id: String, track_id: String) -> Result<usize> {
+    let n = state.db().playlist_remove_track(&id, &track_id)?;
+    let _ = app.emit("playlists-changed", ());
+    Ok(n)
+}
+
+/// Add a song to, or remove it from, one of the user's own YouTube playlists.
+#[tauri::command]
+pub async fn yt_playlist_edit(app: AppHandle, state: S<'_>, playlist_id: String, track: Track, add: bool) -> Result<()> {
+    if state.flavor != Flavor::YouTube || track.source != Source::Youtube {
+        return Err(Error::Unsupported("adding to YouTube playlists".into()));
+    }
+    let vid = track.stream_key.clone().ok_or_else(|| Error::Invalid("no video id".into()))?;
+    yt_call!(app, state, |y| y.edit_playlist(&playlist_id, &vid, add))
+}
+
 #[tauri::command(async)]
 pub fn pl_reorder(app: AppHandle, state: S, id: String, order: Vec<usize>) -> Result<()> {
     state.db().playlist_reorder(&id, &order)?;

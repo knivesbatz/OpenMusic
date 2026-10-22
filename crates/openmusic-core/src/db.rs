@@ -299,6 +299,22 @@ impl Db {
         Ok(tracks.len())
     }
 
+    /// App playlists that contain the track.
+    pub fn playlists_containing(&self, track_id: &str) -> Result<Vec<String>> {
+        let mut st = self.conn.prepare("SELECT DISTINCT playlist_id FROM playlist_items WHERE track_id=?1")?;
+        let rows = st.query_map([track_id], |r| r.get::<_, String>(0))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// Remove every copy of a track from a playlist; returns how many were removed.
+    pub fn playlist_remove_track(&mut self, id: &str, track_id: &str) -> Result<usize> {
+        let n = self.conn.execute("DELETE FROM playlist_items WHERE playlist_id=?1 AND track_id=?2", params![id, track_id])?;
+        if n > 0 {
+            self.conn.execute("UPDATE playlists SET updated_at=?2 WHERE id=?1", params![id, now()])?;
+        }
+        Ok(n)
+    }
+
     /// Rewrite the playlist in a new order. `order` lists the current indices in their new order;
     /// indices missing from `order` are removed. Runs in one transaction so a crash mid-way can't
     /// leave a half-reordered playlist.
@@ -535,6 +551,13 @@ mod tests {
         // duplicates of the same track are allowed and kept distinct
         db.playlist_add(&p.id, &[track("a")]).unwrap();
         assert_eq!(db.playlist_tracks(&p.id).unwrap().len(), 4);
+        assert_eq!(db.playlists_containing("a").unwrap(), [p.id.clone()]);
+        assert!(db.playlists_containing("zz").unwrap().is_empty());
+        // unchecking a song removes every copy, keeping the rest in order
+        assert_eq!(db.playlist_remove_track(&p.id, "a").unwrap(), 2);
+        let ids: Vec<_> = db.playlist_tracks(&p.id).unwrap().into_iter().map(|t| t.id).collect();
+        assert_eq!(ids, ["d", "c"]);
+        db.playlist_add(&p.id, &[track("a"), track("a")]).unwrap();
         assert_eq!(db.playlists().unwrap()[0].track_count, Some(4));
         db.playlist_delete(&p.id).unwrap();
         assert!(db.playlist_tracks(&p.id).unwrap().is_empty());
