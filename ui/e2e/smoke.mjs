@@ -294,6 +294,19 @@ await test(
   },
 );
 
+await test("search inside a playlist filters its songs", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "Road trip" }).click();
+  await p.waitForSelector(".tl-row:not(.tl-head)");
+  const before = await p.locator(".tl-row:not(.tl-head)").count();
+  await p.click('button[aria-label="Search in playlist"]');
+  await p.fill('.pl-find input', "paper");
+  await p.waitForFunction((n) => document.querySelectorAll(".tl-row:not(.tl-head)").length < n, before);
+  // Title, artist or album matches (the album column shows on desktop).
+  for (const row of await p.locator(".tl-row:not(.tl-head)").allTextContents()) assert.match(row.toLowerCase(), /paper/);
+  await p.fill('.pl-find input', "zzzz-nothing");
+  await p.waitForSelector("text=No songs match");
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");

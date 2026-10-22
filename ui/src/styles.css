@@ -864,3 +864,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 /* Multi-disc albums: a heading above each disc's tracks. */
 .disc + .disc { margin-top: 12px; }
 .disc-head { display: flex; align-items: center; gap: 10px; margin: 8px 0 4px; padding: 0 16px; color: var(--muted); font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.01em; }
+
+/* Search in playlist: the icon opens a small field beside Sort. */
+.pl-find { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; margin-right: 4px; border-radius: 8px; background: var(--surface-3); color: var(--muted); animation: om-fade 0.12s ease-out; }
+.pl-find input { width: 180px; background: transparent; border: 0; outline: none; color: var(--text); font-size: 0.875rem; }
+@media (max-width: 760px) { .pl-find input { width: 120px; } }
