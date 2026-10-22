@@ -11,6 +11,9 @@ import { isTouch } from "./util";
 import { startBroadcast } from "./player/bridge";
 import { boot } from "./store/app";
 import { useSettings } from "./store/settings";
+// Figtree (SIL OFL), bundled so text looks the same on Windows and Android, offline too. The
+// closest open typeface to Spotify's geometric sans; Japanese falls back to the system fonts.
+import "@fontsource-variable/figtree";
 import "./styles.css";
 import { api, inTauri, setArtBase } from "./api";
 import { useApp } from "./store/app";

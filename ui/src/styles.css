@@ -26,17 +26,21 @@ html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI Variable Text", "Segoe UI", "Yu Gothic UI", "Meiryo", "Hiragino Sans", system-ui, sans-serif;
+  font-family: "Figtree Variable", "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", "Meiryo", "Segoe UI", system-ui, sans-serif;
   font-size: 0.875rem;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
   overflow: hidden;
   user-select: none;
 }
 button, input, select { font: inherit; color: inherit; }
 button { background: none; border: 0; cursor: pointer; padding: 0; }
 button:disabled { cursor: default; opacity: 0.4; }
-h1 { font-size: 2rem; font-weight: 800; margin: 0 0 16px; letter-spacing: -0.02em; }
-h2 { font-size: 1.5rem; font-weight: 700; margin: 0 0 12px; letter-spacing: -0.01em; }
+h1 { font-size: 2rem; font-weight: 800; margin: 0 0 16px; letter-spacing: -0.03em; line-height: 1.15; }
+h2 { font-size: 1.5rem; font-weight: 750; margin: 0 0 12px; letter-spacing: -0.02em; line-height: 1.2; }
 p { margin: 0 0 8px; }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 4px; }
@@ -781,3 +785,68 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 
 /* Your Library (phone): the Albums / Artists sort sits above the list. */
 .lib-sort-row { display: flex; justify-content: flex-end; margin: -6px 0 6px; }
+
+/* ---- typography (Spotify-like: heavy, tight titles; regular body; even digits for times) ------ */
+.hero-text h1 { font-weight: 900; letter-spacing: -0.045em; }
+.artist-hero h1 { font-weight: 900; letter-spacing: -0.045em; }
+.greeting { letter-spacing: -0.03em; }
+.card-title { font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.005em; }
+.card-sub, .tl-text .sub, .side-text .sub, .pb-meta .sub { font-weight: 450; }
+.tl-text .name { font-weight: 450; }
+.side-text .name, .pb-meta .name { font-weight: 500; }
+.shortcut .name { font-weight: 700; letter-spacing: -0.01em; }
+.nav-item, .lib-head .nav-item { letter-spacing: -0.01em; }
+.tl-dur, .tl-num, .pb-time, .time, .hero-stats, .q-row .d, .pp-times { font-variant-numeric: tabular-nums; }
+.pill, .chip { font-weight: 600; letter-spacing: -0.005em; }
+
+/* ---- comfort pass: calmer scrolling, roomier targets, Spotify-weight type on phones ------------ */
+/* No rubber-band bounce or pull-to-refresh glow inside the app's own scroll areas. */
+.main, .pp-scroll, .lib-list, .queue-scroll, .si-list, .lyrics { overscroll-behavior: contain; }
+
+@media (max-width: 760px) {
+  body { line-height: 1.35; }
+  /* Comfortable tap targets for the small icon buttons. */
+  .icon-btn { min-width: 40px; min-height: 40px; display: inline-grid; place-items: center; }
+  .tl-dur .more { min-width: 36px; }
+
+  /* Tabs: the current one reads bolder, like Spotify's filled icons. */
+  .mobile-tabs button { font-weight: 500; letter-spacing: 0.01em; transition: color 0.15s; }
+  .mobile-tabs button.on { font-weight: 700; }
+  .mobile-tabs button.on svg { stroke-width: 2.9; }
+  .mobile-tabs button:active svg { transform: scale(0.9); }
+  .mobile-tabs svg { transition: transform 0.12s; }
+
+  /* Lists: rounded thumbnails, title in regular weight, artist quieter. */
+  .tl-row .art, .lib-row > .art:not(.round) { border-radius: 4px; }
+  .lib-row-text .name { font-weight: 600; letter-spacing: -0.01em; }
+  .hero-text h1, .hero-text h1.long { font-size: 1.625rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15; }
+
+  /* Song screen: bigger rounded cover, bold tight title, quieter artist. */
+  .pp-art { border-radius: 8px; box-shadow: 0 16px 48px #0009; margin-top: 16px; }
+  .pp-title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.2; }
+  .pp-artist { font-size: 1rem; color: #ffffffb3; font-weight: 500; }
+  .pp-context { font-weight: 700; letter-spacing: 0.01em; }
+  .pp-lyrics { border-radius: 14px; }
+}
+
+/* ---- thicker, rounder controls ----------------------------------------------------------------- */
+.pill { font-weight: 700; padding: 11px 26px; box-shadow: 0 1px 0 #ffffff10 inset; }
+.pill.small { padding: 8px 18px; }
+.pill.ghost { border-width: 1.5px; }
+.chip { padding: 8px 15px; font-weight: 600; }
+.icon-btn { padding: 7px; }
+.icon-btn:not(.like):not(.more):hover:not(:disabled) { background: #ffffff12; }
+.icon-btn.on:hover { background: #1db9541a; }
+.round-btn { width: 34px; height: 34px; }
+.play-btn { box-shadow: 0 2px 8px #0006; }
+.fab { box-shadow: 0 8px 18px #00000066; }
+.select, .lib-filter { border-radius: 8px; }
+.menu { border-radius: 10px; padding: 6px; }
+.menu button { border-radius: 6px; }
+.dialog { border-radius: 14px; }
+.side-item { border-radius: 8px; }
+.tl-row { border-radius: 8px; }
+.card { border-radius: 10px; }
+.card-art .art { border-radius: 8px; }
+.shortcut { border-radius: 8px; }
+.toast { border-radius: 10px; }
