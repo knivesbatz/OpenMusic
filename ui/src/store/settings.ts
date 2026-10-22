@@ -23,8 +23,10 @@ export interface Settings {
   reducedMotion: boolean;
   highContrast: boolean;
   jpMode: JpMode;
-  /** Show MusicBrainz aliases of artist names in the UI language. */
+  /** Names in the UI language: MusicBrainz aliases for artists, translations of titles in other scripts. */
   translateNames: boolean;
+  /** Show lyrics in another language with a translation under each line. */
+  translateLyrics: boolean;
   /** Scrobble to Last.fm once connected. Off by default (new key, so earlier "on" defaults reset). */
   lastfmScrobble: boolean;
   sidebarCollapsed: boolean;
@@ -47,6 +49,7 @@ export const defaults: Settings = {
   highContrast: false,
   jpMode: "original",
   translateNames: true,
+  translateLyrics: true,
   lastfmScrobble: false,
   sidebarCollapsed: false,
   htpc: false,

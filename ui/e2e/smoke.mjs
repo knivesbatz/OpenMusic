@@ -213,6 +213,17 @@ await test(
 );
 
 await test(
+  "titles in another script are translated, with the original on hover",
+  async (p) => {
+    const name = p.locator(".pb-meta .name span[title]");
+    await name.waitFor();
+    assert.equal(await name.getAttribute("title"), "夜明けの歌");
+    assert.equal((await name.textContent()).trim(), "[en] 夜明けの歌");
+  },
+  { youtube: true },
+);
+
+await test(
   "in-app self-test (--self-test, used on Windows CI) reaches the end",
   async (p) => {
     await p.waitForFunction(() => window.__SELFTEST_EXIT, null, { timeout: 90000 });

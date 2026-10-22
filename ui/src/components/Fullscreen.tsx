@@ -12,7 +12,8 @@ import { useUi } from "../store/ui";
 import type { Lyrics, Track } from "../types";
 import { cls } from "../util";
 import { displayText } from "../romaji";
-import { Art, ArtistName, JpText } from "./common";
+import { useLyricsTranslation } from "../store/translate";
+import { Art, ArtistName, TitleText } from "./common";
 import * as I from "./Icons";
 import { SaveButton, Seek, Transport, Volume } from "./PlayerBar";
 import { QueuePanel } from "./QueuePanel";
@@ -50,6 +51,7 @@ export function useLyrics(track?: Track) {
 export function LyricsView({ track }: { track: Track }) {
   const t = useT();
   const { lyrics, loading } = useLyrics(track);
+  const translated = useLyricsTranslation(lyrics ? track.id : undefined, lyrics?.lines.map((l) => l.text));
   const pos = usePlayer((s) => s.position);
   const jp = useSettings((s) => s.jpMode);
   const reduced = useSettings((s) => s.reducedMotion);
@@ -86,6 +88,7 @@ export function LyricsView({ track }: { track: Track }) {
           >
             {main || "♪"}
             {alt && <span className="alt">{alt}</span>}
+            {translated?.[i] && <span className="tr">{translated[i]}</span>}
           </p>
         );
       })}
@@ -168,14 +171,14 @@ export function Fullscreen() {
         <div className="fs-meta">
           <div>
             <div className="fs-title">
-              <JpText text={tr?.title} />
+              <TitleText text={tr?.title} />
             </div>
             <div className="fs-artist">
               <ArtistName name={tr?.artist} />
               {tr?.album && (
                 <>
                   {" • "}
-                  <JpText text={tr.album} />
+                  <TitleText text={tr.album} />
                 </>
               )}
             </div>

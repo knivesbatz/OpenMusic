@@ -49,6 +49,8 @@
     download_list: [],
     liked_ids: [],
     localized_artist_names: {},
+    // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.
+    translate_texts: (a) => a.texts.map((t) => (/[\u3040-\u30ff\u4e00-\u9fff]/.test(t) ? "[en] " + t : null)),
     search_kind: (a) => ({ top: null, tracks: a.kind === "songs" ? [...tracks, ...tracks.map((t) => ({ ...t, id: t.id + "b", title: t.title + " (more)" }))] : [], albums: a.kind === "albums" ? albums : [], artists: a.kind === "artists" ? artists : [], playlists: [], podcasts: [], episodes: [] }),
     search: { top: { type: "artist", ...artists[0] }, tracks: [...tracks.slice(0, 6), { ...tracks[0], id: "local:abc", source: "local", title: "Slow Lights (home demo)", artwork: null }], albums: albums.slice(0, 4), artists: artists.slice(0, 4), playlists: playlists.slice(0, 3), podcasts: [], episodes: [] },
     get_lyrics: { synced: true, source: "LRCLIB (sample)", lines: [

@@ -178,6 +178,19 @@ impl Db {
         Ok(())
     }
 
+    /// Clear the cache except entries whose keys start with one of `keep`.
+    pub fn cache_clear_except(&self, keep: &[&str]) -> Result<()> {
+        let rows: Vec<String> = {
+            let mut st = self.conn.prepare("SELECT key FROM cache")?;
+            let keys = st.query_map([], |r| r.get::<_, String>(0))?.collect::<std::result::Result<Vec<_>, _>>()?;
+            keys
+        };
+        for k in rows.into_iter().filter(|k| !keep.iter().any(|p| k.starts_with(p))) {
+            self.conn.execute("DELETE FROM cache WHERE key=?1", [&k])?;
+        }
+        Ok(())
+    }
+
     /// Bounded cache: drop entries expired for more than a week.
     pub fn cache_prune(&self) -> Result<()> {
         self.conn.execute("DELETE FROM cache WHERE expires_at < ?1", [now() - 7 * 86400])?;

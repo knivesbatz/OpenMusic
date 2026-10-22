@@ -10,7 +10,7 @@ import { useDisplayTrack } from "../store/songmeta";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import { cls, fmtTime, isTouch } from "../util";
-import { Art, ArtistName, JpText } from "./common";
+import { Art, ArtistName, TitleText } from "./common";
 import * as I from "./Icons";
 
 export function Seek({ compact }: { compact?: boolean }) {
@@ -172,7 +172,7 @@ export function PlayerBar() {
             </button>
             <div className="pb-meta" onContextMenu={(e) => openMenu(e, trackMenu(tr, { queueUid: undefined }))}>
               <button className="link name" onClick={() => (isTouch() ? useUi.setState({ fullscreen: true }) : tr.albumId && navigate({ name: "album", id: tr.albumId }))}>
-                <JpText text={tr.title} />
+                <TitleText text={tr.title} />
               </button>
               <button className="link sub" onClick={() => (isTouch() ? useUi.setState({ fullscreen: true }) : tr.artistId && navigate({ name: "artist", id: tr.artistId }))}>
                 <ArtistName name={tr.artist} />

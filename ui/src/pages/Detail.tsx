@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { albumMenu, changeCover, downloadTracks, playlistMenu, toggleSaved, trackMenu } from "../actions";
 import { api, artUrl, errorMessage } from "../api";
-import { Art, ArtistName, ErrorBox, JpText, Loading, PlayFab, useAsync, usePageTitle } from "../components/common";
+import { Art, ArtistName, ErrorBox, Loading, PlayFab, TitleText, useAsync, usePageTitle } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT } from "../i18n";
@@ -34,7 +34,7 @@ function Hero({ art, kind, title, meta, round, onArt }: { art?: string | null; k
       <div className="hero-text">
         <span className="small">{kind}</span>
         <h1 className={cls(title.length > 28 && "long")}>
-          <JpText text={title} />
+          <TitleText text={title} />
         </h1>
         <div className="hero-meta">{meta}</div>
       </div>
@@ -312,7 +312,7 @@ function EpisodeRow({ ep, onPlay }: { ep: Track; onPlay: () => void }) {
       <Art src={ep.artwork} size={240} className="ep-art" />
       <div className="ep-body">
         <div className="ep-title">
-          <JpText text={ep.title} />
+          <TitleText text={ep.title} />
         </div>
         {ep.description && <div className="ep-desc">{ep.description}</div>}
         <div className="ep-actions">

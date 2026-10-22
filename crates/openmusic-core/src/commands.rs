@@ -81,7 +81,17 @@ pub fn settings_get(state: S) -> Result<Value> {
 #[tauri::command]
 pub async fn settings_set(state: S<'_>, settings: Value) -> Result<()> {
     if let Some(hl) = settings.get("language").and_then(|l| l.as_str()) {
-        state.ytm.write().await.hl = hl.to_string();
+        let changed = {
+            let mut y = state.ytm.write().await;
+            let changed = y.hl != hl;
+            y.hl = hl.to_string();
+            changed
+        };
+        // YouTube Music answers in the UI language (localized titles where it has them): drop
+        // pages cached in the old language. Translations and name aliases are kept.
+        if changed && state.flavor == Flavor::YouTube {
+            state.db().cache_clear_except(&["tr:", "mbalias:"])?;
+        }
     }
     state.db().kv_set("settings", &settings)
 }
@@ -1467,6 +1477,19 @@ pub async fn localized_artist_names(
         }
     }
     Ok(out)
+}
+
+/// Machine translations of `texts` into the UI language (lyrics lines, titles), aligned with the
+/// input; `None` where a text is already in that language. Cached on disk.
+#[tauri::command]
+pub async fn translate_texts(state: S<'_>, texts: Vec<String>, locale: String) -> Result<Vec<Option<String>>> {
+    if locale != "ja" && locale != "en" {
+        return Err(Error::Invalid(format!("unsupported locale {locale}")));
+    }
+    if texts.len() > 400 {
+        return Err(Error::Invalid("too many texts".into()));
+    }
+    crate::translate::translate(&state, &texts, &locale).await
 }
 
 // ---- YouTube profiles (brand accounts) ------------------------------------------------------

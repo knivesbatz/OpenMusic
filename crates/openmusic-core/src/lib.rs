@@ -17,6 +17,7 @@ pub mod names;
 pub mod plex;
 pub mod secrets;
 pub mod state;
+pub mod translate;
 #[cfg(desktop)]
 mod tray;
 pub mod updater;
@@ -271,6 +272,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::media_stop,
             commands::presence_update,
             commands::presence_clear,
+            commands::translate_texts,
             commands::self_test_log,
             commands::update_check,
             commands::update_download,

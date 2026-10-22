@@ -11,7 +11,7 @@ import { useDisplayTrack } from "../store/songmeta";
 import { navigate, openMenu } from "../store/ui";
 import type { PlayContext, Track } from "../types";
 import { cls, fmtMs, isTouch } from "../util";
-import { Art, ArtistName, JpText } from "./common";
+import { Art, ArtistName, TitleText } from "./common";
 import { IClock, IHeart, IHeartFill, IMore, IPlay } from "./Icons";
 
 /** The main view's scroll container; lists virtualize against it. */
@@ -199,7 +199,7 @@ const Row = memo(function Row(p: RowProps) {
         {p.showArt && <Art src={tr.artwork} size={80} className="sm" />}
         <span className="tl-text">
           <span className="name">
-            <JpText text={tr.title} />
+            <TitleText text={tr.title} />
           </span>
           <span className="sub">
             {tr.explicit && <span className="badge">{t("explicit")}</span>}
@@ -220,7 +220,7 @@ const Row = memo(function Row(p: RowProps) {
       </span>
       {p.showAlbum && (
         <span className="tl-album">
-          <JpText text={tr.album} />
+          <TitleText text={tr.album} />
         </span>
       )}
       <span className="tl-dur">

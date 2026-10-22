@@ -377,6 +377,7 @@ p { margin: 0 0 8px; }
 .lyrics .line.past { color: #ffffffb3; }
 .lyrics .line.active { color: #fff; }
 .lyrics .line .alt { display: block; font-size: 0.6em; font-weight: 600; opacity: 0.8; }
+.lyrics .line .tr { display: block; margin-top: 4px; font-size: 0.55em; font-weight: 600; opacity: 0.75; }
 @media (max-width: 900px) { .fs-main.with-lyrics { flex-direction: column; } .fs-main.with-lyrics .fs-left { flex: 0 0 auto; } .fs-main.with-lyrics .fs-art { height: 28vh; } }
 
 /* ---- PiP window --------------------------------------------------------------------------- */
