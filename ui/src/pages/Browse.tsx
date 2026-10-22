@@ -370,12 +370,42 @@ export function Search({ q }: { q: string }) {
   );
 }
 
+/** Search with nothing typed: Spotify's colourful "Browse all" tiles, here for your library. */
 function BrowseEmpty() {
   const t = useT();
+  const caps = useApp((s) => s.info?.capabilities);
+  const pls = useApp((s) => s.library?.playlists);
+  const liked = pls?.find((p) => /^yt:(VL)?LM$/.test(p.id));
+  const tiles: { label: string; color: string; go: () => void; icon: React.ReactNode }[] = [
+    ...(liked ? [{ label: t("likedSongs"), color: "#5038a0", go: () => navigate({ name: "playlist", id: liked.id }), icon: <I.IHeartFill size={36} /> }] : []),
+    { label: t("recentlyPlayed"), color: "#1e3264", go: () => navigate({ name: "library", tab: "recent" }), icon: <I.IClock size={36} /> },
+    { label: t("playlists"), color: "#8d67ab", go: () => navigate({ name: "library", tab: "playlists" }), icon: <I.IQueue size={36} /> },
+    { label: t("albums"), color: "#e8115b", go: () => navigate({ name: "library", tab: "albums" }), icon: <I.IMusic size={36} /> },
+    { label: t("artists"), color: "#148a08", go: () => navigate({ name: "library", tab: "artists" }), icon: <I.IMic size={36} /> },
+    ...(caps?.podcasts
+      ? [
+          { label: t("podcasts"), color: "#006450", go: () => navigate({ name: "library", tab: "podcasts" }), icon: <I.IBookmark size={36} /> },
+          { label: t("yourEpisodes"), color: "#477d95", go: () => navigate({ name: "episodes" }), icon: <I.IPlay size={36} /> },
+        ]
+      : []),
+    { label: t("localFiles"), color: "#ba5d07", go: () => navigate({ name: "local" }), icon: <I.IFolder size={36} /> },
+    ...(caps?.downloads ? [{ label: t("downloads"), color: "#27856a", go: () => navigate({ name: "downloads" }), icon: <I.IDownload size={36} /> }] : []),
+  ];
   return (
     <div className="page">
       <h1>{t("search")}</h1>
       <p className="muted">{t("searchHint")}</p>
+      <h2>{t("browseAll")}</h2>
+      <div className="browse-tiles">
+        {tiles.map((x) => (
+          <button key={x.label} className="browse-tile" style={{ background: x.color }} onClick={x.go}>
+            <span>{x.label}</span>
+            <span className="bt-icon" aria-hidden="true">
+              {x.icon}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

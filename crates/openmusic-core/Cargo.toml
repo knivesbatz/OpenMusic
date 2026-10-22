@@ -26,6 +26,8 @@ log = "0.4"
 tauri-plugin-openmusic-media = { path = "../tauri-plugin-openmusic-media" }
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 uuid = { version = "1", features = ["v4"] }
+# Artwork is shrunk to the size shown before it is cached (decode JPEG/PNG/WebP, encode JPEG).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 
 # Desktop only: single instance, launch at startup, OS credential store. On Android, secrets live
 # in the app's private storage (see secrets.rs).

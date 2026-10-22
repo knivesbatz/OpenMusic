@@ -3,6 +3,7 @@ import { useT } from "../i18n";
 import { openProfilePicker, useApp } from "../store/app";
 import { back, forward, navigate, useUi } from "../store/ui";
 import * as I from "./Icons";
+import { usePhoneLayout } from "./common";
 import { cls } from "../util";
 
 export function TopBar() {
@@ -23,6 +24,35 @@ export function TopBar() {
   const scrolled = useUi((s) => s.scrolled);
   const pageTitle = useUi((s) => s.pageTitle);
   const showTitle = scrolled === 2 && pageTitle && cur.name !== "search";
+  const phone = usePhoneLayout();
+
+  // Phone (Spotify mobile): no search field outside Search. Home and Your Library show the
+  // account button (opens Settings); other pages a back button and, once scrolled, their title.
+  if (phone && cur.name !== "search") {
+    const root = cur.name === "home" || cur.name === "library";
+    const initial = (auth?.account ?? "").trim().slice(0, 1).toUpperCase() || "♪";
+    return (
+      <header className={cls("topbar phone-bar", scrolled > 0 && "solid")}>
+        {root ? (
+          <button className="avatar-btn" aria-label={t("settings")} title={t("settings")} onClick={() => navigate({ name: "settings" })}>
+            {initial}
+          </button>
+        ) : (
+          <button className="round-btn" aria-label={t("back")} title={t("back")} disabled={pos === 0} onClick={back}>
+            <I.IBack size={18} />
+          </button>
+        )}
+        {showTitle && <span className="phone-title">{pageTitle.title}</span>}
+        <span className="grow" />
+        {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
+        {cur.name === "library" && (
+          <button className="icon-btn" aria-label={t("search")} title={t("search")} onClick={() => navigate({ name: "search" })}>
+            <I.ISearch size={22} />
+          </button>
+        )}
+      </header>
+    );
+  }
 
   return (
     <header className={cls("topbar", scrolled > 0 && "solid")}>

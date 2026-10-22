@@ -207,7 +207,11 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 }
                 commands::flush_scrobbles(&h, &st).await;
                 let art_dir = st.dirs.art.clone();
-                let _ = tauri::async_runtime::spawn_blocking(move || art::prune(&art_dir)).await;
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    art::upgrade_cache(&art_dir);
+                    art::prune(&art_dir);
+                })
+                .await;
             });
             // Scrobbles that failed while offline are retried every 10 minutes, not only when the
             // next track is scrobbled.

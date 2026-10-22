@@ -317,15 +317,21 @@ export function SettingsPage() {
 
       <section>
         <h2>{t("language")}</h2>
-        <Select
-          label={t("language")}
-          value={s.language}
-          onChange={(v) => s.set({ language: v })}
-          options={[
-            { value: "en", label: "English" },
-            { value: "ja", label: "日本語" },
-          ]}
-        />
+        <div className="setting">
+          <div className="grow">
+            <div>{t("appLanguage")}</div>
+            <div className="muted small">{t("appLanguageHint")}</div>
+          </div>
+          <Select
+            label={t("language")}
+            value={s.language}
+            onChange={(v) => s.set({ language: v })}
+            options={[
+              { value: "en", label: "English" },
+              { value: "ja", label: "日本語" },
+            ]}
+          />
+        </div>
         <label className="setting">
           <div className="grow">
             <div>{t("japaneseDisplay")}</div>

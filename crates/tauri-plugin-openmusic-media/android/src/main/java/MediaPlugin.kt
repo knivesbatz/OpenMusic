@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.WebView
 import androidx.core.app.ActivityCompat
@@ -116,11 +117,23 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve()
   }
 
-  // The activity pauses its WebView when it goes to the background, which can silence the
-  // player. While music is playing, resume it again once the activity has finished pausing.
-  override fun onPause() {
-    if (MediaBridge.nowPlaying?.playing == true) {
-      Handler(Looper.getMainLooper()).post { webView?.onResume() }
+  // Leaving the app pauses the activity's WebView (wry calls WebView.onPause()) and hides the
+  // page, which pauses the song: the <audio> element stops, and YouTube's mobile player pauses a
+  // hidden page. While music is playing, undo all of that once the activity has finished pausing
+  // or stopping, and tell the player so it resumes a song that was paused on the way out.
+  override fun onPause() = keepPlaying()
+
+  override fun onStop() = keepPlaying()
+
+  private fun keepPlaying() {
+    if (MediaBridge.nowPlaying?.playing != true) return
+    val wv = webView ?: return
+    Handler(Looper.getMainLooper()).post {
+      wv.onResume()
+      wv.resumeTimers()
+      // The page counts as visible again, so it isn't treated as a background tab.
+      wv.dispatchWindowVisibilityChanged(View.VISIBLE)
+      wv.evaluateJavascript("window.__omBackground&&window.__omBackground()", null)
     }
   }
 

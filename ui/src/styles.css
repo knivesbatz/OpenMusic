@@ -712,3 +712,69 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .lyrics-panel .lp-body { flex: 1; min-height: 0; }
 .lyrics-panel .lyrics { padding: 24px 16px 40%; mask-image: linear-gradient(transparent, #000 8%, #000 85%, transparent); }
 .lyrics-panel .lyrics .line { font-size: 1.25rem; margin-bottom: 14px; }
+
+/* ---- Search: "Browse your library" tiles ------------------------------------------------------ */
+.browse-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-top: 8px; }
+.browse-tile { position: relative; aspect-ratio: 1.7; border-radius: 8px; overflow: hidden; padding: 14px 16px; display: flex; align-items: flex-start; text-align: left; color: #fff; font-weight: 800; font-size: 1.125rem; line-height: 1.2; transition: transform 0.15s ease-out, filter 0.15s; }
+.browse-tile:hover, .browse-tile:focus-visible { transform: scale(1.02); filter: brightness(1.08); }
+.bt-icon { position: absolute; right: -4px; bottom: -6px; transform: rotate(22deg); opacity: 0.9; filter: drop-shadow(0 4px 10px #0006); }
+.bt-icon svg { width: 64px; height: 64px; }
+
+/* ---- phone polish (Spotify mobile proportions) -------------------------------------------------- */
+@media (max-width: 760px) {
+  button, [role="button"], a { -webkit-tap-highlight-color: transparent; }
+
+  /* Top bar: account button or back, the page title once scrolled; no search field outside Search. */
+  .topbar.phone-bar { gap: 12px; padding: 10px 16px; min-height: 52px; }
+  .avatar-btn { width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center; background: #f573a0; color: #000; font-weight: 800; font-size: 0.9375rem; }
+  .phone-title { min-width: 0; font-weight: 800; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: om-fade 0.15s ease-out; }
+  .phone-bar .round-btn { width: 34px; height: 34px; background: #0008; }
+  /* Search keeps only its field: Settings is the account button on Home and Your Library. */
+  .topbar:not(.phone-bar) .round-btn { display: none; }
+  .browse-tiles { margin-bottom: 8px; }
+  .page > h2 { margin-top: 24px; }
+
+  /* Home: two-line shortcut titles instead of "Road t…", bigger shelf cards (about 2.3 on screen). */
+  .greeting { font-size: 1.5rem; margin: 4px 0 14px; }
+  .shortcuts { gap: 8px; }
+  .shortcut { height: 56px; border-radius: 6px; gap: 10px; background: #ffffff17; }
+  .shortcut .art { width: 56px; height: 56px; }
+  .shortcut .name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 0.8125rem; line-height: 1.25; padding-right: 8px; }
+  .shelf { margin-top: 20px; }
+  .shelf-row { grid-auto-columns: min(40vw, 168px); margin: 0 -8px; }
+  .card { padding: 8px; }
+  .card-title { font-size: 0.875rem; margin-bottom: 2px; }
+  .card-sub { font-size: 0.75rem; }
+
+  /* Touch feedback in place of hover. */
+  .card, .shortcut, .lib-row, .tl-row, .browse-tile, .ep-row { transition: transform 0.12s ease-out, opacity 0.12s; }
+  .card:active, .shortcut:active, .lib-row:active, .tl-row:active, .browse-tile:active { transform: scale(0.97); opacity: 0.85; }
+  .card:hover, .shortcut:hover { background: transparent; }
+  .shortcut:hover { background: #ffffff17; }
+
+  /* Mini player tinted with the cover's colour, softer bar behind the tabs. */
+  .playerbar { isolation: isolate; overflow: hidden; background: #2a2a2a; box-shadow: 0 6px 18px #0007; }
+  .playerbar::before { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--pb-wash, none) center / 4000% no-repeat; }
+  .playerbar::after { content: ""; position: absolute; inset: 0; z-index: -1; background: #00000059; }
+  .mobile-tabs { padding-top: 10px; background: linear-gradient(#0000, #000000eb 40%); }
+  .mobile-tabs button { min-width: 72px; }
+
+  /* Lists: comfortable rows, quieter overflow buttons. */
+  .tl-row { min-height: 56px; }
+  .tl-dur .more { opacity: 0.7; }
+
+  /* Playlist actions: the sort button is just its icon here. */
+  .sort-btn > span { display: none; }
+
+  /* Song screen: the current lyric line is a hint, not a second title. */
+  .pp-line { margin: 18px 0 4px; font-size: 0.875rem; font-weight: 600; color: #ffffffb3; }
+
+  /* Settings: controls drop under their label instead of squeezing it. */
+  .setting { flex-wrap: wrap; gap: 8px 16px; }
+  .setting > .grow { flex: 1 1 220px; }
+  .settings section { margin: 24px 0; }
+
+  .browse-tiles { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .browse-tile { font-size: 1rem; aspect-ratio: 1.75; }
+  .bt-icon svg { width: 52px; height: 52px; }
+}
