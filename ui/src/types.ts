@@ -248,6 +248,9 @@ export interface PlexUser {
 
 /** Android media notification state (mirrors `NowPlaying` in tauri-plugin-openmusic-media). */
 export interface NowPlaying {
+  id: string;
+  /** Increases with every update; the notification ignores older ones arriving late. */
+  seq: number;
   title: string;
   artist: string;
   album: string | null;

@@ -13,6 +13,11 @@ use tauri::{
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NowPlaying {
+    /// Track id and the page's update counter (the plugin ignores updates older than its latest).
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub seq: u64,
     pub title: String,
     pub artist: String,
     pub album: Option<String>,

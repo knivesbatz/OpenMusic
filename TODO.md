@@ -117,6 +117,17 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.0.10
+- 🟡 Android notification ↔ player without the app IPC: notification/headset buttons call
+  `window.__omMedia` through `evaluateJavascript`; the page reports songs through the
+  `OpenMusicMedia` JavaScript interface (Rust still adds the cover file; `seq` drops late updates).
+  Fixes the notification not following song changes and Pause doing nothing in the background.
+  e2e covers the page side; not yet run on a device
+- 🟡 Pause on `ACTION_AUDIO_BECOMING_NOISY` (headphones unplugged, Bluetooth disconnected), Android
+- ⬜ Desktop: pause when the audio device disconnects (WebView2 doesn't tell the page)
+- ⬜ Android updates need the `ANDROID_KEYSTORE` / `ANDROID_KEYSTORE_PASSWORD` secrets (one last
+  uninstall after the switch)
+
 ## 1.0.9
 - 🟡 Windows title bar: main window undecorated on Windows (`lib.rs`), `TitleBar.tsx` with ••• menu,
   history, Home + search, actions and min/max/close (`core:window` capabilities). e2e with

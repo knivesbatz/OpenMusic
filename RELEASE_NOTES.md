@@ -1,9 +1,21 @@
-# OpenMusic 1.0.9
+# OpenMusic 1.0.10
 
-A Spotify-style title bar on Windows, a What's New feed, albums split by disc, search inside
-playlists, and a player bar that looks like Spotify's.
+Android fixes: the notification keeps up with the music while the app is in the background, and
+music pauses when headphones or a Bluetooth device disconnect.
 
-## New in 1.0.9
+## New in 1.0.10
+- **Android: the media notification follows the music in the background.** When the next song
+  started with the app in the background, the notification kept showing the old song, and its
+  buttons (also lock screen, headset and car controls) did nothing until you opened the app. The
+  player and the notification now talk to each other directly, so song changes show right away
+  and Pause, Play, Next and Previous work from anywhere.
+- **Android: music pauses when headphones or a Bluetooth device disconnect**, instead of carrying
+  on through the phone's speaker. Both apps.
+- **Android updates** need every version signed with the same key; until now each build had a
+  new one, so Android refused to install an update over the app. Once the project's signing key
+  is set up, updates install over the app and keep your sign-in, downloads and settings.
+
+## Also in 1.0.9
 - **Modern title bar on Windows**: the plain Windows frame is replaced by one bar like Spotify's
   desktop app. It has a ••• menu, back and forward, Home and search in the middle, and What's New,
   playlist transfer and settings on the right, with minimize, maximize and close at the end. Drag
