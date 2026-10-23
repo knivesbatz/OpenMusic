@@ -697,17 +697,23 @@ export function initMediaSession() {
 export function initRemoteControls() {
   if (!inTauri) return;
   // Controls outside the webview: the desktop tray menu and the Android notification.
-  listen<{ action: string; positionMs?: number }>("media-action", ({ payload }) => {
+  const onAction = (payload: { action: string; positionMs?: number }) => {
     if (payload.action === "play") play();
     else if (payload.action === "pause") pause();
     else if (payload.action === "toggle") toggle();
     else if (payload.action === "next") next();
     else if (payload.action === "previous") previous();
     else if (payload.action === "seek" && payload.positionMs != null) seek(payload.positionMs / 1000);
-  });
+  };
+  listen<{ action: string; positionMs?: number }>("media-action", ({ payload }) => onAction(payload));
   if (!/Android/i.test(navigator.userAgent)) return initDiscordPresence();
-  (window as unknown as { __omBackground?: () => void }).__omBackground = onAppBackground;
+  const w = window as unknown as AndroidBridge;
+  w.__omBackground = onAppBackground;
+  // The media plugin calls this directly for notification, headset and lock-screen buttons, and
+  // when headphones or a Bluetooth device disconnect.
+  w.__omMedia = onAction;
   let sent = { id: "", playing: false, at: 0, position: 0 };
+  let seq = 0;
   usePlayer.subscribe((s) => {
     const cur = Q.current(s.queue)?.track;
     if (!cur) {
@@ -720,18 +726,33 @@ export function initRemoteControls() {
     const expected = sent.position + (sent.playing ? (Date.now() - sent.at) / 1000 : 0);
     if (t.id === sent.id && s.playing === sent.playing && Math.abs(s.position - expected) < 3) return;
     sent = { id: t.id, playing: s.playing, at: Date.now(), position: s.position };
-    api
-      .mediaUpdate({
-        title: t.title,
-        artist: t.artist,
-        album: t.album ?? null,
-        artwork: t.artwork ?? null,
-        playing: s.playing,
-        positionMs: Math.round(s.position * 1000),
-        durationMs: Math.round(s.duration * 1000),
-      })
-      .catch(() => {});
+    const now = {
+      id: t.id,
+      seq: ++seq,
+      title: t.title,
+      artist: t.artist,
+      album: t.album ?? null,
+      artwork: t.artwork ?? null,
+      playing: s.playing,
+      positionMs: Math.round(s.position * 1000),
+      durationMs: Math.round(s.duration * 1000),
+    };
+    // Straight to the notification (works while the app is in the background), then through the
+    // app, which adds the cover as a local file.
+    try {
+      w.OpenMusicMedia?.update(JSON.stringify({ ...now, artwork: null }));
+    } catch {
+      /* the app's route below still updates it */
+    }
+    api.mediaUpdate(now).catch(() => {});
   });
+}
+
+/** What the Android media plugin adds to the page. */
+interface AndroidBridge {
+  __omBackground?: () => void;
+  __omMedia?: (a: { action: string; positionMs?: number }) => void;
+  OpenMusicMedia?: { update(json: string): void };
 }
 
 /**
@@ -757,6 +778,8 @@ function initDiscordPresence() {
     api
       .presenceUpdate(
         {
+          id: t.id,
+          seq: 0,
           title: t.title,
           artist: t.artist,
           album: t.album ?? null,

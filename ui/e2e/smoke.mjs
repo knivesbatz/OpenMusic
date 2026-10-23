@@ -16,8 +16,8 @@ const results = [];
 /** Rejects after `ms`: a crashed renderer can leave a Playwright call waiting forever. */
 const within = (ms, p, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms} ms`)), ms))]);
 
-async function test(name, fn, { youtube = false, init } = {}) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+async function test(name, fn, { youtube = false, init, userAgent } = {}) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, userAgent });
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -338,6 +338,26 @@ await test("Windows gets a Spotify-style title bar with navigation, search and w
   await p.fill(".titlebar #global-search", "slow");
   await p.waitForSelector(".page .search-top, .page h2");
 }, { init: () => { window.__MOCK__.app_info.platform = "windows"; } });
+
+await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {
+  await p.waitForFunction(() => typeof window.__omMedia === "function");
+  const first = await p.locator(".pb-meta .name").textContent();
+  await p.evaluate(() => window.__omMedia({ action: "next" }));
+  await p.waitForFunction((t) => document.querySelector(".pb-meta .name")?.textContent !== t, first);
+  const now = (await p.locator(".pb-meta .name").textContent()).trim();
+  await p.waitForFunction((t) => window.__NP.some((u) => u.title === t), now);
+  const sent = await p.evaluate(() => window.__NP);
+  const last = sent.at(-1);
+  assert.equal(last.title, now);
+  assert.ok(last.id && last.seq > 0 && last.artwork === null, JSON.stringify(last));
+  assert.ok(sent.every((u, i) => i === 0 || u.seq > sent[i - 1].seq), "seq increases");
+}, {
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36",
+  init: () => {
+    window.__NP = [];
+    window.OpenMusicMedia = { update: (j) => window.__NP.push(JSON.parse(j)) };
+  },
+});
 
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');

@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -20,6 +21,7 @@ import app.tauri.plugin.Channel
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import org.json.JSONObject
 
 @InvokeArg
 class ListenArgs {
@@ -28,6 +30,9 @@ class ListenArgs {
 
 @InvokeArg
 class NowPlayingArgs {
+  /** Track id and a counter from the page: a late update never replaces a newer one. */
+  var id: String = ""
+  var seq: Long = 0
   var title: String = ""
   var artist: String = ""
   var album: String? = null
@@ -46,16 +51,71 @@ class CookiesArgs {
 object MediaBridge {
   @Volatile var channel: Channel? = null
   @Volatile var nowPlaying: NowPlayingArgs? = null
+  @Volatile var webView: WebView? = null
+  private val main = Handler(Looper.getMainLooper())
 
-  /** A button on the notification, lock screen, headset or car was pressed. */
+  /**
+   * A button on the notification, lock screen, headset or car was pressed, or the audio output
+   * went away. Delivered straight into the page: the route through the app's IPC didn't reach a
+   * page running in the background, so the buttons did nothing until the app was opened.
+   */
   fun emit(action: String, positionMs: Long? = null) {
     val data = JSObject()
     data.put("action", action)
     if (positionMs != null) data.put("positionMs", positionMs)
+    val wv = webView
+    if (wv == null) {
+      sendToChannel(data)
+      return
+    }
+    main.post {
+      wakeUp(wv)
+      wv.evaluateJavascript("window.__omMedia?(window.__omMedia($data),1):0") { done ->
+        // The page hasn't set up its player yet: fall back to the IPC route.
+        if (done != "1") sendToChannel(data)
+      }
+    }
+  }
+
+  /** Undo the activity's pause of the webview so the page runs while the app is in the background. */
+  fun wakeUp(wv: WebView) {
+    wv.onResume()
+    wv.resumeTimers()
+    // The page counts as visible again, so it isn't treated as a background tab.
+    wv.dispatchWindowVisibilityChanged(View.VISIBLE)
+  }
+
+  private fun sendToChannel(data: JSObject) {
     try {
       channel?.send(data)
     } catch (e: Exception) {
-      Logger.error("openmusic-media: could not deliver $action: ${e.message}")
+      Logger.error("openmusic-media: could not deliver ${data.optString("action")}: ${e.message}")
+    }
+  }
+
+  /** Show `args` (from the page, or from Rust with the artwork file), starting the service if needed. */
+  fun apply(context: android.content.Context, args: NowPlayingArgs) {
+    val cur = nowPlaying
+    if (cur != null && args.seq < cur.seq) {
+      // An older update arriving late: only take its artwork, if it's for the same track.
+      if (args.id == cur.id && args.artwork != null && cur.artwork == null) {
+        cur.artwork = args.artwork
+        PlaybackService.instance?.refresh()
+      }
+      return
+    }
+    if (args.artwork == null && cur != null && cur.id == args.id) args.artwork = cur.artwork
+    nowPlaying = args
+    val running = PlaybackService.instance
+    if (running != null) {
+      running.refresh()
+    } else if (args.playing) {
+      // Started while the user is pressing play in the app, so the foreground start is allowed.
+      try {
+        ContextCompat.startForegroundService(context, Intent(context, PlaybackService::class.java))
+      } catch (e: Exception) {
+        Logger.error("openmusic-media: could not start the playback service: ${e.message}")
+      }
     }
   }
 }
@@ -70,6 +130,33 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
     // wry asks for a user gesture before media plays; the player starts the next song and the
     // crossfade's second player on its own, so allow it.
     webView.settings.mediaPlaybackRequiresUserGesture = false
+    MediaBridge.webView = webView
+    // `window.OpenMusicMedia.update(json)`: the page reports the playing song directly, so the
+    // notification follows song changes while the app is in the background.
+    webView.addJavascriptInterface(PageBridge(), "OpenMusicMedia")
+  }
+
+  inner class PageBridge {
+    @JavascriptInterface
+    fun update(json: String) {
+      val args = try {
+        val o = JSONObject(json)
+        NowPlayingArgs().apply {
+          id = o.optString("id")
+          seq = o.optLong("seq")
+          title = o.optString("title")
+          artist = o.optString("artist")
+          album = o.optString("album").takeIf { o.has("album") && !o.isNull("album") }
+          playing = o.optBoolean("playing")
+          positionMs = o.optLong("positionMs")
+          durationMs = o.optLong("durationMs")
+        }
+      } catch (e: Exception) {
+        return
+      }
+      activity.runOnUiThread { askForNotifications() }
+      MediaBridge.apply(activity, args)
+    }
   }
 
   @Command
@@ -81,19 +168,8 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun update(invoke: Invoke) {
     val args = invoke.parseArgs(NowPlayingArgs::class.java)
-    MediaBridge.nowPlaying = args
     askForNotifications()
-    val running = PlaybackService.instance
-    if (running != null) {
-      running.refresh()
-    } else if (args.playing) {
-      // Started while the user is pressing play in the app, so the foreground start is allowed.
-      try {
-        ContextCompat.startForegroundService(activity, Intent(activity, PlaybackService::class.java))
-      } catch (e: Exception) {
-        Logger.error("openmusic-media: could not start the playback service: ${e.message}")
-      }
-    }
+    MediaBridge.apply(activity, args)
     invoke.resolve()
   }
 
@@ -129,10 +205,7 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
     if (MediaBridge.nowPlaying?.playing != true) return
     val wv = webView ?: return
     Handler(Looper.getMainLooper()).post {
-      wv.onResume()
-      wv.resumeTimers()
-      // The page counts as visible again, so it isn't treated as a background tab.
-      wv.dispatchWindowVisibilityChanged(View.VISIBLE)
+      MediaBridge.wakeUp(wv)
       wv.evaluateJavascript("window.__omBackground&&window.__omBackground()", null)
     }
   }

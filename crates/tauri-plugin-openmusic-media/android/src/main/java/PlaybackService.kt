@@ -5,11 +5,14 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -17,6 +20,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
 
 /**
@@ -38,6 +42,15 @@ class PlaybackService : Service() {
   private var artUrl: String? = null
   private var art: Bitmap? = null
 
+  /** Headphones unplugged or a Bluetooth speaker/headset disconnected: pause, like other players. */
+  private val noisy = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+      if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && MediaBridge.nowPlaying?.playing == true) {
+        MediaBridge.emit("pause")
+      }
+    }
+  }
+
   override fun onBind(intent: Intent?): IBinder? = null
 
   override fun onCreate() {
@@ -53,6 +66,7 @@ class PlaybackService : Service() {
       override fun onSeekTo(pos: Long) = MediaBridge.emit("seek", pos)
     })
     session.isActive = true
+    ContextCompat.registerReceiver(this, noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_EXPORTED)
     if (Build.VERSION.SDK_INT >= 26) {
       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
       nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Playback", NotificationManager.IMPORTANCE_LOW))
@@ -73,6 +87,10 @@ class PlaybackService : Service() {
 
   override fun onDestroy() {
     instance = null
+    try {
+      unregisterReceiver(noisy)
+    } catch (e: Exception) {
+    }
     session.release()
     loader.shutdownNow()
     super.onDestroy()
