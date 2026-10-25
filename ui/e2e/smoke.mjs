@@ -424,6 +424,65 @@ await test("Android widgets: a tapped playlist opens in the app, and the recent 
   },
 });
 
+await test("Normalize volume: the switch reveals the level, and both are saved", async (p) => {
+  await p.click('button[aria-label="Settings"]');
+  await p.waitForSelector(".page h1:has-text('Settings')");
+  const row = p.locator(".setting", { hasText: "Normalize volume" });
+  assert.equal(await p.locator(".setting", { hasText: "Volume level" }).count(), 0);
+  await row.locator('input[role="switch"]').check();
+  await p.locator(".setting", { hasText: "Volume level" }).waitFor();
+  await p.locator(".setting", { hasText: "Volume level" }).locator("button").click();
+  await p.click('.menu button:has-text("Quiet")');
+  await p.waitForFunction(() => JSON.stringify(window.__MOCK__.__saved ?? {}).includes('"normalizeLevel":"quiet"'), null, { timeout: 5000 });
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.__saved = {};
+    d.settings_set = (a) => ((d.__saved = a.settings), null);
+  },
+});
+
+await test("Crossfade still reaches full volume when the page's timers are throttled (background)", async (p) => {
+  await p.click('.playerbar button[aria-label="Play"]');
+  // The restored position is past the end of the short test songs, so playback moves on, and the
+  // next song crossfades into the one after. Wait until a crossfade has started and finished.
+  await p.waitForFunction(() => window.__AUDIOS.filter((a) => !a.paused).length === 2, null, { timeout: 15000 });
+  await p.waitForFunction(() => window.__AUDIOS.filter((a) => !a.paused).length === 1, null, { timeout: 15000 });
+  // 2 s fade, timers throttled to once per 2 s: the new song is at full volume right after.
+  await p.waitForTimeout(600);
+  const vols = await p.evaluate(() => window.__AUDIOS.filter((a) => !a.paused).map((a) => a.volume));
+  assert.equal(vols.length, 1);
+  assert.ok(vols[0] > 0.75, "volume after the crossfade: " + vols[0]);
+}, {
+  init: () => {
+    // Throttled timers, like a page in the background.
+    const si = window.setInterval.bind(window);
+    window.setInterval = (fn, ms, ...rest) => si(fn, Math.max(ms ?? 0, 2000), ...rest);
+    // Keep the player's <audio> elements to look at.
+    const A = window.Audio;
+    window.__AUDIOS = [];
+    window.Audio = function (...a) {
+      const x = new A(...a);
+      window.__AUDIOS.push(x);
+      return x;
+    };
+    // 5-second tone WAVs as the song streams.
+    const wav = (() => {
+      const rate = 8000, n = rate * 5, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+      const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+      w(0, "RIFF"); v.setUint32(4, 36 + n, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+      v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true);
+      v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true);
+      for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + Math.round(40 * Math.sin(i / 8)));
+      return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+    })();
+    const d = window.__MOCK__;
+    d.resolve_stream = () => ({ kind: "url", url: wav, quality: "test", offline: false });
+    d.settings_get = { crossfade: 2, volume: 0.8, gapless: true };
+    for (const x of d.queue_load.tracks) x.t.durationMs = 5000;
+  },
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");

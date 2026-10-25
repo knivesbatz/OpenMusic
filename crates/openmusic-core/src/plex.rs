@@ -663,6 +663,12 @@ impl Plex {
         Ok(format!("{}&download=1", self.stream_url(sess, track, None)?))
     }
 
+    /// The track's loudness in LUFS from the server's loudness analysis, if it has run.
+    pub async fn loudness(&self, sess: &Session, id: &str) -> Option<f32> {
+        let meta = self.list(sess, &format!("/library/metadata/{}", rating_key(id))).await.ok()?;
+        loudness_of(meta.first()?)
+    }
+
     /// Lyrics stored on the server for a track (a lyrics stream: LRC or plain text), if any.
     pub async fn lyrics(&self, sess: &Session, id: &str) -> Option<String> {
         let meta = self.list(sess, &format!("/library/metadata/{}", rating_key(id))).await.ok()?;
@@ -732,6 +738,20 @@ impl Plex {
     }
 }
 
+/// Integrated loudness (LUFS) of a track from its audio stream: `loudness`, or else ReplayGain-style
+/// `gain` (relative to -18 LUFS). Plex sends these as numbers or strings.
+pub fn loudness_of(track: &Value) -> Option<f32> {
+    let num = |v: &Value| v.as_f64().or_else(|| v.as_str()?.trim().parse().ok()).map(|f| f as f32);
+    track
+        .get("Media")?
+        .as_array()?
+        .iter()
+        .flat_map(|m| m.get("Part").and_then(|p| p.as_array()).cloned().unwrap_or_default())
+        .flat_map(|p| p.get("Stream").and_then(|s| s.as_array()).cloned().unwrap_or_default())
+        .filter(|s| s.get("streamType").and_then(|t| t.as_i64()) == Some(2))
+        .find_map(|s| s.get("loudness").and_then(num).or_else(|| s.get("gain").and_then(num).map(|g| -18.0 - g)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -793,5 +813,17 @@ mod tests {
         assert_eq!(p.stream_url(&sess, &t, None).unwrap(), "http://10.0.0.2:32400/library/parts/1/f.mp3?X-Plex-Token=tok");
         let tx = p.stream_url(&sess, &t, Some(128)).unwrap();
         assert!(tx.contains("musicBitrate=128") && tx.contains("path=%2Flibrary%2Fmetadata%2F5"));
+    }
+
+    #[test]
+    fn loudness_from_audio_stream() {
+        let t = json!({ "Media": [{ "Part": [{ "Stream": [
+            { "streamType": 2, "loudness": "-9.5", "gain": "-8.5" },
+            { "streamType": 4, "key": "/lyrics" }
+        ] }] }] });
+        assert_eq!(loudness_of(&t), Some(-9.5));
+        let gain_only = json!({ "Media": [{ "Part": [{ "Stream": [{ "streamType": 2, "gain": -6.0 }] }] }] });
+        assert_eq!(loudness_of(&gain_only), Some(-12.0));
+        assert_eq!(loudness_of(&json!({ "Media": [{ "Part": [{ "Stream": [{ "streamType": 2 }] }] }] })), None);
     }
 }

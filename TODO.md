@@ -117,6 +117,14 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.4
+- ✅ Normalize volume: `track_loudness` (Plex stream `loudness`/`gain`, file ReplayGain/R128 via lofty;
+  cached) → `loudness.ts` gain (turn-down only, Quiet −23 / Normal −14 / Loud −11 LUFS) on each audio
+  deck; YouTube left to its own player (unit + e2e)
+- ✅ Silent next song: gapless/crossfade only onto a deck whose preload has its source; no preload
+  during a fade; fades time-based and advanced by deck timeupdates; volume safety net in onTime
+  (e2e with throttled timers)
+
 ## 1.2.3
 - 🟡 Widgets responsive: `RemoteViews(Map<SizeF, RemoteViews>)` on Android 12+ (row / square / tall
   for Now playing; header-only or 3–5 covers for Recently played), best fit from widget options

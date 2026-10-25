@@ -370,6 +370,24 @@ pub fn search(db: &Db, q: &str, limit: usize) -> Result<Vec<Track>> {
     Ok(rows.collect::<std::result::Result<_, _>>()?)
 }
 
+/// A file's loudness in LUFS from its ReplayGain (relative to -18 LUFS) or Opus R128 (relative to
+/// -23 LUFS, in 1/256 dB) track gain tag.
+pub fn file_loudness(path: &str) -> Option<f32> {
+    let tagged = lofty::read_from_path(path).ok()?;
+    let r128 = lofty::tag::ItemKey::Unknown("R128_TRACK_GAIN".into());
+    tagged.tags().iter().find_map(|tag| {
+        tag.get_string(&lofty::tag::ItemKey::ReplayGainTrackGain)
+            .and_then(parse_gain)
+            .map(|g| -18.0 - g)
+            .or_else(|| tag.get_string(&r128).and_then(|r| r.trim().parse::<f32>().ok()).map(|r| -23.0 - r / 256.0))
+    })
+}
+
+/// "-7.25 dB" → -7.25.
+pub fn parse_gain(s: &str) -> Option<f32> {
+    s.trim().trim_end_matches(|c: char| c.is_alphabetic() || c.is_whitespace()).parse().ok()
+}
+
 pub fn path_for(db: &Db, id: &str) -> Result<Option<(String, bool)>> {
     use rusqlite::OptionalExtension;
     Ok(db
@@ -437,5 +455,13 @@ mod tests {
         let albums: Vec<_> = albums_by_artist_name(&db, "my chemical romance").unwrap().into_iter().map(|a| a.title).collect();
         assert_eq!(albums.len(), 2);
         assert_eq!(search_artists(&db, "chemical").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn replaygain_values() {
+        assert_eq!(parse_gain("-7.25 dB"), Some(-7.25));
+        assert_eq!(parse_gain("+3.10 dB"), Some(3.1));
+        assert_eq!(parse_gain("2.5"), Some(2.5));
+        assert_eq!(parse_gain("loud"), None);
     }
 }

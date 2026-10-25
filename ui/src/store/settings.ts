@@ -4,6 +4,7 @@ import { api, inTauri } from "../api";
 
 export type Quality = "auto" | "low" | "medium" | "high";
 export type JpMode = "original" | "romaji" | "both";
+export type NormalizeLevel = "quiet" | "normal" | "loud";
 
 export interface Settings {
   language: "en" | "ja";
@@ -11,6 +12,9 @@ export interface Settings {
   crossfade: number; // seconds, 0-12
   gapless: boolean;
   automix: boolean;
+  /** Turn loud songs down to a common loudness (Spotify's "Normalize volume"). */
+  normalizeVolume: boolean;
+  normalizeLevel: NormalizeLevel;
   /** Keep playing similar songs when the queue ends (Spotify's Autoplay). Off by default. */
   autoplaySimilar: boolean;
   /** Desktop: the close button hides the window to the tray; music keeps playing. */
@@ -48,6 +52,8 @@ export const defaults: Settings = {
   crossfade: 0,
   gapless: true,
   automix: false,
+  normalizeVolume: false,
+  normalizeLevel: "normal",
   autoplaySimilar: false,
   closeToTray: false,
   autoUpdate: true,
@@ -86,6 +92,8 @@ export function sanitize(raw: Record<string, unknown>): Settings {
   if (!["auto", "low", "medium", "high"].includes(s.quality)) s.quality = "auto";
   if (!["en", "ja"].includes(s.language)) s.language = defaults.language;
   if (!["original", "romaji", "both"].includes(s.jpMode)) s.jpMode = "original";
+  if (!["quiet", "normal", "loud"].includes(s.normalizeLevel)) s.normalizeLevel = "normal";
+  s.normalizeVolume = s.normalizeVolume === true;
   s.albumSort = libSort(s.albumSort, ["recent", "alpha", "artist", "year"]);
   s.artistSort = libSort(s.artistSort, ["recent", "alpha"]);
   s.sidebarWidth = clampWidth(s.sidebarWidth, SIDEBAR_W, 300);
