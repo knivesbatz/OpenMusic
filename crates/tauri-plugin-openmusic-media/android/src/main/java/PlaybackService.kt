@@ -100,6 +100,7 @@ class PlaybackService : Service() {
   fun refresh() = main.post { showNotification() }
 
   fun stopPlayback() = main.post {
+    Widgets.playingStopped(this)
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
   }
@@ -141,6 +142,7 @@ class PlaybackService : Service() {
       .addAction(action(android.R.drawable.ic_media_next, "Next", "next"))
       .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0, 1, 2))
     val notification = builder.build()
+    Widgets.nowPlayingChanged(this, MediaBridge.nowPlaying)
     if (Build.VERSION.SDK_INT >= 29) {
       startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
     } else {

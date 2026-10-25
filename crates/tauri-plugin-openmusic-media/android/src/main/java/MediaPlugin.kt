@@ -43,6 +43,12 @@ class NowPlayingArgs {
 }
 
 @InvokeArg
+class RecentArgs {
+  /** `[{kind, id, title, art}]`, newest first; `art` is a local image file. */
+  var json: String = "[]"
+}
+
+@InvokeArg
 class CookiesArgs {
   var url: String = ""
 }
@@ -52,6 +58,8 @@ object MediaBridge {
   @Volatile var channel: Channel? = null
   @Volatile var nowPlaying: NowPlayingArgs? = null
   @Volatile var webView: WebView? = null
+  /** A widget opened the app: what to do once the page asks (`{"action"|"kind","id"}` JSON). */
+  @Volatile var pendingLaunch: String? = null
   private val main = Handler(Looper.getMainLooper())
 
   /**
@@ -131,6 +139,9 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
     // crossfade's second player on its own, so allow it.
     webView.settings.mediaPlaybackRequiresUserGesture = false
     MediaBridge.webView = webView
+    MediaBridge.pendingLaunch = Widgets.launchJson(activity.intent)
+    // Widget buttons now control this page instead of opening the app.
+    Widgets.refreshAll(activity)
     // `window.OpenMusicMedia.update(json)`: the page reports the playing song directly, so the
     // notification follows song changes while the app is in the background.
     webView.addJavascriptInterface(PageBridge(), "OpenMusicMedia")
@@ -156,6 +167,14 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
       }
       activity.runOnUiThread { askForNotifications() }
       MediaBridge.apply(activity, args)
+    }
+
+    /** The widget that opened the app, if any (once); "" when none. */
+    @JavascriptInterface
+    fun takeLaunch(): String {
+      val l = MediaBridge.pendingLaunch ?: return ""
+      MediaBridge.pendingLaunch = null
+      return l
     }
   }
 
@@ -184,6 +203,34 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
     val ret = JSObject()
     ret.put("cookies", try { CookieManager.getInstance().getCookie(url) ?: "" } catch (e: Exception) { "" })
     invoke.resolve(ret)
+  }
+
+  /** Recently played albums and playlists for the home screen widget. */
+  @Command
+  fun recent(invoke: Invoke) {
+    Widgets.recentChanged(activity, invoke.parseArgs(RecentArgs::class.java).json)
+    invoke.resolve()
+  }
+
+  /** A widget opened the app while it was running: hand the page what it asked for. */
+  override fun onNewIntent(intent: Intent) {
+    val launch = Widgets.launchJson(intent) ?: return
+    val wv = webView
+    if (wv == null) {
+      MediaBridge.pendingLaunch = launch
+      return
+    }
+    Handler(Looper.getMainLooper()).post {
+      wv.evaluateJavascript("window.__omLaunch?(window.__omLaunch($launch),1):0") { done ->
+        if (done != "1") MediaBridge.pendingLaunch = launch
+      }
+    }
+  }
+
+  override fun onDestroy() {
+    if (MediaBridge.webView === webView) MediaBridge.webView = null
+    // Widget buttons open the app again.
+    Widgets.refreshAll(activity)
   }
 
   @Command

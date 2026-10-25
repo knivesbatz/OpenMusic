@@ -407,6 +407,23 @@ await test("Selected songs go into Liked Songs together; menus show icons", asyn
   },
 });
 
+await test("Android widgets: a tapped playlist opens in the app, and the recent widget gets refreshed", async (p) => {
+  await p.waitForSelector(".page h1:has-text('autumn')");
+  // Brought back by another widget tap while running.
+  await p.evaluate(() => window.__omLaunch({ kind: "album", id: "plex:al1" }));
+  await p.waitForFunction(() => {
+    const h = document.querySelector(".page h1")?.textContent;
+    return h && h !== "autumn";
+  });
+  await p.waitForFunction(() => window.__CALLS__.includes("widget_refresh"), null, { timeout: 8000 });
+}, {
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36",
+  init: () => {
+    let launch = JSON.stringify({ kind: "playlist", id: "plex:pl0" });
+    window.OpenMusicMedia = { update: () => {}, takeLaunch: () => { const l = launch; launch = ""; return l; } };
+  },
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");

@@ -1853,6 +1853,24 @@ pub async fn media_update(app: AppHandle, state: S<'_>, mut now: tauri_plugin_op
     Ok(())
 }
 
+/// Android home screen widgets: recently played albums and playlists, with their covers as files.
+#[tauri::command]
+pub async fn widget_refresh(app: AppHandle, state: S<'_>) -> Result<()> {
+    if cfg!(mobile) {
+        let contexts = state.db().recent_contexts(6)?;
+        let mut items = Vec::with_capacity(contexts.len());
+        for c in contexts {
+            let art = match c.artwork.as_deref() {
+                Some(a) => art::cached_file(state.inner().clone(), a, 300).await.map(|p| p.to_string_lossy().into_owned()),
+                None => None,
+            };
+            items.push(tauri_plugin_openmusic_media::WidgetItem { kind: c.kind, id: c.id, title: c.title, art });
+        }
+        let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::recent(&app, &items)).await;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn media_stop(app: AppHandle) -> Result<()> {
     if cfg!(mobile) {

@@ -117,6 +117,13 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.2
+- 🟡 Android widgets (`crates/tauri-plugin-openmusic-media/android/.../Widgets.kt`, `res/`): Now playing
+  (RemoteViews, cover tint, buttons → `MediaBridge.emit` while the page runs, else open the app
+  with `om_action=play`) and Recently played (`widget_refresh` → `recent` with cover files; taps open
+  the page via `om_kind/om_id` → `__omLaunch`/`takeLaunch`). Sizes from widget options. Page side
+  covered by e2e; not yet run on a device
+
 ## 1.2.1 (versions continue from 1.2)
 - ✅ Spotify-like motion layer (styles.css "motion, Spotify-like"): staggered cards, hero, player
   bar song change, play/pause swap, panel slide, menu scale, now-playing bars, paused cover;

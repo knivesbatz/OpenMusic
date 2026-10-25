@@ -1,9 +1,20 @@
-# OpenMusic 1.2.1
+# OpenMusic 1.2.2
 
-Smoother, Spotify-like motion everywhere, icons in every menu, Liked Songs for many songs at
-once, and your own covers for YouTube playlists. Version numbers now continue from 1.2.
+Spotify-style home screen widgets for Android.
 
-## New in 1.2.1
+## New in 1.2.2
+- **Android home screen widgets** (both apps; long-press the home screen → Widgets):
+  - **Now playing**: the cover, song and artist with previous, play/pause and next, on a card
+    tinted with the cover's colour. Tap the song to open the app. It follows the music in the
+    background, and after the app is closed it keeps the last song: play then opens the app
+    and carries on.
+  - **Recently played**: what you played last, with a row of your recent albums and playlists
+    underneath. Tap any of them to open it in the app.
+  - Both resize: a narrow Now playing widget drops the app icon, then the previous button;
+    Recently played shows three to five covers depending on the size, or just the latest one
+    when it's short.
+
+## Also in 1.2.1
 - **Spotify-like animations** on desktop and phones:
   - pages rise in
   - cards and shortcuts arrive one after another, and lift when you point at them
