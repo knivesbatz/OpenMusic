@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="om_widget_now_playing">Now playing</string>
+    <string name="om_widget_now_playing_desc">The song playing now, with previous, play and next</string>
+    <string name="om_widget_recent">Recently played</string>
+    <string name="om_widget_recent_desc">What you played last, and your recent albums and playlists</string>
+    <string name="om_widget_recent_empty">Play something to see it here</string>
+    <string name="om_widget_nothing">Nothing playing</string>
+    <string name="om_widget_open">Tap to open the app</string>
+    <string name="om_prev">Previous</string>
+    <string name="om_play">Play</string>
+    <string name="om_pause">Pause</string>
+    <string name="om_next">Next</string>
+    <string name="om_kind_playlist">Playlist</string>
+    <string name="om_kind_album">Album</string>
+    <string name="om_kind_artist">Artist</string>
+    <string name="om_kind_other">Recently played</string>
+</resources>

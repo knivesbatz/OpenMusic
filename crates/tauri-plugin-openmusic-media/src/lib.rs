@@ -79,6 +79,31 @@ pub fn update<R: Runtime>(app: &AppHandle<R>, now: &NowPlaying) {
     let _ = (app, now);
 }
 
+/// An album or playlist in the recently played home screen widget. `art` is a local image file.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WidgetItem {
+    pub kind: String,
+    pub id: String,
+    pub title: String,
+    pub art: Option<String>,
+}
+
+/// Update the recently played widget (newest first). Blocks briefly; call it off the main thread.
+pub fn recent<R: Runtime>(app: &AppHandle<R>, items: &[WidgetItem]) {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        if let Some(m) = app.try_state::<Media<R>>() {
+            let json = serde_json::to_string(items).unwrap_or_else(|_| "[]".into());
+            if let Err(e) = m.0.run_mobile_plugin::<serde_json::Value>("recent", serde_json::json!({ "json": json })) {
+                log_error(&e);
+            }
+        }
+    }
+    #[cfg(not(target_os = "android"))]
+    let _ = (app, items);
+}
+
 /// The webview's cookies for `url` as a `Cookie` header ("name=value; …"); empty when there are
 /// none or off Android. Blocks until the UI thread answers; call it off the main thread.
 pub fn cookies<R: Runtime>(app: &AppHandle<R>, url: &str) -> String {

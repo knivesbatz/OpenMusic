@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage, fileUrl, inTauri } from "../api";
 import type { PlayContext, Stream, Track } from "../types";
 import { useSettings } from "../store/settings";
-import { toast } from "../store/ui";
+import { navigate, toast } from "../store/ui";
 import * as Q from "./queue";
 import { YouTubeOutput } from "./youtube";
 import { displayTrack } from "../store/songmeta";
@@ -712,6 +712,11 @@ export function initRemoteControls() {
   // The media plugin calls this directly for notification, headset and lock-screen buttons, and
   // when headphones or a Bluetooth device disconnect.
   w.__omMedia = onAction;
+  // Home screen widgets: a tap that opened the app (or brought it back) to play or open a page.
+  w.__omLaunch = onWidgetLaunch;
+  const launch = w.OpenMusicMedia?.takeLaunch?.();
+  if (launch) onWidgetLaunch(JSON.parse(launch));
+  initRecentWidget();
   let sent = { id: "", playing: false, at: 0, position: 0 };
   let seq = 0;
   usePlayer.subscribe((s) => {
@@ -752,7 +757,46 @@ export function initRemoteControls() {
 interface AndroidBridge {
   __omBackground?: () => void;
   __omMedia?: (a: { action: string; positionMs?: number }) => void;
-  OpenMusicMedia?: { update(json: string): void };
+  __omLaunch?: (l: WidgetLaunch) => void;
+  OpenMusicMedia?: { update(json: string): void; takeLaunch?(): string };
+}
+
+interface WidgetLaunch {
+  action?: string;
+  kind?: string;
+  id?: string;
+}
+
+/** A widget opened the app: show the album/playlist it shows, or play (once the queue is back). */
+function onWidgetLaunch(l: WidgetLaunch) {
+  if (l.kind && l.id) {
+    const kind = l.id.startsWith("local-album:") ? "album" : l.id.startsWith("local-artist:") ? "artist" : l.kind;
+    if (kind === "album" || kind === "playlist" || kind === "artist") navigate({ name: kind, id: l.id });
+  }
+  if (l.action !== "play") return;
+  if (Q.current(get().queue)) return play();
+  const stop = usePlayer.subscribe((s) => {
+    if (!Q.current(s.queue)) return;
+    stop();
+    play();
+  });
+  setTimeout(stop, 15_000);
+}
+
+/** Keep the recently played widget current: shortly after start and after each new song. */
+function initRecentWidget() {
+  let last = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const refresh = () => void api.widgetRefresh().catch(() => {});
+  setTimeout(refresh, 3000);
+  usePlayer.subscribe((s) => {
+    const id = Q.current(s.queue)?.track.id ?? "";
+    if (id === last) return;
+    last = id;
+    clearTimeout(timer);
+    // After the play is in the history.
+    timer = setTimeout(refresh, 5000);
+  });
 }
 
 /**

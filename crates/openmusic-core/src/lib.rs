@@ -277,6 +277,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::autoplay_tracks,
             commands::media_update,
             commands::media_stop,
+            commands::widget_refresh,
             commands::presence_update,
             commands::presence_clear,
             commands::translate_texts,

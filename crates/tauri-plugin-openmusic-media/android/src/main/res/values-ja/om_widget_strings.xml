@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="om_widget_now_playing">再生中</string>
+    <string name="om_widget_now_playing_desc">再生中の曲と、前へ・再生・次へのボタン</string>
+    <string name="om_widget_recent">最近再生した項目</string>
+    <string name="om_widget_recent_desc">最後に再生したものと、最近のアルバムやプレイリスト</string>
+    <string name="om_widget_recent_empty">再生するとここに表示されます</string>
+    <string name="om_widget_nothing">再生していません</string>
+    <string name="om_widget_open">タップしてアプリを開く</string>
+    <string name="om_prev">前へ</string>
+    <string name="om_play">再生</string>
+    <string name="om_pause">一時停止</string>
+    <string name="om_next">次へ</string>
+    <string name="om_kind_playlist">プレイリスト</string>
+    <string name="om_kind_album">アルバム</string>
+    <string name="om_kind_artist">アーティスト</string>
+    <string name="om_kind_other">最近再生した項目</string>
+</resources>

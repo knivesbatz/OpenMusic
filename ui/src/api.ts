@@ -66,6 +66,7 @@ export const api = {
   library: (refresh: boolean) => call<T.Library>("library", { refresh }),
   radio: (track: T.Track) => call<T.Track[]>("radio", { track }),
   mediaUpdate: (now: T.NowPlaying) => call<void>("media_update", { now }),
+  widgetRefresh: () => call<void>("widget_refresh"),
   mediaStop: () => call<void>("media_stop"),
   presenceUpdate: (now: T.NowPlaying, link: string | null) => call<void>("presence_update", { now, link }),
   presenceClear: () => call<void>("presence_clear"),
