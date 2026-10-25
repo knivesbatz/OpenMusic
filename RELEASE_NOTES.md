@@ -1,9 +1,33 @@
-# OpenMusic 1.0.10
+# OpenMusic 1.2.1
 
-Android fixes: the notification keeps up with the music while the app is in the background, and
-music pauses when headphones or a Bluetooth device disconnect.
+Smoother, Spotify-like motion everywhere, icons in every menu, Liked Songs for many songs at
+once, and your own covers for YouTube playlists. Version numbers now continue from 1.2.
 
-## New in 1.0.10
+## New in 1.2.1
+- **Spotify-like animations** on desktop and phones:
+  - pages rise in
+  - cards and shortcuts arrive one after another, and lift when you point at them
+  - album and playlist headers grow in
+  - play and pause swap with a little spin, and the heart pops when you like a song
+  - a new song slides into the player bar
+  - the queue and lyrics panels slide in
+  - menus and dialogs scale in
+  - the song that's playing shows bouncing bars instead of its number
+  - on the phone's song screen the cover eases back while paused
+  - buttons grow slightly on hover and give way when pressed; loading spinners only appear
+    when loading takes a moment
+
+  "Reduce motion" in Settings (or the system setting) turns all of it off.
+- **Icons in menus**: every right-click and ••• menu (songs, playlists, albums, artists, folders,
+  podcasts, the title bar menu) shows an icon next to each action.
+- **Liked Songs from the menu, for many songs at once**: select songs (Shift/Ctrl-click) in a
+  playlist, album or the queue and choose "Add N to Liked Songs" (or "Remove N"). Playlists and
+  albums have "Add all to Liked Songs", and "Add to playlist" lists Liked Songs first.
+- **YTSpot: your own cover for YouTube playlists**: click a playlist's cover (or ••• → Change
+  cover) and pick an image. The cover is kept in the app only; YouTube keeps its own thumbnail,
+  and "Use YouTube's cover" switches back.
+
+## Also in 1.0.10
 - **Android: the media notification follows the music in the background.** When the next song
   started with the app in the background, the notification kept showing the old song, and its
   buttons (also lock screen, headset and car controls) did nothing until you opened the app. The

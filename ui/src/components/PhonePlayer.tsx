@@ -70,6 +70,7 @@ export function PhonePlayer() {
   const item = usePlayer((s) => s.queue.items[s.queue.index]);
   const tr = useDisplayTrack(item?.track);
   const context = usePlayer((s) => s.context);
+  const playing = usePlayer((s) => s.playing);
   const queueOpen = useUi((s) => s.queueOpen);
   const close = () => useUi.setState({ fullscreen: false, queueOpen: false });
   return (
@@ -85,7 +86,7 @@ export function PhonePlayer() {
             <I.IMore size={24} />
           </button>
         </div>
-        {tr ? <Art src={tr.artwork} size={800} className="pp-art" alt={tr.album ?? tr.title} /> : <div className="pp-art art" />}
+        {tr ? <Art src={tr.artwork} size={800} className={cls("pp-art", !playing && "paused")} alt={tr.album ?? tr.title} /> : <div className="pp-art art" />}
         {tr && <CurrentLine track={tr} />}
         <div className="pp-meta">
           <div className="pp-names">

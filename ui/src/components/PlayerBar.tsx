@@ -76,7 +76,9 @@ export function Transport({ big }: { big?: boolean }) {
         <I.IPrev size={sz} />
       </button>
       <button className={cls("play-btn", big && "big", loading && "loading")} aria-label={playing ? t("pause") : t("play")} title={playing ? t("pause") : t("play")} onClick={P.toggle}>
-        {playing ? <I.IPause size={big ? 26 : 18} /> : <I.IPlay size={big ? 26 : 18} />}
+        <span className="swap" key={String(playing)}>
+          {playing ? <I.IPause size={big ? 26 : 18} /> : <I.IPlay size={big ? 26 : 18} />}
+        </span>
       </button>
       <button className="icon-btn" aria-label={t("next")} title={t("next")} onClick={() => P.next()}>
         <I.INext size={sz} />
@@ -187,10 +189,10 @@ export function PlayerBar() {
       <div className="pb-left">
         {tr && (
           <>
-            <button className="pb-art" onClick={() => useUi.setState({ fullscreen: true })} aria-label={t("fullscreen")}>
+            <button className="pb-art" key={"a" + tr.id} onClick={() => useUi.setState({ fullscreen: true })} aria-label={t("fullscreen")}>
               <Art src={tr.artwork} size={120} />
             </button>
-            <div className="pb-meta" onContextMenu={(e) => openMenu(e, trackMenu(tr, { queueUid: undefined }))}>
+            <div className="pb-meta" key={"m" + tr.id} onContextMenu={(e) => openMenu(e, trackMenu(tr, { queueUid: undefined }))}>
               <button className="link name" onClick={() => (isTouch() ? useUi.setState({ fullscreen: true }) : tr.albumId && navigate({ name: "album", id: tr.albumId }))}>
                 <TitleText text={tr.title} />
               </button>
@@ -271,7 +273,9 @@ function MiniControls() {
   return (
     <div className="pb-mobile">
       <button className="icon-btn" aria-label={playing ? t("pause") : t("play")} onClick={P.toggle}>
-        {playing ? <I.IPause size={24} /> : <I.IPlay size={24} />}
+        <span className="swap" key={String(playing)}>
+          {playing ? <I.IPause size={24} /> : <I.IPlay size={24} />}
+        </span>
       </button>
       <button className="icon-btn" aria-label={t("next")} onClick={() => P.next()}>
         <I.INext size={22} />

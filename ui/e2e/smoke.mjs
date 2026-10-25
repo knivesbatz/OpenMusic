@@ -359,6 +359,54 @@ await test("Android: notification buttons reach the player and song changes reac
   },
 });
 
+await test("YouTube playlists can get an in-app cover", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "autumn" }).click();
+  await p.waitForSelector(".page h1:has-text('My YouTube mix')");
+  // 1×1 PNG.
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const chooser = p.waitForEvent("filechooser");
+  await p.click(".hero-art-btn");
+  await (await chooser).setFiles({ name: "cover.png", mimeType: "image/png", buffer: png });
+  await p.waitForFunction(() => window.__COVER?.image?.length > 0);
+  assert.equal(await p.evaluate(() => window.__COVER.id), "yt:VLPLmine");
+  await p.click('.page button[aria-label="More options"]');
+  await p.locator(".menu button", { hasText: "Change cover" }).waitFor();
+}, {
+  youtube: true,
+  init: () => {
+    const d = window.__MOCK__;
+    const base = d.playlist;
+    d.playlist = (a) => ({ ...base(a), playlist: { id: "yt:VLPLmine", title: "My YouTube mix", artwork: null, trackCount: 6, local: false } });
+    d.pl_set_cover = (a) => ((window.__COVER = a), null);
+  },
+});
+
+await test("Selected songs go into Liked Songs together; menus show icons", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "autumn" }).click();
+  const rows = p.locator(".page .tl-row:not(.tl-head)");
+  await rows.nth(2).waitFor();
+  // Click the titles: the middle of a row is the album link.
+  await rows.nth(0).locator(".name").click();
+  await rows.nth(2).locator(".name").click({ modifiers: ["Shift"] });
+  await rows.nth(1).locator(".name").click({ button: "right" });
+  assert.ok((await p.locator(".menu button .mi svg").count()) >= 5, "menu items have icons");
+  await p.click('.menu button:has-text("Add 3 to Liked Songs")');
+  await p.waitForFunction(() => window.__RATES.length === 3);
+  assert.ok(await p.evaluate(() => window.__RATES.every((r) => r.liked === true)));
+  // The playlist's menu likes every song in it; "Add to playlist" lists Liked Songs first.
+  await p.click('.page button[aria-label="More options"]');
+  await p.locator('.menu button:has-text("Add all to Liked Songs")').waitFor();
+  await p.keyboard.press("Escape");
+  await rows.nth(4).locator(".name").click({ button: "right" });
+  await p.hover('.menu button:has-text("Add to playlist")');
+  await p.locator('.menu .menu button:has-text("Liked Songs")').waitFor();
+}, {
+  init: () => {
+    window.__RATES = [];
+    window.__MOCK__.rate = (a) => (window.__RATES.push(a), null);
+  },
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");

@@ -889,3 +889,77 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .win-btn:hover { background: #ffffff1a; }
 .win-btn.close:hover { background: #c42b1c; color: #fff; }
 .topbar.slim { min-height: 56px; padding-top: 8px; padding-bottom: 8px; }
+
+/* ---- menus with icons (Spotify style) ----------------------------------------------------------- */
+.menu button .mi { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.menu button .mi > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu button .mi svg { flex: none; color: #ffffffb3; transition: color 0.12s; }
+.menu button:hover .mi svg, .menu button:focus-visible .mi svg, .menu button.open .mi svg { color: var(--text); }
+.menu button.danger .mi svg { color: inherit; }
+.menu button { transition: background 0.1s; }
+
+/* ---- motion, Spotify-like: quick ease-out, transform/opacity only; reduced motion turns it off -- */
+:root { --ease-out: cubic-bezier(0.3, 0, 0, 1); --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1); }
+@keyframes om-rise-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes om-scale-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
+@keyframes om-slide-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes om-swap { from { opacity: 0; transform: scale(0.6) rotate(-30deg); } to { opacity: 1; transform: none; } }
+@keyframes om-eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+.page { animation: om-rise-in 0.32s var(--ease-out); }
+/* Cards and shortcuts arrive one after another. */
+.shelf-row > *, .grid > *, .shortcuts > *, .browse-tiles > * { animation: om-rise-in 0.4s var(--ease-out) backwards; }
+.shelf-row > :nth-child(2), .grid > :nth-child(2), .shortcuts > :nth-child(2), .browse-tiles > :nth-child(2) { animation-delay: 30ms; }
+.shelf-row > :nth-child(3), .grid > :nth-child(3), .shortcuts > :nth-child(3), .browse-tiles > :nth-child(3) { animation-delay: 60ms; }
+.shelf-row > :nth-child(4), .grid > :nth-child(4), .shortcuts > :nth-child(4), .browse-tiles > :nth-child(4) { animation-delay: 90ms; }
+.shelf-row > :nth-child(5), .grid > :nth-child(5), .shortcuts > :nth-child(5), .browse-tiles > :nth-child(5) { animation-delay: 120ms; }
+.shelf-row > :nth-child(6), .grid > :nth-child(6), .shortcuts > :nth-child(6), .browse-tiles > :nth-child(6) { animation-delay: 150ms; }
+.shelf-row > :nth-child(7), .grid > :nth-child(7), .shortcuts > :nth-child(7), .browse-tiles > :nth-child(7) { animation-delay: 180ms; }
+.shelf-row > :nth-child(n + 8), .grid > :nth-child(n + 8), .shortcuts > :nth-child(n + 8), .browse-tiles > :nth-child(n + 8) { animation-delay: 210ms; }
+/* Album, playlist and artist headers: the cover grows in, the title follows. */
+.hero .hero-art, .hero .hero-art-btn { animation: om-scale-in 0.45s var(--ease-out) backwards; }
+.hero .hero-text { animation: om-rise-in 0.45s var(--ease-out) 60ms backwards; }
+.action-bar { animation: om-rise-in 0.4s var(--ease-out) 110ms backwards; }
+/* Hover and press: cards lift, buttons grow a little and give way when pressed. */
+.card { transition: background 0.25s var(--ease-out), transform 0.25s var(--ease-out); }
+.card:hover .card-art .art { transform: translateY(-4px); box-shadow: 0 14px 30px #0009; }
+.card .card-art .art { transition: transform 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out); }
+.card-art .fab { transition: opacity 0.25s var(--ease-out), transform 0.3s var(--ease-spring), background 0.15s; }
+.card:active { transform: scale(0.98); }
+.shortcut { transition: background 0.25s var(--ease-out), transform 0.15s var(--ease-out); }
+.shortcut:active { transform: scale(0.98); }
+.shortcut .fab { transition: opacity 0.2s var(--ease-out), transform 0.3s var(--ease-spring); transform: scale(0.85); }
+.shortcut:hover .fab, .shortcut:focus-within .fab { transform: none; }
+.pill:hover:not(:disabled), .play-btn:hover:not(:disabled) { transform: scale(1.04); }
+.pill, .play-btn, .fab { transition: transform 0.18s var(--ease-out), background 0.15s, color 0.15s, box-shadow 0.2s; }
+.pill:active:not(:disabled), .play-btn:active, .fab:active { transform: scale(0.95); transition-duration: 0.06s; }
+.side-item, .nav-item, .side-cat, .lib-row, .q-row, .tl-row { transition: background 0.15s var(--ease-out), color 0.15s; }
+.icon-btn svg { transition: transform 0.18s var(--ease-out); }
+.icon-btn:hover:not(:disabled) svg { transform: scale(1.06); }
+.icon-btn:active:not(:disabled) svg { transform: scale(0.9); }
+/* Play/pause swaps its icon with a small spin; the like heart pops with a spring. */
+.play-btn .swap, .pb-mobile .swap { display: grid; place-items: center; animation: om-swap 0.22s var(--ease-out); }
+.like.on svg, .save-group .icon-btn.on svg { animation: om-heart 0.4s var(--ease-spring); }
+/* A new song slides into the player bar. */
+.pb-art { animation: om-scale-in 0.35s var(--ease-out); }
+.pb-meta { animation: om-rise-in 0.35s var(--ease-out); }
+/* Side panels and menus. */
+.queue-panel { animation: om-slide-in 0.3s var(--ease-out); }
+.menu, .dialog, .savedin { animation: om-scale-in 0.16s var(--ease-out); }
+.toast { animation: om-rise-in 0.3s var(--ease-spring); }
+/* The song that's playing shows bouncing bars in place of its number. */
+.tl-num .eq { display: inline-flex; align-items: flex-end; justify-content: flex-end; gap: 2px; height: 14px; width: 14px; }
+.tl-num .eq i { width: 3px; height: 100%; border-radius: 1px; background: var(--green); transform-origin: bottom; animation: om-eq 0.9s ease-in-out infinite; }
+.tl-num .eq i:nth-child(2) { animation-delay: -0.3s; animation-duration: 0.8s; }
+.tl-num .eq i:nth-child(3) { animation-delay: -0.6s; animation-duration: 1s; }
+/* Loading: the spinner only shows up if loading takes a moment, so quick pages don't flash. */
+.center[role="status"] { animation: om-fade 0.3s ease-out 0.2s backwards; }
+/* Song screen (phone) and fullscreen: the cover eases back a little while paused, like Spotify. */
+.pp-art { transition: transform 0.45s var(--ease-out), box-shadow 0.45s var(--ease-out); }
+.pp-art.paused { transform: scale(0.9); box-shadow: 0 8px 24px #0007; }
+.fs-art { animation: om-scale-in 0.5s var(--ease-out); }
+.lyrics .line { transition: color 0.3s, opacity 0.3s, transform 0.3s var(--ease-out); }
+/* Phone: tab icons give a little when tapped; the mini player's song change slides in. */
+@media (max-width: 760px) {
+  .mobile-tabs button:active svg { transform: scale(0.86); }
+  .pb-meta { animation-name: om-fade; }
+}

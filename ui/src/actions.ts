@@ -9,6 +9,7 @@ import { useSettings } from "./store/settings";
 import { confirmDialog, navigate, promptDialog, toast, useUi, type MenuItem } from "./store/ui";
 import type { Album, Artist, Playlist, Podcast, Track } from "./types";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
+import * as I from "./components/Icons";
 
 const t = (k: Key, v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
@@ -42,8 +43,10 @@ export async function addToPlaylist(pl: Playlist, tracks: Track[]) {
 
 export function playlistSubmenu(tracks: Track[]): MenuItem[] {
   const pls = useApp.getState().playlists;
+  const liked = canLike(tracks) ? [{ label: t("likedSongs"), icon: I.IHeart, onClick: () => likeTracks(tracks, true) }] : [];
   return [
-    { label: t("newPlaylist"), onClick: () => createPlaylist(tracks) },
+    { label: t("newPlaylist"), icon: I.IPlus, onClick: () => createPlaylist(tracks) },
+    ...liked,
     ...(pls.length ? [{ label: "", separator: true }] : []),
     ...pls.map((p) => ({ label: p.title, onClick: () => addToPlaylist(p, tracks) })),
   ];
@@ -63,6 +66,56 @@ export async function toggleLike(track: Track) {
     useApp.setState({ liked });
     toast(errorMessage(e));
   }
+}
+
+// ---- Liked Songs (one song or many, like Spotify) ------------------------------------------------
+
+const likeable = (tracks: Track[]) => tracks.filter((x) => x.source !== "local" && !x.episode);
+/** Whether any of these songs can go into Liked Songs on this provider. */
+export const canLike = (tracks: Track[]) => !!useApp.getState().info?.capabilities.favorites && likeable(tracks).length > 0;
+
+/** Add songs to (or remove them from) Liked Songs: a selection, an album or a whole playlist. */
+export async function likeTracks(tracks: Track[], on: boolean) {
+  const before = useApp.getState().liked;
+  const todo = likeable(tracks).filter((x) => before.has(x.id) !== on);
+  if (!todo.length) return on ? toast(t("alreadyLiked")) : undefined;
+  if (todo.length === 1 && tracks.length === 1) return toggleLike(todo[0]);
+  if (on && todo.length > 100 && !(await confirmDialog({ title: t("likedSongs"), body: t("likeManyWarn", { n: todo.length }), confirm: t("like") }))) return;
+  const next = new Set(before);
+  for (const x of todo) on ? next.add(x.id) : next.delete(x.id);
+  useApp.setState({ liked: next });
+  const failed: Track[] = [];
+  // A few at a time: one request per song, and the provider shouldn't be flooded.
+  for (let i = 0; i < todo.length; i += 4) {
+    await Promise.all(todo.slice(i, i + 4).map((x) => (inTauri ? api.rate(x, on) : Promise.resolve()).catch(() => void failed.push(x))));
+  }
+  if (failed.length) {
+    const cur = new Set(useApp.getState().liked);
+    for (const x of failed) on ? cur.delete(x.id) : cur.add(x.id);
+    useApp.setState({ liked: cur });
+  }
+  const done = todo.length - failed.length;
+  toast(failed.length ? t("someLikesFailed", { n: failed.length }) : t(on ? "addedToLiked" : "removedFromLiked", { n: done }));
+}
+
+/** Menu entries for the songs of an album, playlist or selection. */
+function likeItems(tracks: Track[]): MenuItem[] {
+  if (!canLike(tracks)) return [];
+  const liked = useApp.getState().liked;
+  const ok = likeable(tracks);
+  const all = ok.every((x) => liked.has(x.id));
+  if (ok.length === 1) return [{ label: all ? t("unlike") : t("like"), icon: all ? I.IHeartFill : I.IHeart, onClick: () => toggleLike(ok[0]) }];
+  return [
+    all
+      ? { label: t("removeNFromLiked", { n: ok.length }), icon: I.IHeartFill, onClick: () => likeTracks(ok, false) }
+      : { label: t("saveNToLiked", { n: ok.filter((x) => !liked.has(x.id)).length }), icon: I.IHeart, onClick: () => likeTracks(ok, true) },
+  ];
+}
+
+/** "Add all to Liked Songs" for an album or playlist whose songs load on click. */
+function likeAllItem(tracks: () => Promise<Track[]>): MenuItem[] {
+  if (!useApp.getState().info?.capabilities.favorites) return [];
+  return [{ label: t("saveAllToLiked"), icon: I.IHeart, onClick: async () => likeTracks(await tracks(), true) }];
 }
 
 export async function downloadTracks(tracks: Track[]) {
@@ -129,9 +182,9 @@ export function sleepSubmenu(): MenuItem[] {
 }
 
 export function shareSubmenu(track: Track): MenuItem[] {
-  const items: MenuItem[] = [{ label: t("copyInfo"), onClick: () => copy(`${track.title} — ${track.artist}`) }];
+  const items: MenuItem[] = [{ label: t("copyInfo"), icon: I.ICopy, onClick: () => copy(`${track.title} — ${track.artist}`) }];
   if (track.source === "youtube" && track.streamKey)
-    items.push({ label: t("copyLink"), onClick: () => copy(`https://music.youtube.com/watch?v=${track.streamKey}`) });
+    items.push({ label: t("copyLink"), icon: I.ILink, onClick: () => copy(`https://music.youtube.com/watch?v=${track.streamKey}`) });
   return items;
 }
 
@@ -154,23 +207,22 @@ export function trackMenu(track: Track, o: TrackMenuOpts = {}): MenuItem[] {
   const sel = o.selection && o.selection.length > 1 ? o.selection : [track];
   const multi = sel.length > 1;
   const caps = useApp.getState().info?.capabilities;
-  const liked = useApp.getState().liked.has(track.id);
   const items: MenuItem[] = [
-    { label: t("addToPlaylist"), submenu: playlistSubmenu(sel) },
+    { label: t("addToPlaylist"), icon: I.IPlus, submenu: playlistSubmenu(sel) },
   ];
-  if (o.onRemoveFromPlaylist) items.push({ label: t("removeFromPlaylist"), onClick: o.onRemoveFromPlaylist });
-  if (o.queueUid) items.push({ label: multi ? t("removeSelected", { n: sel.length }) : t("removeFromQueue"), onClick: () => P.removeFromQueue([o.queueUid!]) });
-  if (caps?.favorites && track.source !== "local" && !multi) items.push({ label: liked ? t("unlike") : t("like"), onClick: () => toggleLike(track) });
-  items.push({ label: t("addToQueue"), onClick: () => (P.addToQueue(sel), toast(t("addedToQueue"))) });
-  items.push({ label: t("playNext"), onClick: () => P.addNext(sel) });
-  items.push({ label: t("sleepTimer"), submenu: sleepSubmenu() });
+  if (o.onRemoveFromPlaylist) items.push({ label: t("removeFromPlaylist"), icon: I.ITrash, onClick: o.onRemoveFromPlaylist });
+  if (o.queueUid) items.push({ label: multi ? t("removeSelected", { n: sel.length }) : t("removeFromQueue"), icon: I.IMinusCircle, onClick: () => P.removeFromQueue([o.queueUid!]) });
+  if (caps?.favorites) items.push(...likeItems(sel));
+  items.push({ label: t("addToQueue"), icon: I.IQueueAdd, onClick: () => (P.addToQueue(sel), toast(t("addedToQueue"))) });
+  items.push({ label: t("playNext"), icon: I.IPlayNext, onClick: () => P.addNext(sel) });
+  items.push({ label: t("sleepTimer"), icon: I.IMoon, submenu: sleepSubmenu() });
   items.push({ label: "", separator: true });
-  if (!multi && track.source === "youtube") items.push({ label: t("goToRadio"), onClick: () => startRadio(track) });
-  if (!multi && track.artistId) items.push({ label: t("goToArtist"), onClick: () => navigate({ name: "artist", id: track.artistId! }) });
-  if (!multi && track.albumId) items.push({ label: t("goToAlbum"), onClick: () => navigate({ name: "album", id: track.albumId! }) });
-  if (!multi) items.push({ label: t("viewCredits"), onClick: () => useUi.setState({ info: track }) });
-  if (caps?.downloads && sel.some((x) => x.source === "plex")) items.push({ label: t("download"), onClick: () => downloadTracks(sel) });
-  if (!multi) items.push({ label: t("share"), submenu: shareSubmenu(track) });
+  if (!multi && track.source === "youtube") items.push({ label: t("goToRadio"), icon: I.IRadio, onClick: () => startRadio(track) });
+  if (!multi && track.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: track.artistId! }) });
+  if (!multi && track.albumId) items.push({ label: t("goToAlbum"), icon: I.IDisc, onClick: () => navigate({ name: "album", id: track.albumId! }) });
+  if (!multi) items.push({ label: t("viewCredits"), icon: I.IInfo, onClick: () => useUi.setState({ info: track }) });
+  if (caps?.downloads && sel.some((x) => x.source === "plex")) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(sel) });
+  if (!multi) items.push({ label: t("share"), icon: I.IShare, submenu: shareSubmenu(track) });
   return items;
 }
 
@@ -186,6 +238,7 @@ export function folderMenu(f: Folder): MenuItem[] {
   return [
     {
       label: t("renameFolder"),
+      icon: I.IEdit,
       onClick: async () => {
         const name = await promptDialog({ title: t("renameFolder"), body: "", confirm: t("save"), input: { label: t("folderName"), value: f.name } });
         if (name) renameFolder(f.id, name);
@@ -193,6 +246,7 @@ export function folderMenu(f: Folder): MenuItem[] {
     },
     {
       label: t("deleteFolder"),
+      icon: I.ITrash,
       danger: true,
       onClick: async () => {
         if (await confirmDialog({ title: t("deleteFolder"), body: t("deleteFolderBody", { name: f.name }), confirm: t("delete"), danger: true })) deleteFolder(f.id);
@@ -205,15 +259,20 @@ function moveToFolderSubmenu(pl: Playlist): MenuItem[] {
   const { folders } = useFolders.getState();
   const current = folderOf(pl.id);
   return [
-    { label: t("newFolder"), onClick: () => newFolder(pl.id) },
+    { label: t("newFolder"), icon: I.IPlus, onClick: () => newFolder(pl.id) },
     ...(folders.length ? [{ label: "", separator: true }] : []),
     ...folders.map((f) => ({ label: (current?.id === f.id ? "✓ " : "") + f.name, onClick: () => putInFolder(pl.id, f.id) })),
-    ...(current ? [{ label: "", separator: true }, { label: t("removeFromFolder"), onClick: () => takeOutOfFolder(pl.id) }] : []),
+    ...(current ? [{ label: "", separator: true }, { label: t("removeFromFolder"), icon: I.IMinusCircle, onClick: () => takeOutOfFolder(pl.id) }] : []),
   ];
 }
 
+/** Whether the app can give this playlist its own cover: app playlists, and YouTube playlists
+ * (an in-app cover only; YouTube keeps its thumbnail). */
+export const canChangeCover = (pl: Playlist) =>
+  pl.local || (useApp.getState().info?.flavor === "youtube" && pl.id.startsWith("yt:") && !pl.id.startsWith("yt:MPSP"));
+
 /** Pick an image (file picker; works on desktop and Android), crop it square, shrink it and
- * store it as the app playlist's cover. */
+ * store it as the playlist's cover. */
 export function changeCover(pl: Playlist, onDone?: () => void) {
   const input = document.createElement("input");
   input.type = "file";
@@ -248,32 +307,36 @@ async function setCover(pl: Playlist, image: number[] | null) {
   }
 }
 
-export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>): MenuItem[] {
+export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCoverChanged?: () => void): MenuItem[] {
   const flavor = useApp.getState().info?.flavor;
-  const items: MenuItem[] = [{ label: t("moveToFolder"), submenu: moveToFolderSubmenu(pl) }];
+  const items: MenuItem[] = [];
   if (tracks) {
-    items.push({ label: t("addToQueue"), onClick: async () => P.addToQueue(await tracks()) });
+    items.push({ label: t("addToQueue"), icon: I.IQueueAdd, onClick: async () => P.addToQueue(await tracks()) });
+    items.push(...likeAllItem(tracks));
     if (useApp.getState().info?.capabilities.downloads)
-      items.push({ label: t("download"), onClick: async () => downloadTracks(await tracks()) });
+      items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
+  }
+  items.push({ label: t("moveToFolder"), icon: I.IFolder, submenu: moveToFolderSubmenu(pl) });
+  if (pl.local) items.push({ label: t("editDetails"), icon: I.IEdit, onClick: () => renamePlaylist(pl) });
+  if (canChangeCover(pl)) {
+    items.push({ label: t("changeCover"), icon: I.IImage, onClick: () => changeCover(pl, onCoverChanged) });
+    if (pl.artwork?.startsWith("art://local/cover-"))
+      items.push({ label: t(pl.local ? "removeCover" : "restoreCover"), icon: I.IUndo, onClick: () => setCover(pl, null).then(() => onCoverChanged?.()) });
   }
   if (tracks) {
     items.push({
       label: t("exportPlaylist"),
+      icon: I.IShare,
       submenu: [
-        { label: t("exportTxt"), onClick: async () => exportPlaylist(pl, await tracks(), "txt") },
-        { label: t("exportCsv"), onClick: async () => exportPlaylist(pl, await tracks(), "csv") },
-        { label: t("copyAsText"), onClick: async () => copy(playlistText(await tracks())) },
+        { label: t("exportTxt"), icon: I.IFile, onClick: async () => exportPlaylist(pl, await tracks(), "txt") },
+        { label: t("exportCsv"), icon: I.IFile, onClick: async () => exportPlaylist(pl, await tracks(), "csv") },
+        { label: t("copyAsText"), icon: I.ICopy, onClick: async () => copy(playlistText(await tracks())) },
       ],
     });
   }
-  if (pl.local) {
-    items.push({ label: t("editDetails"), onClick: () => renamePlaylist(pl) });
-    items.push({ label: t("changeCover"), onClick: () => changeCover(pl) });
-    if (pl.artwork?.startsWith("art://local/cover-")) items.push({ label: t("removeCover"), onClick: () => setCover(pl, null) });
-    items.push({ label: t("delete"), danger: true, onClick: () => deletePlaylist(pl) });
-  } else if (flavor === "youtube") {
-    items.push({ label: t("hidePlaylist"), danger: true, onClick: () => hidePlaylist(pl) });
-  }
+  if (pl.local || flavor === "youtube") items.push({ label: "", separator: true });
+  if (pl.local) items.push({ label: t("delete"), icon: I.ITrash, danger: true, onClick: () => deletePlaylist(pl) });
+  else if (flavor === "youtube") items.push({ label: t("hidePlaylist"), icon: I.IEyeOff, danger: true, onClick: () => hidePlaylist(pl) });
   return items;
 }
 
@@ -333,19 +396,20 @@ export async function toggleSaved(
 export function podcastMenu(p: Podcast): MenuItem[] {
   const following = isSaved(p.id);
   return [
-    { label: following ? t("unfollow") : t("follow"), onClick: () => toggleSaved({ kind: "podcast", v: p }) },
-    { label: t("open"), onClick: () => navigate({ name: "playlist", id: p.id }) },
+    { label: following ? t("unfollow") : t("follow"), icon: following ? I.IChecked : I.IAddCircle, onClick: () => toggleSaved({ kind: "podcast", v: p }) },
+    { label: t("open"), icon: I.IOpen, onClick: () => navigate({ name: "playlist", id: p.id }) },
   ];
 }
 
 export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuItem[] {
   const items: MenuItem[] = [
-    { label: isSaved(album.id) ? t("removeFromLibrary") : t("saveToLibrary"), onClick: () => toggleSaved({ kind: "album", v: album }) },
-    { label: t("addToQueue"), onClick: async () => P.addToQueue(await tracks()) },
-    { label: t("addToPlaylist"), onClick: async () => createPlaylist(await tracks()) },
+    { label: isSaved(album.id) ? t("removeFromLibrary") : t("saveToLibrary"), icon: isSaved(album.id) ? I.IChecked : I.IAddCircle, onClick: () => toggleSaved({ kind: "album", v: album }) },
+    ...likeAllItem(tracks),
+    { label: t("addToQueue"), icon: I.IQueueAdd, onClick: async () => P.addToQueue(await tracks()) },
+    { label: t("addToPlaylist"), icon: I.IPlus, onClick: async () => createPlaylist(await tracks()) },
   ];
-  if (album.artistId) items.push({ label: t("goToArtist"), onClick: () => navigate({ name: "artist", id: album.artistId! }) });
-  if (useApp.getState().info?.capabilities.downloads) items.push({ label: t("download"), onClick: async () => downloadTracks(await tracks()) });
+  if (album.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: album.artistId! }) });
+  if (useApp.getState().info?.capabilities.downloads) items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
   return items;
 }
 
@@ -385,5 +449,5 @@ export async function hidePlaylist(pl: Playlist) {
 }
 
 export function artistMenu(artist: Artist): MenuItem[] {
-  return [{ label: isSaved(artist.id) ? t("unfollow") : t("follow"), onClick: () => toggleSaved({ kind: "artist", v: artist }) }];
+  return [{ label: isSaved(artist.id) ? t("unfollow") : t("follow"), icon: isSaved(artist.id) ? I.IChecked : I.IAddCircle, onClick: () => toggleSaved({ kind: "artist", v: artist }) }];
 }

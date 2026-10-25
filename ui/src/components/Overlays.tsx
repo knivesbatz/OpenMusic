@@ -91,7 +91,10 @@ function MenuList({ items, x, y, root }: { items: MenuItem[]; x: number; y: numb
               m.onClick?.();
             }}
           >
-            <span>{m.label}</span>
+            <span className="mi">
+              {m.icon && <m.icon size={16} />}
+              <span>{m.label}</span>
+            </span>
             {m.submenu && <span aria-hidden="true">▸</span>}
             {!m.submenu && (m.hint || m.checked) && <span aria-hidden="true">{m.hint ?? "✓"}</span>}
           </button>

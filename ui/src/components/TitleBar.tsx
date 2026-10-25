@@ -42,11 +42,11 @@ export function TitleBar({ nav }: { nav: boolean }) {
 
 function appMenu(t: ReturnType<typeof useT>) {
   return [
-    { label: t("whatsNew"), onClick: () => navigate({ name: "new" }) },
-    { label: t("transferPlaylists"), onClick: () => navigate({ name: "import" }) },
-    { label: t("settings"), onClick: () => navigate({ name: "settings" }) },
+    { label: t("whatsNew"), icon: I.IBell, onClick: () => navigate({ name: "new" }) },
+    { label: t("transferPlaylists"), icon: I.IImport, onClick: () => navigate({ name: "import" }) },
+    { label: t("settings"), icon: I.ISettings, onClick: () => navigate({ name: "settings" }) },
     { label: "", separator: true },
-    { label: t("keyboardShortcuts"), onClick: () => toast(t("shortcuts")) },
+    { label: t("keyboardShortcuts"), icon: I.IInfo, onClick: () => toast(t("shortcuts")) },
   ];
 }
 

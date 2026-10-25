@@ -117,6 +117,16 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.1 (versions continue from 1.2)
+- ✅ Spotify-like motion layer (styles.css "motion, Spotify-like"): staggered cards, hero, player
+  bar song change, play/pause swap, panel slide, menu scale, now-playing bars, paused cover;
+  reduced motion turns it off
+- ✅ Menu icons (`MenuItem.icon`) on song, playlist, album, artist, folder, podcast and title-bar menus
+- ✅ Bulk Liked Songs: `likeTracks` (4 requests at a time, failures rolled back), selection menus,
+  "Add all to Liked Songs" on albums/playlists, Liked Songs in "Add to playlist" (e2e)
+- ✅ YTSpot in-app covers for YouTube playlists (`kv` "playlist.covers", applied to home, search,
+  library and playlist pages; unit + e2e)
+
 ## 1.0.10
 - 🟡 Android notification ↔ player without the app IPC: notification/headset buttons call
   `window.__omMedia` through `evaluateJavascript`; the page reports songs through the

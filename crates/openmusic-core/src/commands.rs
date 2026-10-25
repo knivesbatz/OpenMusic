@@ -570,6 +570,11 @@ pub async fn home(app: AppHandle, state: S<'_>, refresh: bool) -> Result<HomeDat
     };
     let hidden = state.db().hidden_playlists()?;
     filter_hidden_shelves(&mut shelves, &hidden);
+    let covers = state.db().cover_overrides()?;
+    apply_covers(&covers, shelves.iter_mut().flat_map(|s| s.items.iter_mut()).filter_map(|i| match i {
+        MediaItem::Playlist(p) => Some(p),
+        _ => None,
+    }));
     Ok(HomeData { shelves, recent, contexts, top_tracks: top, stale, error })
 }
 
@@ -597,6 +602,7 @@ pub async fn search(app: AppHandle, state: S<'_>, query: String) -> Result<Searc
     };
     let hidden = state.db().hidden_playlists()?;
     res.playlists.retain(|p| !hidden.contains(&p.id));
+    apply_covers(&state.db().cover_overrides()?, res.playlists.iter_mut());
     // Local files and app playlists are searched too (the UI shows local tracks in their own
     // section, since provider songs come first).
     {
@@ -636,6 +642,7 @@ pub async fn search_kind(app: AppHandle, state: S<'_>, query: String, kind: Stri
     };
     let hidden = state.db().hidden_playlists()?;
     res.playlists.retain(|p| !hidden.contains(&p.id));
+    apply_covers(&state.db().cover_overrides()?, res.playlists.iter_mut());
     let db = state.db();
     match kind.as_str() {
         "songs" => res.tracks.extend(local::search(&db, q, 200)?),
@@ -804,6 +811,8 @@ pub async fn playlist(app: AppHandle, state: S<'_>, id: String) -> Result<Playli
         Flavor::YouTube if id.starts_with("yt:MPSP") => yt_call!(app, state, |y| y.podcast(&id))?,
         Flavor::YouTube => yt_call!(app, state, |y| y.playlist(&id))?,
     };
+    let mut page = page;
+    apply_covers(&state.db().cover_overrides()?, std::iter::once(&mut page.playlist));
     Ok(page)
 }
 
@@ -844,6 +853,7 @@ pub async fn library(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Libr
         }
     };
     lib.playlists.retain(|p| !hidden.contains(&p.id));
+    apply_covers(&state.db().cover_overrides()?, lib.playlists.iter_mut());
     Ok(lib)
 }
 
@@ -1037,12 +1047,14 @@ pub fn pl_update(app: AppHandle, state: S, id: String, name: String, description
     Ok(())
 }
 
-/// Set (or with `image: None`, remove) an app playlist's cover. The UI sends a small JPEG/PNG
-/// (cropped and scaled in the webview); it is stored with the local artwork.
+/// Set (or with `image: None`, remove) a playlist's cover. The UI sends a small JPEG/PNG
+/// (cropped and scaled in the webview); it is stored with the local artwork. App playlists keep
+/// it in their row; YouTube playlists get an in-app cover that is never sent to YouTube.
 #[tauri::command(async)]
 pub fn pl_set_cover(app: AppHandle, state: S, id: String, image: Option<Vec<u8>>) -> Result<()> {
-    if !id.starts_with("app:") {
-        return Err(Error::Invalid("only app playlists have editable covers".into()));
+    let remote = state.flavor == Flavor::YouTube && id.starts_with("yt:") && !id.starts_with("yt:MPSP");
+    if !id.starts_with("app:") && !remote {
+        return Err(Error::Invalid("this playlist's cover can't be changed".into()));
     }
     let cover = match image {
         Some(bytes) => {
@@ -1057,9 +1069,28 @@ pub fn pl_set_cover(app: AppHandle, state: S, id: String, image: Option<Vec<u8>>
         }
         None => None,
     };
-    state.db().playlist_set_cover(&id, cover.as_deref())?;
+    if remote {
+        let old = state.db().set_cover_override(&id, cover.as_deref())?;
+        if let Some(file) = old.as_deref().and_then(|o| o.strip_prefix("art://local/")) {
+            let _ = std::fs::remove_file(state.dirs.local_art.join(file));
+        }
+    } else {
+        state.db().playlist_set_cover(&id, cover.as_deref())?;
+    }
     let _ = app.emit("playlists-changed", ());
     Ok(())
+}
+
+/// Show in-app covers on provider playlists.
+fn apply_covers<'a>(covers: &std::collections::HashMap<String, String>, playlists: impl IntoIterator<Item = &'a mut Playlist>) {
+    if covers.is_empty() {
+        return;
+    }
+    for p in playlists {
+        if let Some(c) = covers.get(&p.id) {
+            p.artwork = Some(c.clone());
+        }
+    }
 }
 
 #[tauri::command(async)]
