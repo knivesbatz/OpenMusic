@@ -952,6 +952,40 @@ pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Resu
     }
 }
 
+/// A track's loudness in LUFS for volume normalization: Plex's loudness analysis, or the file's
+/// ReplayGain/R128 tag (local files and downloads). None for YouTube (its player evens out loudness
+/// itself) and for tracks nobody has analysed. Cached.
+#[tauri::command]
+pub async fn track_loudness(state: S<'_>, track: Track) -> Result<Option<f32>> {
+    let key = format!("loud:{}", track.id);
+    // Stored as a list: empty means "no loudness known".
+    let cached = state.db().cache_get::<Vec<f32>>(&key, false)?;
+    if let Some(v) = cached {
+        return Ok(v.first().copied());
+    }
+    let from_file = |state: &AppState| -> Option<f32> {
+        let path = match track.source {
+            Source::Local => local::path_for(&state.db(), &track.id).ok().flatten().map(|(p, _)| p),
+            _ => downloads::offline_path(state, &track.id),
+        };
+        path.and_then(|p| local::file_loudness(&p))
+    };
+    let lufs = match track.source {
+        Source::Youtube => None,
+        Source::Local => from_file(&state),
+        Source::Plex => {
+            let server = match state.plex_session().await {
+                Ok(sess) => state.plex.loudness(&sess, &track.id).await,
+                Err(_) => None,
+            };
+            server.or_else(|| from_file(&state))
+        }
+    };
+    let ttl = if lufs.is_some() { 180 * 86400 } else { 86400 };
+    state.db().cache_put(&key, &lufs.into_iter().collect::<Vec<f32>>(), ttl)?;
+    Ok(lufs)
+}
+
 #[tauri::command]
 pub async fn record_play(state: S<'_>, track: Track, context: Option<PlayContext>) -> Result<()> {
     state.db().record_play(&track, context.as_ref())

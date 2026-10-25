@@ -13,7 +13,7 @@ import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
 import { isMobileApp, openProfilePicker, refreshLibrary, setLocalOnly, useApp } from "../store/app";
-import { useSettings, type Quality } from "../store/settings";
+import { useSettings, type NormalizeLevel, type Quality } from "../store/settings";
 import { confirmDialog, toast } from "../store/ui";
 import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
 import { cls, fmtBytes } from "../util";
@@ -266,7 +266,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "normalizeVolume" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -382,6 +382,25 @@ export function SettingsPage() {
         <Toggle k="gapless" label={t("gapless")} hint={t("gaplessHint")} />
         <Toggle k="automix" label={t("automix")} hint={t("automixHint")} />
         <Toggle k="autoplaySimilar" label={t("autoplay")} hint={t("autoplayHint")} />
+        <Toggle k="normalizeVolume" label={t("normalizeVolume")} hint={t(yt ? "normalizeVolumeHintYouTube" : "normalizeVolumeHint")} />
+        {s.normalizeVolume && (
+          <label className="setting">
+            <div className="grow">
+              <div>{t("normalizeLevel")}</div>
+              <div className="muted small">{t("normalizeLevelHint")}</div>
+            </div>
+            <Select<NormalizeLevel>
+              label={t("normalizeLevel")}
+              value={s.normalizeLevel}
+              onChange={(v) => s.set({ normalizeLevel: v })}
+              options={[
+                { value: "quiet", label: t("normalizeQuiet") },
+                { value: "normal", label: t("normalizeNormal") },
+                { value: "loud", label: t("normalizeLoud") },
+              ]}
+            />
+          </label>
+        )}
       </section>
 
       {!isMobileApp() && (

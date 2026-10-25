@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage, fileUrl, inTauri } from "../api";
+import { normalizeGain } from "./loudness";
 import type { PlayContext, Stream, Track } from "../types";
 import { useSettings } from "../store/settings";
 import { navigate, toast } from "../store/ui";
@@ -51,6 +52,10 @@ let active = 0;
 let preloaded: { uid: string; src: string } | null = null;
 let fading = false;
 let fadeTimer: ReturnType<typeof setInterval> | undefined;
+/** The running crossfade, advanced by wall-clock time (see fadeTick). */
+let fade: { start: number; ms: number; apply: (inK: number, outK: number) => void; done: () => void } | null = null;
+/** Volume normalization gain (0–1) of the song on each audio deck. */
+const deckGain = [1, 1];
 let loadToken = 0;
 
 /**
@@ -67,7 +72,7 @@ function ytDeck(i = ytActive): YouTubeOutput {
     const mine = () => idx === ytActive && get().output === "youtube";
     ytDecks.push(
       new YouTubeOutput({
-        onTime: (t, d) => mine() && onTime(t, d),
+        onTime: (t, d) => (fadeTick(), mine() && onTime(t, d)),
         onEnded: () => mine() && onEnded(),
         onState: (p) => {
           if (!mine() || fading) return;
@@ -131,7 +136,9 @@ function ensureDecks() {
     a.preload = "auto";
     a.crossOrigin = "anonymous";
     const idx = i;
-    a.addEventListener("timeupdate", () => idx === active && onTime(a.currentTime, a.duration));
+    // Media events keep coming while the page's timers are throttled (app in the background), so
+    // they also move a crossfade along.
+    a.addEventListener("timeupdate", () => (fadeTick(), idx === active && onTime(a.currentTime, a.duration)));
     a.addEventListener("durationchange", () => idx === active && onTime(a.currentTime, a.duration));
     a.addEventListener("play", () => idx === active && ((wantPlay = true), set({ playing: true })));
     a.addEventListener("pause", () => idx === active && !fading && !undoBackgroundPause() && set({ playing: false }));
@@ -145,8 +152,32 @@ function volume() {
   return useSettings.getState().volume;
 }
 
+/** Audio deck `i`'s volume: the user's volume times that song's normalization gain. */
+function deckVolume(i = active) {
+  return Math.max(0, Math.min(1, volume() * deckGain[i]));
+}
+
+// ---- volume normalization ----------------------------------------------------------------------
+
+const loudnessCache = new Map<string, Promise<number | null>>();
+
+/** Normalization gain for a song (see loudness.ts). YouTube evens out loudness in its own player,
+ *  so YouTube songs are left alone. */
+async function gainFor(track: Track): Promise<number> {
+  const s = useSettings.getState();
+  if (!s.normalizeVolume || track.source === "youtube" || !inTauri) return 1;
+  let p = loudnessCache.get(track.id);
+  if (!p) {
+    p = api.trackLoudness(track).catch(() => null);
+    loudnessCache.set(track.id, p);
+    if (loudnessCache.size > 500) loudnessCache.delete(loudnessCache.keys().next().value!);
+  }
+  return normalizeGain(await p, s.normalizeLevel);
+}
+
 function stopAll() {
   clearInterval(fadeTimer);
+  fade = null;
   fading = false;
   for (const a of decks) {
     a.pause();
@@ -188,6 +219,7 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
   const item = Q.current(get().queue);
   const token = ++loadToken;
   clearInterval(fadeTimer);
+  fade = null;
   fading = false;
   if (!item) {
     wantPlay = false;
@@ -198,14 +230,15 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
   set({ loading: true, position: startAt, duration: (item.track.durationMs ?? 0) / 1000 });
   try {
     ensureDecks();
-    // Gapless: the next track may already be buffered on the idle deck.
-    if (preloaded && preloaded.uid === item.uid) {
+    // Gapless: the next track may already be buffered on the idle deck. Only once its source is
+    // set: a preload still resolving its stream left an empty deck, and the song "played" silently.
+    if (preloaded && preloaded.uid === item.uid && preloaded.src) {
       const other = 1 - active;
       deck().pause();
       active = other;
       preloaded = null;
       const a = deck();
-      a.volume = volume();
+      a.volume = deckVolume();
       if (autoplay) await a.play();
       set({ loading: false, output: "audio" });
       startedTrack(item);
@@ -223,7 +256,7 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
       startedTrack(item);
       return;
     }
-    const stream = await resolve(item.track);
+    const [stream, gain] = await Promise.all([resolve(item.track), gainFor(item.track)]);
     if (token !== loadToken) return;
     for (const a of decks) a.pause();
     if (stream.kind === "youtube") {
@@ -235,7 +268,8 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
       stopYouTube();
       const a = deck();
       a.src = srcOf(stream)!;
-      a.volume = volume();
+      deckGain[active] = gain;
+      a.volume = deckVolume();
       if (startAt) a.currentTime = startAt;
       set({ output: "audio", quality: stream.quality, offline: stream.offline });
       if (autoplay) await a.play();
@@ -272,6 +306,13 @@ function onError(message: string) {
 
 function onTime(t: number, d: number) {
   const s = get();
+  // Safety net: outside a fade the playing deck is always at its proper volume (a song must never
+  // play on silently because a fade was cut short).
+  if (s.output === "audio" && !fading && decks.length) {
+    const a = deck();
+    const want = deckVolume();
+    if (Math.abs(a.volume - want) > 0.01) a.volume = want;
+  }
   const dur = Number.isFinite(d) && d > 0 ? d : s.duration;
   set({ position: t, duration: dur });
   if (t > 1) errorStreak = 0;
@@ -293,15 +334,16 @@ function onTime(t: number, d: number) {
   const fade = crossfadeSeconds(cur.track, nextItem.track);
   const ahead = remaining < Math.max(20, fade + 8);
   // Preload the next track ahead of time: makes gapless and crossfade start instantly.
+  // Never preload during a crossfade: the idle deck is still playing the outgoing song.
   if (yt) {
-    if ((settings.gapless || fade > 0) && ahead && ytPreloaded?.uid !== nextItem.uid) preloadYouTube(nextItem);
+    if ((settings.gapless || fade > 0) && ahead && !fading && ytPreloaded?.uid !== nextItem.uid) preloadYouTube(nextItem);
     if (fade > 0 && !fading && remaining <= fade && remaining > 0.25 && ytPreloaded?.uid === nextItem.uid && ytPreloaded.ready) {
       crossfadeYouTube(nextI, fade);
     }
     return;
   }
-  if ((settings.gapless || fade > 0) && ahead && preloaded?.uid !== nextItem.uid) preload(nextItem);
-  if (fade > 0 && !fading && remaining <= fade && remaining > 0.25 && preloaded?.uid === nextItem.uid) {
+  if ((settings.gapless || fade > 0) && ahead && !fading && preloaded?.uid !== nextItem.uid) preload(nextItem);
+  if (fade > 0 && !fading && remaining <= fade && remaining > 0.25 && preloaded?.uid === nextItem.uid && preloaded.src) {
     crossfadeTo(nextI, fade);
   }
 }
@@ -333,30 +375,37 @@ function crossfadeYouTube(nextI: number, seconds: number) {
   if (item) startedTrack(item);
   runFade(
     seconds,
-    (inV, outV) => {
-      to.setVolume(inV);
-      from.setVolume(outV);
+    (inK, outK) => {
+      to.setVolume(inK * volume());
+      from.setVolume(outK * volume());
     },
     () => from.stop(),
   );
 }
 
-/** Equal-power fade over `seconds`, calling `apply(incoming, outgoing)` volumes every 50 ms. */
-function runFade(seconds: number, apply: (inV: number, outV: number) => void, done: () => void) {
-  const steps = Math.max(1, Math.round((seconds * 1000) / 50));
-  let step = 0;
+/**
+ * Equal-power fade over `seconds`: `apply(incoming, outgoing)` gets factors from 0 to 1. Progress
+ * comes from the clock, not from counting timer ticks: in the background the page's timers can
+ * fire once a second or less, and a tick-counted fade then left the next song almost silent for
+ * minutes. The decks' time updates call fadeTick too, so the fade stays smooth there.
+ */
+function runFade(seconds: number, apply: (inK: number, outK: number) => void, done: () => void) {
   clearInterval(fadeTimer);
-  fadeTimer = setInterval(() => {
-    step++;
-    const v = volume();
-    const k = Math.min(1, step / steps);
-    apply(v * Math.sin((k * Math.PI) / 2), v * Math.cos((k * Math.PI) / 2));
-    if (k >= 1) {
-      clearInterval(fadeTimer);
-      done();
-      fading = false;
-    }
-  }, 50);
+  fade = { start: Date.now(), ms: Math.max(1, seconds * 1000), apply, done };
+  fadeTimer = setInterval(fadeTick, 50);
+  fadeTick();
+}
+
+function fadeTick() {
+  const f = fade;
+  if (!f) return;
+  const k = Math.min(1, (Date.now() - f.start) / f.ms);
+  f.apply(Math.sin((k * Math.PI) / 2), Math.cos((k * Math.PI) / 2));
+  if (k < 1) return;
+  clearInterval(fadeTimer);
+  fade = null;
+  f.done();
+  fading = false;
 }
 
 /** Crossfade length between two tracks, respecting Automix (never fade inside an album). */
@@ -372,9 +421,10 @@ export function crossfadeSeconds(a: Track, b: Track): number {
 async function preload(item: Q.QItem) {
   preloaded = { uid: item.uid, src: "" };
   try {
-    const stream = await resolve(item.track);
+    const [stream, gain] = await Promise.all([resolve(item.track), gainFor(item.track)]);
     const src = srcOf(stream);
     if (!src || preloaded?.uid !== item.uid) return;
+    deckGain[1 - active] = gain;
     const idle = deck(1 - active);
     idle.src = src;
     idle.volume = 0;
@@ -388,19 +438,21 @@ async function preload(item: Q.QItem) {
 function crossfadeTo(nextI: number, seconds: number) {
   const from = deck();
   const to = deck(1 - active);
+  const toI = 1 - active;
+  const fromI = active;
   fading = true;
   to.volume = 0;
   to.play().catch(() => {});
-  active = 1 - active;
+  active = toI;
   preloaded = null;
   set({ queue: Q.advance(get().queue, nextI), position: 0 });
   const item = Q.current(get().queue);
   if (item) startedTrack(item);
   runFade(
     seconds,
-    (inV, outV) => {
-      to.volume = inV;
-      from.volume = outV;
+    (inK, outK) => {
+      to.volume = inK * deckVolume(toI);
+      from.volume = outK * deckVolume(fromI);
     },
     () => from.pause(),
   );
@@ -534,9 +586,21 @@ usePlayer.subscribe((s, prev) => {
 
 // Volume follows settings.
 useSettings.subscribe((s, prev) => {
+  if (s.normalizeVolume !== prev.normalizeVolume || s.normalizeLevel !== prev.normalizeLevel) {
+    // Re-level the song that's playing (and the one waiting on the other deck).
+    const cur = Q.current(get().queue);
+    if (cur && get().output === "audio") {
+      const i = active;
+      void gainFor(cur.track).then((g) => {
+        deckGain[i] = g;
+        if (!fading && decks.length && i === active) deck().volume = deckVolume();
+      });
+    }
+    preloaded = null;
+  }
   if (s.volume === prev.volume) return;
   if (fading) return; // the fade reads the volume on every step
-  if (decks.length) deck().volume = s.volume;
+  if (decks.length) deck().volume = deckVolume();
   if (ytDecks.length) ytDeck().setVolume(s.volume);
 });
 
@@ -574,6 +638,7 @@ export function pause() {
   const midFade = fading;
   if (midFade) {
     clearInterval(fadeTimer);
+    fade = null;
     fading = false;
   }
   if (get().output === "youtube") {
@@ -588,7 +653,7 @@ export function pause() {
     deck().pause();
     if (midFade) {
       deck(1 - active).pause();
-      deck().volume = volume();
+      deck().volume = deckVolume();
     }
   }
   set({ playing: false });

@@ -1,8 +1,24 @@
-# OpenMusic 1.2.3
+# OpenMusic 1.2.4
 
-Android widgets that resize properly and always have a play/pause button.
+Volume normalization, and a fix for songs that started without sound.
 
-## New in 1.2.3
+## New in 1.2.4
+- **Normalize volume** (Settings → Playback): evens out loudness between songs, like Spotify.
+  Loud songs are turned down to the level you pick: Quiet, Normal or Loud. It uses Plex's
+  loudness analysis and ReplayGain/R128 tags in your files (local files and downloads); songs
+  without loudness information play as they are. YouTube songs are already evened out by
+  YouTube's own player, so in YTSpot it applies to your local files. Off by default.
+- **Fixed: the next song sometimes played without sound.** Three causes, all fixed:
+  - When a song ended or a crossfade started while the next song's stream was still being looked
+    up, the player switched to a deck that had nothing loaded.
+  - During a crossfade, the song after next was loaded into the deck still playing the outgoing
+    song, cutting it off.
+  - With the app in the background (or the window minimized), crossfades advanced only as fast as
+    the system let the page's timers run, so the new song could stay nearly silent for minutes.
+    Fades now follow the clock and the audio itself, and a song outside a fade is always put back
+    to its proper volume.
+
+## Also in 1.2.3
 - **Widgets fit their size.** On Android 12 and later the widgets switch layouts as you resize
   them, and covers and buttons grow or shrink to fill the space:
   - **Now playing**: one row (cover, song, play/pause and next, plus previous and the app icon

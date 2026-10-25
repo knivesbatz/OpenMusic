@@ -67,6 +67,8 @@ export const api = {
   radio: (track: T.Track) => call<T.Track[]>("radio", { track }),
   mediaUpdate: (now: T.NowPlaying) => call<void>("media_update", { now }),
   widgetRefresh: () => call<void>("widget_refresh"),
+  /** LUFS from Plex's loudness analysis or the file's ReplayGain tag; null when unknown. */
+  trackLoudness: (track: T.Track) => call<number | null>("track_loudness", { track }),
   mediaStop: () => call<void>("media_stop"),
   presenceUpdate: (now: T.NowPlaying, link: string | null) => call<void>("presence_update", { now, link }),
   presenceClear: () => call<void>("presence_clear"),
