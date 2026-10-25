@@ -1,8 +1,20 @@
-# OpenMusic 1.2.2
+# OpenMusic 1.2.3
 
-Spotify-style home screen widgets for Android.
+Android widgets that resize properly and always have a play/pause button.
 
-## New in 1.2.2
+## New in 1.2.3
+- **Widgets fit their size.** On Android 12 and later the widgets switch layouts as you resize
+  them, and covers and buttons grow or shrink to fill the space:
+  - **Now playing**: one row (cover, song, play/pause and next, plus previous and the app icon
+    when there's room); a square card with the cover on top at about 2×2; and a big cover with
+    large controls when it's wide and two rows or taller.
+  - **Recently played**: just the latest album or playlist when short; otherwise three to five
+    covers underneath that fill the rest of the widget.
+  Older Android versions pick the layout that fits when the widget is placed or resized.
+- **Play/pause on both widgets**: Now playing keeps play/pause at every size, and Recently
+  played now has its own play/pause button. With the app closed, it opens the app and plays.
+
+## Also in 1.2.2
 - **Android home screen widgets** (both apps; long-press the home screen → Widgets):
   - **Now playing**: the cover, song and artist with previous, play/pause and next, on a card
     tinted with the cover's colour. Tap the song to open the app. It follows the music in the
