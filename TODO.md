@@ -117,6 +117,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.3
+- 🟡 Widgets responsive: `RemoteViews(Map<SizeF, RemoteViews>)` on Android 12+ (row / square / tall
+  for Now playing; header-only or 3–5 covers for Recently played), best fit from widget options
+  before that; covers scale with the widget; play/pause on Recently played. Not yet run on a device
+
 ## 1.2.2
 - 🟡 Android widgets (`crates/tauri-plugin-openmusic-media/android/.../Widgets.kt`, `res/`): Now playing
   (RemoteViews, cover tint, buttons → `MediaBridge.emit` while the page runs, else open the app

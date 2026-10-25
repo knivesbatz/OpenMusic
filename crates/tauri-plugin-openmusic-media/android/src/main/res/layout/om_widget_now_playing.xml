@@ -18,8 +18,10 @@
         android:layout_height="match_parent"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="10dp"
-        android:paddingEnd="12dp">
+        android:paddingStart="8dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="8dp">
 
         <LinearLayout
             android:id="@+id/om_info"
@@ -30,12 +32,14 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!-- As tall as the widget allows (the cover is square, so its width follows). -->
             <ImageView
                 android:id="@+id/om_art"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:adjustViewBounds="true"
                 android:importantForAccessibility="no"
-                android:scaleType="centerCrop"
+                android:scaleType="fitCenter"
                 android:src="@drawable/om_widget_placeholder" />
 
             <LinearLayout

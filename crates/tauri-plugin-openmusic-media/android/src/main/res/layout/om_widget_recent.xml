@@ -29,8 +29,8 @@
 
             <ImageView
                 android:id="@+id/om_head_art"
-                android:layout_width="64dp"
-                android:layout_height="64dp"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
                 android:importantForAccessibility="no"
                 android:scaleType="centerCrop"
                 android:src="@drawable/om_widget_placeholder" />
@@ -65,11 +65,23 @@
                     android:textSize="13sp" />
             </LinearLayout>
 
+            <ImageButton
+                android:id="@+id/om_play"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_marginStart="8dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/om_play"
+                android:padding="2dp"
+                android:scaleType="fitCenter"
+                android:src="@drawable/om_ic_play_circle" />
+
             <ImageView
                 android:id="@+id/om_logo"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
+                android:layout_width="26dp"
+                android:layout_height="26dp"
                 android:layout_gravity="top"
+                android:layout_marginStart="8dp"
                 android:importantForAccessibility="no"
                 android:scaleType="fitCenter" />
         </LinearLayout>
