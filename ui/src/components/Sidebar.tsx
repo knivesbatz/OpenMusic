@@ -141,12 +141,13 @@ export function Sidebar() {
     openMenu(e, [
       {
         label: t("createPlaylist"),
+        icon: I.IMusic,
         onClick: async () => {
           const pl = await createPlaylist();
           if (pl) navigate({ name: "playlist", id: pl.id });
         },
       },
-      { label: t("createFolder"), onClick: () => newFolder() },
+      { label: t("createFolder"), icon: I.IFolder, onClick: () => newFolder() },
     ]);
 
   return (

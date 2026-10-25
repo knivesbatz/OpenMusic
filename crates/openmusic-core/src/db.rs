@@ -366,6 +366,23 @@ impl Db {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
+    /// Covers picked in the app for provider playlists (YTSpot), by playlist id. Only shown in
+    /// the app; the playlist on YouTube keeps its own thumbnail.
+    pub fn cover_overrides(&self) -> Result<std::collections::HashMap<String, String>> {
+        Ok(self.kv_get("playlist.covers")?.unwrap_or_default())
+    }
+
+    /// Set or clear a provider playlist's cover; returns the cover it replaced.
+    pub fn set_cover_override(&self, id: &str, cover: Option<&str>) -> Result<Option<String>> {
+        let mut all = self.cover_overrides()?;
+        let old = match cover {
+            Some(c) => all.insert(id.to_string(), c.to_string()),
+            None => all.remove(id),
+        };
+        self.kv_set("playlist.covers", &all)?;
+        Ok(old)
+    }
+
     // ---- saved albums / artists -------------------------------------------------------------
 
     pub fn save_item<T: serde::Serialize>(&self, kind: &str, id: &str, item: &T) -> Result<()> {
@@ -582,6 +599,16 @@ mod tests {
         assert_eq!(db.saved_items::<Artist>("artist").unwrap().len(), 1);
         db.unsave_item("plex:2").unwrap();
         assert_eq!(db.saved_items::<Album>("album").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn cover_overrides_replace_and_clear() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.set_cover_override("yt:PL1", Some("art://local/cover-a.jpg")).unwrap(), None);
+        assert_eq!(db.set_cover_override("yt:PL1", Some("art://local/cover-b.jpg")).unwrap().as_deref(), Some("art://local/cover-a.jpg"));
+        assert_eq!(db.cover_overrides().unwrap().get("yt:PL1").map(String::as_str), Some("art://local/cover-b.jpg"));
+        assert!(db.set_cover_override("yt:PL1", None).unwrap().is_some());
+        assert!(db.cover_overrides().unwrap().is_empty());
     }
 
     #[test]

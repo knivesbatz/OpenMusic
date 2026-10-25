@@ -1,6 +1,6 @@
 // Artist, album and playlist pages.
 import { useMemo, useState } from "react";
-import { albumMenu, changeCover, downloadTracks, playlistMenu, toggleSaved, trackMenu } from "../actions";
+import { albumMenu, canChangeCover, changeCover, downloadTracks, playlistMenu, toggleSaved, trackMenu } from "../actions";
 import { api, artUrl, errorMessage } from "../api";
 import { Art, ArtistName, ErrorBox, Loading, PlayFab, TitleText, useAsync, usePageTitle } from "../components/common";
 import * as I from "../components/Icons";
@@ -356,7 +356,7 @@ export function PlaylistPage({ id }: { id: string }) {
       <Hero
         art={playlist.artwork ?? tracks[0]?.artwork}
         kind={t("playlist")}
-        onArt={editable ? () => changeCover(playlist, reload) : undefined}
+        onArt={canChangeCover(playlist) ? () => changeCover(playlist, reload) : undefined}
         title={playlist.title}
         meta={
           <>
@@ -378,7 +378,7 @@ export function PlaylistPage({ id }: { id: string }) {
       <ActionBar
         tracks={shown}
         ctx={ctx}
-        onMore={(e) => openMenu(e, playlistMenu(playlist, async () => shown))}
+        onMore={(e) => openMenu(e, playlistMenu(playlist, async () => shown, reload))}
         right={
           tracks.length > 1 && (
             <>

@@ -172,6 +172,7 @@ const Row = memo(function Row(p: RowProps) {
   const t = useT();
   const tr = useDisplayTrack(p.track);
   const isCurrent = usePlayer((s) => s.queue.items[s.queue.index]?.track.id === tr.id);
+  const playingHere = usePlayer((s) => s.playing) && isCurrent;
   const offline = useApp((s) => s.online) === false && tr.source !== "local";
   return (
     <div
@@ -196,7 +197,15 @@ const Row = memo(function Row(p: RowProps) {
       onDrop={p.onDrop}
     >
       <span className="tl-num">
-        <span className="n">{p.numbered ? (tr.trackNumber && !p.showArt ? tr.trackNumber : p.index + 1) : ""}</span>
+        {playingHere ? (
+          <span className="n eq" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </span>
+        ) : (
+          <span className="n">{p.numbered ? (tr.trackNumber && !p.showArt ? tr.trackNumber : p.index + 1) : ""}</span>
+        )}
         <button className="icon-btn play-hover" aria-label={t("play")} onClick={(e) => (e.stopPropagation(), p.onPlay())}>
           <IPlay size={14} />
         </button>

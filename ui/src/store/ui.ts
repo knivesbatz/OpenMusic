@@ -1,4 +1,5 @@
 // Navigation history, toasts, dialogs and context menus.
+import type { ComponentType } from "react";
 import { create } from "zustand";
 import type { Track } from "../types";
 
@@ -27,6 +28,8 @@ interface Toast {
 
 export interface MenuItem {
   label: string;
+  /** An icon from components/Icons, shown before the label. */
+  icon?: ComponentType<{ size?: number }>;
   onClick?: () => void;
   submenu?: MenuItem[];
   danger?: boolean;
