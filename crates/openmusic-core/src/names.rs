@@ -27,6 +27,23 @@ pub async fn artist_alias(http: &reqwest::Client, name: &str, locale: &str) -> R
         "https://musicbrainz.org/ws/2/artist/?query={}&fmt=json&limit=3",
         urlencoding::encode(&query)
     );
+    Ok(pick_alias(&get(http, &url).await?, name, locale))
+}
+
+/// Titles of the compilations (best-ofs, rarities, singles collections…) MusicBrainz lists for the
+/// artist `name`. Providers like YouTube Music don't mark compilations, so the artist page uses
+/// these to file albums under Compilations.
+pub async fn compilation_titles(http: &reqwest::Client, name: &str) -> Result<Vec<String>> {
+    let query = format!("artist:\"{}\" AND secondarytype:compilation", lucene_escape(name));
+    let url = format!(
+        "https://musicbrainz.org/ws/2/release-group/?query={}&fmt=json&limit=100",
+        urlencoding::encode(&query)
+    );
+    Ok(pick_compilations(&get(http, &url).await?, name))
+}
+
+/// One MusicBrainz web service request, at most one per second (their rate limit).
+async fn get(http: &reqwest::Client, url: &str) -> Result<Value> {
     {
         let mut last = LAST.lock().await;
         if let Some(t) = *last {
@@ -45,8 +62,28 @@ pub async fn artist_alias(http: &reqwest::Client, name: &str, locale: &str) -> R
     if resp.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
         return Err(Error::Offline("MusicBrainz rate limit".into()));
     }
-    let v: Value = resp.error_for_status()?.json().await?;
-    Ok(pick_alias(&v, name, locale))
+    Ok(resp.error_for_status()?.json().await?)
+}
+
+/// Compilation titles from a release-group search, only those credited to exactly `artist` (not
+/// tributes or various-artists collections it merely appears on).
+pub fn pick_compilations(v: &Value, artist: &str) -> Vec<String> {
+    let want = norm(artist);
+    let Some(groups) = v.get("release-groups").and_then(|g| g.as_array()) else { return Vec::new() };
+    groups
+        .iter()
+        .filter(|g| {
+            g.get("secondary-types")
+                .and_then(|t| t.as_array())
+                .map(|t| t.iter().any(|x| x.as_str() == Some("Compilation")))
+                .unwrap_or(false)
+        })
+        .filter(|g| {
+            let credit = g.get("artist-credit").and_then(|c| c.as_array());
+            credit.map(|c| c.len() == 1 && c[0].get("name").and_then(|n| n.as_str()).map(norm).as_deref() == Some(want.as_str())).unwrap_or(false)
+        })
+        .filter_map(|g| g.get("title").and_then(|t| t.as_str()).map(str::to_string))
+        .collect()
 }
 
 /// True when the text contains kana or CJK ideographs.
@@ -126,6 +163,19 @@ mod tests {
             "aliases": [ { "name": "MCR", "locale": "en", "primary": null, "type": "Search hint" } ] } ] });
         assert_eq!(pick_alias(&v, "My Chemical Romance", "en"), None);
         assert!(has_japanese("宇多田ヒカル") && !has_japanese("My Chemical Romance"));
+    }
+
+    #[test]
+    fn compilations_credited_to_the_artist_only() {
+        let v = serde_json::json!({ "release-groups": [
+            { "title": "Death to False Metal", "primary-type": "Album", "secondary-types": ["Compilation"],
+              "artist-credit": [ { "name": "Weezer" } ] },
+            { "title": "Pinkerton", "primary-type": "Album", "artist-credit": [ { "name": "Weezer" } ] },
+            { "title": "A Tribute to Weezer", "secondary-types": ["Compilation"], "artist-credit": [ { "name": "Various Artists" } ] },
+            { "title": "Split", "secondary-types": ["Compilation"], "artist-credit": [ { "name": "Weezer" }, { "name": "Someone" } ] }
+        ] });
+        assert_eq!(pick_compilations(&v, "weezer"), vec!["Death to False Metal".to_string()]);
+        assert!(pick_compilations(&serde_json::json!({}), "Weezer").is_empty());
     }
 
     #[test]

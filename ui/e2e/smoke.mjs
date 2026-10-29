@@ -483,6 +483,24 @@ await test("Crossfade still reaches full volume when the page's timers are throt
   },
 });
 
+await test("Artist discography: albums newest first, compilations on their own tab", async (p) => {
+  await p.click(".shelf .card >> nth=0");
+  await p.waitForSelector(".hero-meta .link");
+  await p.click(".hero-meta .link");
+  await p.waitForSelector(".artist-hero");
+  await p.click('.chips button:has-text("Albums")');
+  const titles = async () => (await p.locator(".shelf .grid .card .card-title").allTextContents()).map((x) => x.trim());
+  await p.waitForFunction(() => document.querySelector(".shelf .grid .card .card-title")?.textContent?.trim() === "Paper Moons");
+  assert.deepEqual(await titles(), ["Paper Moons", "Low Tide", "Autumn Tapes", "Night Drive"]);
+  await p.click('.chips button:has-text("Compilations")');
+  await p.waitForFunction(() => document.querySelectorAll(".shelf .grid .card").length === 1);
+  assert.deepEqual(await titles(), ["Glass Garden"]);
+}, {
+  init: () => {
+    window.__MOCK__.artist_compilations = ["Glass Garden (Deluxe Edition)"];
+  },
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");

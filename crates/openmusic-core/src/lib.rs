@@ -329,6 +329,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::focus_main,
             commands::liked_ids,
             commands::localized_artist_names,
+            commands::artist_compilations,
             commands::log_ui_error,
             commands::gpu_set,
             commands::yt_accounts,

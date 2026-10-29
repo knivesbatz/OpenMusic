@@ -9,6 +9,7 @@ import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
+import { newestFirst, splitCompilations } from "../store/discography";
 import { setPlaylistSort, sortTracks, usePlaylistSort, type SortKey } from "../store/playlistSort";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, toast } from "../store/ui";
@@ -217,11 +218,14 @@ function DiscTracks({ tracks, ctx }: { tracks: Track[]; ctx: PlayContext }) {
 
 const navigateArtist = (id: string) => navigate({ name: "artist", id });
 
-type Disc = "popular" | "albums" | "singles" | "appears";
+type Disc = "popular" | "albums" | "singles" | "compilations" | "appears";
 
 export function ArtistPage({ id }: { id: string }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.artist(id), [id]);
+  // Compilations by name from MusicBrainz (YouTube Music doesn't mark them; Plex only when tagged).
+  const artistName = data?.artist?.name ?? "";
+  const { data: mbCompilations } = useAsync(() => (artistName ? api.artistCompilations(artistName) : Promise.resolve([])), [artistName]);
   usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }));
   const [more, setMore] = useState(false);
   const [disc, setDisc] = useState<Disc>("popular");
@@ -232,10 +236,13 @@ export function ArtistPage({ id }: { id: string }) {
   // Local files by this artist blend into Popular and the discography (no separate section).
   const localTracks = data.localTracks ?? [];
   const popular = [...data.topTracks.slice(0, 5), ...localTracks, ...data.topTracks.slice(5)];
-  const albumsAll = [...data.albums, ...(data.localAlbums ?? [])];
+  // Albums, singles and compilations each newest first, like Spotify.
+  const { albums: albumsAll, compilations } = splitCompilations([...data.albums, ...(data.localAlbums ?? [])], mbCompilations ?? []);
+  const singles = newestFirst(data.singles);
   const ctx: PlayContext = { kind: "artist", id, title: name, artwork: data.artist?.artwork };
-  const all: Album[] = [...albumsAll, ...data.singles];
-  const discItems = disc === "albums" ? albumsAll : disc === "singles" ? data.singles : disc === "appears" ? data.appearsOn : all.slice().sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+  const all: Album[] = newestFirst([...albumsAll, ...singles, ...compilations]);
+  const discItems =
+    disc === "albums" ? albumsAll : disc === "singles" ? singles : disc === "compilations" ? compilations : disc === "appears" ? data.appearsOn : all;
   if (showAll)
     return (
       <div className="page">
@@ -245,7 +252,7 @@ export function ArtistPage({ id }: { id: string }) {
             {t("back")}
           </button>
         </div>
-        <DiscChips disc={disc} setDisc={setDisc} hasAppears={data.appearsOn.length > 0} />
+        <DiscChips disc={disc} setDisc={setDisc} hasAppears={data.appearsOn.length > 0} hasCompilations={compilations.length > 0} />
         <Grid items={discItems.map((a) => ({ type: "album" as const, ...a }))} />
       </div>
     );
@@ -279,7 +286,7 @@ export function ArtistPage({ id }: { id: string }) {
               {t("showAll")}
             </button>
           </div>
-          <DiscChips disc={disc} setDisc={setDisc} hasAppears={data.appearsOn.length > 0} />
+          <DiscChips disc={disc} setDisc={setDisc} hasAppears={data.appearsOn.length > 0} hasCompilations={compilations.length > 0} />
           <Grid items={discItems.slice(0, 12).map((a) => ({ type: "album" as const, ...a }))} />
         </section>
       )}
@@ -297,12 +304,13 @@ export function ArtistPage({ id }: { id: string }) {
 
 const artBg = (a: string) => artUrl(a, 1000) ?? "";
 
-function DiscChips({ disc, setDisc, hasAppears }: { disc: Disc; setDisc: (d: Disc) => void; hasAppears: boolean }) {
+function DiscChips({ disc, setDisc, hasAppears, hasCompilations }: { disc: Disc; setDisc: (d: Disc) => void; hasAppears: boolean; hasCompilations: boolean }) {
   const t = useT();
   const opts: [Disc, string][] = [
     ["popular", t("popularReleases")],
     ["albums", t("albums")],
     ["singles", t("singlesEps")],
+    ...(hasCompilations ? ([["compilations", t("compilations")]] as [Disc, string][]) : []),
     ...(hasAppears ? ([["appears", t("appearsOn")]] as [Disc, string][]) : []),
   ];
   return (

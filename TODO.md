@@ -117,6 +117,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.5
+- ✅ Artist discography newest first; Compilations tab (`store/discography.ts`: provider kind,
+  MusicBrainz `artist_compilations` release-group search credited to the artist only, title
+  keywords). Plex compilations moved from Appears on to the tab (unit + e2e)
+
 ## 1.2.4
 - ✅ Normalize volume: `track_loudness` (Plex stream `loudness`/`gain`, file ReplayGain/R128 via lofty;
   cached) → `loudness.ts` gain (turn-down only, Quiet −23 / Normal −14 / Loud −11 LUFS) on each audio

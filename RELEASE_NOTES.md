@@ -1,8 +1,17 @@
-# OpenMusic 1.2.4
+# OpenMusic 1.2.5
 
-Volume normalization, and a fix for songs that started without sound.
+Artist discographies in release order, with a Compilations tab.
 
-## New in 1.2.4
+## New in 1.2.5
+- **Discography in release order**: on artist pages, Albums, Singles and EPs, and Popular
+  releases now list the newest release first, like Spotify (they followed the provider's order).
+- **Compilations tab**: best-ofs, rarities and singles collections get their own tab next to
+  Singles and EPs instead of mixing with the albums. YouTube Music doesn't say which albums are
+  compilations, so the app checks MusicBrainz's list of the artist's compilations (once a month
+  per artist) and titles that say so ("Greatest Hits", "Best of", "… Collection"). PLEXSpot uses
+  the album type from your library too (compilations were under Appears on before).
+
+## Also in 1.2.4
 - **Normalize volume** (Settings → Playback): evens out loudness between songs, like Spotify.
   Loud songs are turned down to the level you pick: Quiet, Normal or Loud. It uses Plex's
   loudness analysis and ReplayGain/R128 tags in your files (local files and downloads); songs

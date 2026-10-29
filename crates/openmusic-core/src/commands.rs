@@ -1630,6 +1630,31 @@ pub fn save_artist(app: AppHandle, state: S, artist: Artist, saved: bool) -> Res
 /// Localized aliases for artist names (MusicBrainz), cached for 30 days. Names without an alias
 /// are left out of the result. At most 8 uncached names are looked up per call, because
 /// MusicBrainz allows one request per second.
+/// Titles of the artist's compilations according to MusicBrainz, for the Compilations tab on
+/// artist pages. Cached for a month (an empty list too); empty when MusicBrainz can't be reached.
+#[tauri::command]
+pub async fn artist_compilations(state: S<'_>, name: String) -> Result<Vec<String>> {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return Ok(Vec::new());
+    }
+    let key = format!("mbcomp:{}", name.to_lowercase());
+    let cached = state.db().cache_get::<Vec<String>>(&key, false)?;
+    if let Some(titles) = cached {
+        return Ok(titles);
+    }
+    match crate::names::compilation_titles(&state.http, &name).await {
+        Ok(titles) => {
+            state.db().cache_put(&key, &titles, 30 * 86400)?;
+            Ok(titles)
+        }
+        Err(e) => {
+            log::info!("MusicBrainz compilations for {name}: {e}");
+            Ok(Vec::new())
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn localized_artist_names(
     state: S<'_>,

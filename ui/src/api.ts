@@ -67,6 +67,8 @@ export const api = {
   radio: (track: T.Track) => call<T.Track[]>("radio", { track }),
   mediaUpdate: (now: T.NowPlaying) => call<void>("media_update", { now }),
   widgetRefresh: () => call<void>("widget_refresh"),
+  /** Titles MusicBrainz lists as this artist's compilations ([] when unknown or offline). */
+  artistCompilations: (name: string) => call<string[] | null>("artist_compilations", { name }).then((v) => v ?? []),
   /** LUFS from Plex's loudness analysis or the file's ReplayGain tag; null when unknown. */
   trackLoudness: (track: T.Track) => call<number | null>("track_loudness", { track }),
   mediaStop: () => call<void>("media_stop"),
