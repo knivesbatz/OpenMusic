@@ -121,6 +121,8 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Windows 95 theme: `theme` setting → `html.win95`; `ui/src/theme-win95.css` (system palette, inset
   box-shadow bevels, scrollbars, menus, dialogs as captioned windows, list views, taskbar player);
   caption name in the custom title bar (e2e)
+- ✅ Win95 pixel text: W95FA (OFL) snapped to whole pixels + bold by `scripts/w95fa-grid.py` →
+  `ui/src/assets/fonts/w95fa-grid*.woff2`, used only at 12.5/25 px on 16/32 px lines; crisp icons
 - ✅ Artist discography newest first; Compilations tab (`store/discography.ts`: provider kind,
   MusicBrainz `artist_compilations` release-group search credited to the artist only, title
   keywords). Plex compilations moved from Appears on to the tab (unit + e2e)

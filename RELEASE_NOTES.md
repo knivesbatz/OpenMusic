@@ -11,8 +11,9 @@ An optional Windows 95 theme, and artist discographies in release order with a C
   - menus with navy highlights and etched separators, and pale yellow tooltip-style messages
   - track lists as white list views with raised column headers
   - the player bar as the taskbar
-  It uses Windows' own MS Sans Serif where it's installed. The full-screen player and song screen
-  stay dark. Switch back to "Default (dark)" at any time.
+  - crisp pixel text in the Windows 95 interface font (W95FA, an open-licence recreation, re-gridded
+    so every letter lands on whole pixels, with a proper bold), and icons drawn with hard pixel edges
+  The full-screen player and song screen stay dark. Switch back to "Default (dark)" at any time.
 - **Discography in release order**: on artist pages, Albums, Singles and EPs, and Popular
   releases now list the newest release first, like Spotify (they followed the provider's order).
 - **Compilations tab**: best-ofs, rarities and singles collections get their own tab next to

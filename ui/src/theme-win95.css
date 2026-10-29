@@ -5,10 +5,28 @@
    3D shadow #808080, 3D dark shadow (window frame) #000000, solid navy active caption and selection
    #000080 (the caption gradient only arrived with Windows 98), teal desktop #008080 and pale yellow
    tooltips #FFFFE1. Bevels are four 1px lines, drawn here as layered inset box-shadows (the same
-   technique as 98.css). Text uses 8 pt "MS Sans Serif" where Windows still ships it ("Microsoft
-   Sans Serif"); nothing Microsoft-owned is bundled. Pointer, focus and menu behaviour follow the
+   technique as 98.css). Text is W95FA (a recreation of the Windows 95 interface font, SIL OFL),
+   snapped to whole pixels by scripts/w95fa-grid.py and drawn only at whole-pixel multiples of its
+   grid (12.5 px, 25 px) on whole-pixel line heights, so it renders crisp like the bitmap fonts of
+   the time. Japanese text falls back to MS UI Gothic, the Japanese Windows 95 interface font.
+   Icons are drawn with square 2 px strokes and no anti-aliasing. Pointer, focus and menu behaviour follow the
    Windows 95 interface guidelines: dotted focus rectangles, navy highlight with white text, etched
    separators, sunken pressed buttons. */
+
+@font-face {
+  font-family: "W95FA Grid";
+  src: url("./assets/fonts/w95fa-grid.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "W95FA Grid";
+  src: url("./assets/fonts/w95fa-grid-bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 html.win95 {
   --w95-face: #c0c0c0;
@@ -44,15 +62,38 @@ html.win95 {
 
 /* ---- type, corners, focus --------------------------------------------------------------------- */
 html.win95 body {
-  font-family: "Microsoft Sans Serif", "MS Sans Serif", Tahoma, "MS UI Gothic", "Yu Gothic UI", Meiryo, Arial, sans-serif;
-  font-size: 0.8125rem;
+  font-family: "W95FA Grid", "MS UI Gothic", "Microsoft Sans Serif", "MS Sans Serif", "Yu Gothic UI", Meiryo, Tahoma, Arial, sans-serif;
   -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  text-rendering: optimizeSpeed;
   letter-spacing: 0;
 }
+/* Pixel text: one size (the font's 1:1 size) on a whole-pixel line, bold at 700 (its own bold
+   face, not a smeared synthetic one). Headings are the same pixels doubled. The full-screen views
+   keep their own type (below). */
+html.win95 body :where(*:not(.fullscreen-host *):not(.pp *):not(.pip *):not(.htpc *)) {
+  font-size: 12.5px !important;
+  line-height: 16px !important;
+  letter-spacing: 0 !important;
+  font-weight: 400;
+}
+html.win95 body :is(h1, h2, b, strong, th, .tb-name, .nav-item.active, .card-title, .greeting, .top-name, .lib-big, .disc-head, .pill.primary, .menu button.on, .tl-row.current .name, .side-item.active .name) { font-weight: 700 !important; }
+html.win95 body :is(h1, .greeting, .top-name, .hero-text h1, .hero-text h1.long, .lib-big):not(.fullscreen-host *):not(.pp *) {
+  font-size: 25px !important;
+  line-height: 32px !important;
+}
 html.win95 *:not(.spinner) { border-radius: 0 !important; }
-html.win95 h1, html.win95 h2, html.win95 .hero-text h1 { font-weight: 700; letter-spacing: 0; }
-html.win95 h1 { font-size: 1.75rem; }
-html.win95 h2 { font-size: 1.15rem; }
+html.win95 h1, html.win95 h2, html.win95 .hero-text h1 { letter-spacing: 0; }
+html.win95 .fullscreen-host, html.win95 .pp, html.win95 .pip {
+  font-family: "Figtree Variable", "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", "Meiryo", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+/* Icons: square 2 px strokes, no anti-aliasing, like 16-colour toolbar bitmaps. */
+html.win95 svg:not(.fullscreen-host svg):not(.pp svg) { shape-rendering: crispEdges; stroke-linecap: square; stroke-linejoin: miter; }
+html.win95 svg:not(.fullscreen-host svg):not(.pp svg) [stroke], html.win95 svg[stroke]:not(.fullscreen-host svg):not(.pp svg) * { stroke-width: 2px; vector-effect: non-scaling-stroke; }
+/* Covers and pictures are left smooth; a pixel look there only makes them muddy. */
 html.win95 :focus-visible { outline: 1px dotted #000; outline-offset: -4px; }
 html.win95 ::selection { background: var(--w95-navy); color: #fff; }
 html.win95 .jp-alt { color: #404040; }
@@ -158,7 +199,13 @@ html.win95 .search-input:hover, html.win95 .search-input:focus-within { backgrou
 html.win95 .search-input input, html.win95 .lib-filter input { color: #000; }
 html.win95 input::placeholder { color: var(--w95-shadow); }
 html.win95 .select { background: #fff; color: #000; box-shadow: var(--w95-field); padding: 3px 3px 3px 6px; gap: 8px; }
-html.win95 .select > span:last-child { background: var(--w95-face); box-shadow: var(--w95-raised); width: 17px; height: 19px; display: grid; place-items: center; font-size: 0.6rem; }
+html.win95 .select > span:last-child {
+  width: 17px;
+  height: 19px;
+  font-size: 0 !important;
+  box-shadow: var(--w95-raised);
+  background: var(--w95-face) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Cpath d='M0 0h7v1H6v1H5v1H4v1H3V3H2V2H1V1H0z'/%3E%3C/svg%3E") center no-repeat;
+}
 
 /* Switches become classic check boxes. */
 html.win95 .switch { width: 13px; height: 13px; background: #fff; box-shadow: var(--w95-field); }
@@ -178,11 +225,13 @@ html.win95 .slider::-webkit-slider-thumb, html.win95 .seek .slider::-webkit-slid
   width: 11px;
   height: 21px;
   margin-top: -8px;
+  border-radius: 0;
   background: var(--w95-face);
   box-shadow: var(--w95-raised);
   opacity: 1;
   transform: none;
 }
+html.win95 .slider::-webkit-slider-runnable-track { border-radius: 0; }
 html.win95 .seek-tip { background: #ffffe1; color: #000; box-shadow: 0 0 0 1px #000; font-weight: 400; }
 
 /* ---- scroll bars (16 px, checkered track, raised thumb and arrow buttons) ---------------------- */
