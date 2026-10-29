@@ -13,7 +13,7 @@ import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
 import { isMobileApp, openProfilePicker, refreshLibrary, setLocalOnly, useApp } from "../store/app";
-import { useSettings, type NormalizeLevel, type Quality } from "../store/settings";
+import { useSettings, type NormalizeLevel, type Quality, type Theme } from "../store/settings";
 import { confirmDialog, toast } from "../store/ui";
 import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
 import { cls, fmtBytes } from "../util";
@@ -429,6 +429,25 @@ export function SettingsPage() {
           </label>
         </section>
       )}
+
+      <section>
+        <h2>{t("appearance")}</h2>
+        <label className="setting">
+          <div className="grow">
+            <div>{t("theme")}</div>
+            <div className="muted small">{t("themeHint")}</div>
+          </div>
+          <Select<Theme>
+            label={t("theme")}
+            value={s.theme}
+            onChange={(v) => s.set({ theme: v })}
+            options={[
+              { value: "default", label: t("themeDefault") },
+              { value: "win95", label: t("themeWin95") },
+            ]}
+          />
+        </label>
+      </section>
 
       <section>
         <h2>{t("accessibility")}</h2>

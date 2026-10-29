@@ -16,8 +16,13 @@ export function TitleBar({ nav }: { nav: boolean }) {
   const t = useT();
   const pos = useUi((s) => s.pos);
   const len = useUi((s) => s.stack.length);
+  const name = useApp((s) => s.info?.name);
   return (
     <header className="titlebar" data-tauri-drag-region>
+      {/* The window's name, shown only by the Windows 95 theme (as a classic caption). */}
+      <span className="tb-name" data-tauri-drag-region>
+        {name}
+      </span>
       {nav && (
         <div className="tb-side" data-tauri-drag-region>
           <button className="tb-btn" aria-label={t("menu")} title={t("menu")} onClick={(e) => openMenu(e, appMenu(t))}>

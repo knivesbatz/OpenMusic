@@ -5,6 +5,8 @@ import { api, inTauri } from "../api";
 export type Quality = "auto" | "low" | "medium" | "high";
 export type JpMode = "original" | "romaji" | "both";
 export type NormalizeLevel = "quiet" | "normal" | "loud";
+/** "default": the dark Spotify look; "win95": grey bevelled windows on a teal desktop. */
+export type Theme = "default" | "win95";
 
 export interface Settings {
   language: "en" | "ja";
@@ -27,6 +29,7 @@ export interface Settings {
   textScale: number; // 0.85 - 1.5
   reducedMotion: boolean;
   highContrast: boolean;
+  theme: Theme;
   jpMode: JpMode;
   /** Names in the UI language: MusicBrainz aliases for artists, translations of titles in other scripts. */
   translateNames: boolean;
@@ -62,6 +65,7 @@ export const defaults: Settings = {
   textScale: 1,
   reducedMotion: false,
   highContrast: false,
+  theme: "default",
   jpMode: "original",
   translateNames: true,
   translateLyrics: true,
@@ -93,6 +97,7 @@ export function sanitize(raw: Record<string, unknown>): Settings {
   if (!["en", "ja"].includes(s.language)) s.language = defaults.language;
   if (!["original", "romaji", "both"].includes(s.jpMode)) s.jpMode = "original";
   if (!["quiet", "normal", "loud"].includes(s.normalizeLevel)) s.normalizeLevel = "normal";
+  if (!["default", "win95"].includes(s.theme)) s.theme = "default";
   s.normalizeVolume = s.normalizeVolume === true;
   s.albumSort = libSort(s.albumSort, ["recent", "alpha", "artist", "year"]);
   s.artistSort = libSort(s.artistSort, ["recent", "alpha"]);

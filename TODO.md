@@ -118,6 +118,9 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
 ## 1.2.5
+- ✅ Windows 95 theme: `theme` setting → `html.win95`; `ui/src/theme-win95.css` (system palette, inset
+  box-shadow bevels, scrollbars, menus, dialogs as captioned windows, list views, taskbar player);
+  caption name in the custom title bar (e2e)
 - ✅ Artist discography newest first; Compilations tab (`store/discography.ts`: provider kind,
   MusicBrainz `artist_compilations` release-group search credited to the artist only, title
   keywords). Plex compilations moved from Appears on to the tab (unit + e2e)

@@ -501,6 +501,24 @@ await test("Artist discography: albums newest first, compilations on their own t
   },
 });
 
+await test("Windows 95 theme: picked in Settings, applied to the whole app and saved", async (p) => {
+  await p.click('button[aria-label="Settings"]');
+  await p.waitForSelector(".page h1:has-text('Settings')");
+  assert.equal(await p.evaluate(() => document.documentElement.classList.contains("win95")), false);
+  await p.locator(".setting", { hasText: "Theme" }).locator("button").click();
+  await p.click('.menu button:has-text("Windows 95")');
+  await p.waitForFunction(() => document.documentElement.classList.contains("win95"));
+  // The teal desktop and grey windows.
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector(".layout")).backgroundColor), "rgb(0, 128, 128)");
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector(".main")).backgroundColor), "rgb(192, 192, 192)");
+  await p.waitForFunction(() => JSON.stringify(window.__MOCK__.__saved ?? {}).includes('"theme":"win95"'), null, { timeout: 5000 });
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.settings_set = (a) => ((d.__saved = a.settings), null);
+  },
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");
