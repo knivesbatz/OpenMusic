@@ -1,0 +1,362 @@
+/* ==== Windows 95 theme (Settings → Appearance → Theme) ===========================================
+   Everything here is scoped to html.win95, so the default look is untouched.
+
+   The classic system colours: button face #C0C0C0, 3D highlight #FFFFFF, 3D light #DFDFDF,
+   3D shadow #808080, 3D dark shadow (window frame) #000000, solid navy active caption and selection
+   #000080 (the caption gradient only arrived with Windows 98), teal desktop #008080 and pale yellow
+   tooltips #FFFFE1. Bevels are four 1px lines, drawn here as layered inset box-shadows (the same
+   technique as 98.css). Text is W95FA (a recreation of the Windows 95 interface font, SIL OFL),
+   snapped to whole pixels by scripts/w95fa-grid.py and drawn only at whole-pixel multiples of its
+   grid (12.5 px, 25 px) on whole-pixel line heights, so it renders crisp like the bitmap fonts of
+   the time. Japanese text falls back to MS UI Gothic, the Japanese Windows 95 interface font.
+   Icons are drawn with square 2 px strokes and no anti-aliasing. Pointer, focus and menu behaviour follow the
+   Windows 95 interface guidelines: dotted focus rectangles, navy highlight with white text, etched
+   separators, sunken pressed buttons. */
+
+@font-face {
+  font-family: "W95FA Grid";
+  src: url("./assets/fonts/w95fa-grid.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "W95FA Grid";
+  src: url("./assets/fonts/w95fa-grid-bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+html.win95 {
+  --w95-face: #c0c0c0;
+  --w95-light: #dfdfdf;
+  --w95-hi: #ffffff;
+  --w95-shadow: #808080;
+  --w95-frame: #0a0a0a;
+  --w95-navy: #000080;
+  --w95-teal: #008080;
+  --w95-raised: inset -1px -1px var(--w95-frame), inset 1px 1px var(--w95-hi), inset -2px -2px var(--w95-shadow), inset 2px 2px var(--w95-light);
+  --w95-pressed: inset -1px -1px var(--w95-hi), inset 1px 1px var(--w95-frame), inset -2px -2px var(--w95-light), inset 2px 2px var(--w95-shadow);
+  --w95-field: inset -1px -1px var(--w95-hi), inset 1px 1px var(--w95-shadow), inset -2px -2px var(--w95-light), inset 2px 2px var(--w95-frame);
+  --w95-window: inset -1px -1px var(--w95-frame), inset 1px 1px var(--w95-light), inset -2px -2px var(--w95-shadow), inset 2px 2px var(--w95-hi);
+  --w95-thin-raised: inset -1px -1px var(--w95-shadow), inset 1px 1px var(--w95-hi);
+  --w95-thin-sunken: inset -1px -1px var(--w95-hi), inset 1px 1px var(--w95-shadow);
+
+  /* The app's own colours, mapped onto the system palette. */
+  --green: var(--w95-navy);
+  --green-hi: #1084d0;
+  --bg: var(--w95-teal);
+  --surface: var(--w95-face);
+  --surface-2: var(--w95-face);
+  --surface-3: var(--w95-light);
+  --surface-4: var(--w95-light);
+  --hover: #00008014;
+  --text: #000;
+  --muted: #222;
+  --dim: var(--w95-shadow);
+  --danger: #a00000;
+  --radius: 0px;
+  color-scheme: light;
+}
+
+/* ---- type, corners, focus --------------------------------------------------------------------- */
+html.win95 body {
+  font-family: "W95FA Grid", "MS UI Gothic", "Microsoft Sans Serif", "MS Sans Serif", "Yu Gothic UI", Meiryo, Tahoma, Arial, sans-serif;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+  font-kerning: none;
+  font-variant-ligatures: none;
+  text-rendering: optimizeSpeed;
+  letter-spacing: 0;
+}
+/* Pixel text: one size (the font's 1:1 size) on a whole-pixel line, bold at 700 (its own bold
+   face, not a smeared synthetic one). Headings are the same pixels doubled. The full-screen views
+   keep their own type (below). */
+html.win95 body :where(*:not(.fullscreen-host *):not(.pp *):not(.pip *):not(.htpc *)) {
+  font-size: 12.5px !important;
+  line-height: 16px !important;
+  letter-spacing: 0 !important;
+  font-weight: 400;
+}
+html.win95 body :is(h1, h2, b, strong, th, .tb-name, .nav-item.active, .card-title, .greeting, .top-name, .lib-big, .disc-head, .pill.primary, .menu button.on, .tl-row.current .name, .side-item.active .name) { font-weight: 700 !important; }
+html.win95 body :is(h1, .greeting, .top-name, .hero-text h1, .hero-text h1.long, .lib-big):not(.fullscreen-host *):not(.pp *) {
+  font-size: 25px !important;
+  line-height: 32px !important;
+}
+html.win95 *:not(.spinner) { border-radius: 0 !important; }
+html.win95 h1, html.win95 h2, html.win95 .hero-text h1 { letter-spacing: 0; }
+html.win95 .fullscreen-host, html.win95 .pp, html.win95 .pip {
+  font-family: "Figtree Variable", "Yu Gothic UI", "Hiragino Sans", "Noto Sans JP", "Meiryo", "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+/* Icons: square 2 px strokes, no anti-aliasing, like 16-colour toolbar bitmaps. */
+html.win95 svg:not(.fullscreen-host svg):not(.pp svg) { shape-rendering: crispEdges; stroke-linecap: square; stroke-linejoin: miter; }
+html.win95 svg:not(.fullscreen-host svg):not(.pp svg) [stroke], html.win95 svg[stroke]:not(.fullscreen-host svg):not(.pp svg) * { stroke-width: 2px; vector-effect: non-scaling-stroke; }
+/* Covers and pictures are left smooth; a pixel look there only makes them muddy. */
+html.win95 :focus-visible { outline: 1px dotted #000; outline-offset: -4px; }
+html.win95 ::selection { background: var(--w95-navy); color: #fff; }
+html.win95 .jp-alt { color: #404040; }
+
+/* ---- the desktop and its windows ------------------------------------------------------------- */
+html.win95 .layout { background: var(--w95-teal); gap: 6px; padding: 6px 6px 0; }
+html.win95 .side-box, html.win95 .main, html.win95 .queue-panel {
+  background: var(--w95-face);
+  box-shadow: var(--w95-window);
+}
+html.win95 .side-box { padding: 6px; }
+html.win95 .main { padding: 3px; }
+/* "Your Library" reads as a window caption. */
+html.win95 .lib-head { background: var(--w95-navy); margin: -3px -3px 6px; padding: 2px 3px; }
+html.win95 .lib-head .nav-item { color: #fff; padding: 2px 4px; font-size: 0.8125rem; }
+html.win95 .nav-item { color: #000; font-weight: 400; padding: 4px 8px; }
+html.win95 .nav-item.active { font-weight: 700; }
+html.win95 .side-cat { color: #000; }
+html.win95 .side-cat.active, html.win95 .side-cat:hover { color: #000; text-decoration: underline; }
+html.win95 .side-item:hover { background: transparent; }
+html.win95 .side-item.active { background: var(--w95-navy); color: #fff; }
+html.win95 .side-item.active * { color: #fff !important; }
+html.win95 .side-item .muted, html.win95 .side-text .sub { color: #404040; }
+html.win95 .panel-head { background: var(--w95-navy); color: #fff; padding: 3px 3px 3px 6px; margin: 3px 3px 6px; }
+html.win95 .panel-head h2 { color: #fff; font-size: 0.8125rem; }
+html.win95 .panel-head .icon-btn { color: #000; background: var(--w95-face); box-shadow: var(--w95-raised); padding: 1px; }
+
+/* Page header strip: a toolbar along the top of the window. */
+html.win95 .topbar, html.win95 .topbar.solid { background: var(--w95-face); box-shadow: inset 0 -1px var(--w95-shadow), 0 1px var(--w95-hi); padding: 6px 10px; }
+/* Under the Windows title bar the in-page strip only carries the scrolled page's name. */
+html.win95 .topbar.slim { min-height: 0; padding: 0 10px; box-shadow: none; background: transparent; }
+html.win95 .topbar.slim.solid { min-height: 40px; padding: 4px 10px; background: var(--w95-face); box-shadow: inset 0 -1px var(--w95-shadow), 0 1px var(--w95-hi); }
+html.win95 .main { background: var(--w95-face); }
+html.win95 .hero-wash, html.win95 .pp-wash { display: none; }
+html.win95 .page { color: #000; }
+
+/* ---- the custom Windows title bar becomes a classic caption ------------------------------------ */
+html.win95 .titlebar { background: var(--w95-navy); color: #fff; height: 30px; padding-left: 4px; gap: 6px; }
+html.win95 .titlebar:not(:has(.search-box)) { height: 26px; }
+html.win95 .tb-name { display: block; position: absolute; left: 6px; font-weight: 700; font-size: 0.8125rem; color: #fff; pointer-events: none; }
+html.win95 .titlebar .tb-side:first-of-type { margin-left: 80px; }
+html.win95 .tb-btn, html.win95 .titlebar .round-btn:not(.home) { color: #fff; background: transparent; width: 26px; height: 22px; box-shadow: none; }
+html.win95 .tb-btn:hover:not(:disabled), html.win95 .titlebar .round-btn:not(.home):hover { background: transparent; box-shadow: inset -1px -1px #00004a, inset 1px 1px #4a4ab0; transform: none; }
+html.win95 .titlebar .search-box { gap: 4px; }
+html.win95 .titlebar .round-btn.home { width: 26px; height: 22px; background: var(--w95-face); color: #000; box-shadow: var(--w95-raised); }
+html.win95 .titlebar .search-input { height: 22px; }
+html.win95 .titlebar .account { color: #fff; }
+html.win95 .win-btns { height: 26px; align-items: center; gap: 0; margin-left: 4px; padding-right: 3px; }
+html.win95 .win-btn { width: 18px; height: 16px; background: var(--w95-face); color: #000; box-shadow: var(--w95-raised); }
+html.win95 .win-btn svg { width: 8px; height: 8px; stroke-width: 1.6; }
+html.win95 .win-btn.close { margin-left: 2px; }
+html.win95 .win-btn:hover, html.win95 .win-btn.close:hover { background: var(--w95-face); color: #000; }
+html.win95 .win-btn:active { box-shadow: var(--w95-pressed); }
+
+/* ---- buttons --------------------------------------------------------------------------------- */
+html.win95 .pill {
+  background: var(--w95-face);
+  color: #000;
+  font-weight: 400;
+  min-width: 75px;
+  padding: 5px 14px;
+  box-shadow: var(--w95-raised);
+  border: 0;
+}
+html.win95 .pill.small { padding: 3px 10px; min-width: 0; }
+/* The default button (OK) carries an extra black frame. */
+html.win95 .pill.primary { background: var(--w95-face); color: #000; box-shadow: 0 0 0 1px #000, var(--w95-raised); }
+html.win95 .pill.danger { background: var(--w95-face); color: var(--danger); }
+html.win95 .pill:hover:not(:disabled), html.win95 .play-btn:hover:not(:disabled), html.win95 .fab:hover { transform: none; background: var(--w95-face); }
+html.win95 .pill:active:not(:disabled), html.win95 .chip:active, html.win95 .play-btn:active, html.win95 .fab:active { transform: none; box-shadow: var(--w95-pressed); }
+html.win95 .chip { background: var(--w95-face); color: #000; font-weight: 400; padding: 4px 12px; box-shadow: var(--w95-raised); }
+html.win95 .chip:hover { background: var(--w95-face); }
+/* A latched toggle button: pressed in, with the checkered face. */
+html.win95 .chip.on { color: #000; box-shadow: var(--w95-pressed); background: repeating-conic-gradient(var(--w95-face) 0% 25%, var(--w95-hi) 0% 50%) 0 0 / 2px 2px; }
+html.win95 .play-btn, html.win95 .fab, html.win95 .round-btn {
+  background: var(--w95-face);
+  color: #000;
+  box-shadow: var(--w95-raised);
+}
+html.win95 .play-btn.big { width: 40px; height: 40px; }
+html.win95 .fab { width: 40px; height: 40px; }
+html.win95 .fab.big { width: 48px; height: 48px; }
+/* Toolbar buttons (Office/IE style): flat until pointed at. */
+html.win95 .icon-btn { color: #000; padding: 6px; }
+html.win95 .icon-btn:not(.like):not(.more):hover:not(:disabled) { background: transparent; box-shadow: var(--w95-thin-raised); }
+html.win95 .icon-btn:active:not(:disabled) { box-shadow: var(--w95-thin-sunken); }
+html.win95 .icon-btn.on { color: var(--w95-navy); box-shadow: var(--w95-thin-sunken); background: repeating-conic-gradient(var(--w95-face) 0% 25%, var(--w95-hi) 0% 50%) 0 0 / 2px 2px; }
+html.win95 .icon-btn.on::after { display: none; }
+html.win95 .icon-btn:hover:not(:disabled) svg, html.win95 .icon-btn:active:not(:disabled) svg { transform: none; }
+html.win95 .link { color: #000; }
+html.win95 .link:hover { color: #0000ff; }
+html.win95 .follow { color: #000; border: 0; box-shadow: var(--w95-raised); background: var(--w95-face); }
+
+/* ---- fields --------------------------------------------------------------------------------- */
+html.win95 .search-input, html.win95 .lib-filter, html.win95 .pl-find, html.win95 .field input, html.win95 .form input {
+  background: #fff;
+  color: #000;
+  border: 0;
+  box-shadow: var(--w95-field);
+  height: 28px;
+}
+html.win95 .search-input:hover, html.win95 .search-input:focus-within { background: #fff; border-color: transparent; }
+html.win95 .search-input input, html.win95 .lib-filter input { color: #000; }
+html.win95 input::placeholder { color: var(--w95-shadow); }
+html.win95 .select { background: #fff; color: #000; box-shadow: var(--w95-field); padding: 3px 3px 3px 6px; gap: 8px; }
+html.win95 .select > span:last-child {
+  width: 17px;
+  height: 19px;
+  font-size: 0 !important;
+  box-shadow: var(--w95-raised);
+  background: var(--w95-face) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Cpath d='M0 0h7v1H6v1H5v1H4v1H3V3H2V2H1V1H0z'/%3E%3C/svg%3E") center no-repeat;
+}
+
+/* Switches become classic check boxes. */
+html.win95 .switch { width: 13px; height: 13px; background: #fff; box-shadow: var(--w95-field); }
+html.win95 .switch::after { display: none; }
+html.win95 .switch:checked {
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7' viewBox='0 0 7 7'%3E%3Cpath d='M6 0h1v2H6v1H5v1H4v1H3v1H2V5H1V4H0V2h1v1h1v1h1V3h1V2h1V1h1z'/%3E%3C/svg%3E") center / 7px 7px no-repeat;
+}
+html.win95 .switch:active { background-color: var(--w95-face); }
+
+/* Sliders: a sunken groove and an upright rectangular thumb (track bar). */
+html.win95 .slider::-webkit-slider-runnable-track, html.win95 .seek .slider::-webkit-slider-runnable-track {
+  height: 6px;
+  background: linear-gradient(90deg, var(--w95-navy) var(--pct, 0%), #fff var(--pct, 0%));
+  box-shadow: var(--w95-field);
+}
+html.win95 .slider::-webkit-slider-thumb, html.win95 .seek .slider::-webkit-slider-thumb {
+  width: 11px;
+  height: 21px;
+  margin-top: -8px;
+  border-radius: 0;
+  background: var(--w95-face);
+  box-shadow: var(--w95-raised);
+  opacity: 1;
+  transform: none;
+}
+html.win95 .slider::-webkit-slider-runnable-track { border-radius: 0; }
+html.win95 .seek-tip { background: #ffffe1; color: #000; box-shadow: 0 0 0 1px #000; font-weight: 400; }
+
+/* ---- scroll bars (16 px, checkered track, raised thumb and arrow buttons) ---------------------- */
+html.win95 ::-webkit-scrollbar { width: 16px; height: 16px; }
+html.win95 ::-webkit-scrollbar-track { background: repeating-conic-gradient(var(--w95-face) 0% 25%, var(--w95-hi) 0% 50%) 0 0 / 2px 2px; }
+html.win95 ::-webkit-scrollbar-thumb, html.win95 ::-webkit-scrollbar-thumb:hover {
+  background: var(--w95-face);
+  border: 0;
+  box-shadow: var(--w95-raised);
+}
+html.win95 ::-webkit-scrollbar-corner { background: var(--w95-face); }
+html.win95 ::-webkit-scrollbar-button:single-button {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-color: var(--w95-face);
+  background-repeat: no-repeat;
+  background-position: center;
+  box-shadow: var(--w95-raised);
+}
+html.win95 ::-webkit-scrollbar-button:single-button:active { box-shadow: var(--w95-pressed); }
+html.win95 ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Cpath d='M3 0h1v1h1v1h1v1h1v1H0V3h1V2h1V1h1z'/%3E%3C/svg%3E");
+}
+html.win95 ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Cpath d='M0 0h7v1H6v1H5v1H4v1H3V3H2V2H1V1H0z'/%3E%3C/svg%3E");
+}
+html.win95 ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='7'%3E%3Cpath d='M3 0h1v7H3V6H2V5H1V4H0V3h1V2h1V1h1z'/%3E%3C/svg%3E");
+}
+html.win95 ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='7'%3E%3Cpath d='M0 0h1v1h1v1h1v1h1v1H3v1H2v1H1v1H0z'/%3E%3C/svg%3E");
+}
+
+/* ---- menus, dialogs, pop-ups, tooltips ------------------------------------------------------ */
+html.win95 .menu, html.win95 .savedin, html.win95 .update-banner, html.win95 .dialog, html.win95 .login-card {
+  background: var(--w95-face);
+  color: #000;
+  box-shadow: var(--w95-window), 2px 2px 0 #0004;
+  padding: 3px;
+  animation: none;
+}
+html.win95 .menu button { color: #000; padding: 4px 20px 4px 8px; font-size: 0.8125rem; }
+html.win95 .menu button:hover, html.win95 .menu button:focus-visible, html.win95 .menu button.open { background: var(--w95-navy); color: #fff; outline: none; }
+html.win95 .menu button .mi svg { color: currentColor; }
+html.win95 .menu button.on { color: #000; font-weight: 700; }
+html.win95 .menu button.on:hover { color: #fff; }
+html.win95 .menu hr { border: 0; border-top: 1px solid var(--w95-shadow); border-bottom: 1px solid var(--w95-hi); margin: 3px 2px; }
+html.win95 .menu-head { color: var(--w95-shadow); }
+html.win95 .modal-bg { background: transparent; }
+/* A dialog's heading is its caption. */
+html.win95 .dialog { padding: 3px 3px 12px; }
+html.win95 .dialog > h2:first-child { background: var(--w95-navy); color: #fff; font-size: 0.8125rem; padding: 3px 6px; margin: 0 0 12px; }
+html.win95 .dialog > :not(h2) { margin-left: 12px; margin-right: 12px; }
+html.win95 .dialog p, html.win95 .dialog.info dt { color: #000; }
+html.win95 .si-row:hover, html.win95 .si-new:hover, html.win95 .profile:hover:not(:disabled), html.win95 .server:hover { background: var(--w95-navy); color: #fff; }
+html.win95 .si-check { background: #fff; border: 0; box-shadow: var(--w95-field); }
+html.win95 .toast { background: #ffffe1; color: #000; font-weight: 400; box-shadow: 0 0 0 1px #000, 2px 2px 0 #0004; }
+html.win95 .offline-pill { background: #ffffe1; color: #000; box-shadow: 0 0 0 1px #000; }
+html.win95 .badge { background: var(--w95-shadow); color: #fff; }
+
+/* ---- lists ------------------------------------------------------------------------------------ */
+/* Track lists sit in a white, sunken list view with raised column headers. */
+html.win95 .tracklist { background: #fff; box-shadow: var(--w95-field); padding: 2px; }
+html.win95 .tl-head { background: var(--w95-face); color: #000; gap: 0; padding: 0; height: 22px; border: 0; }
+html.win95 .tl-head > * { box-shadow: var(--w95-raised); height: 100%; display: flex; align-items: center; padding: 0 6px; }
+html.win95 .tl-row, html.win95 .q-row, html.win95 .lib-row, html.win95 .ep-row { color: #000; }
+html.win95 .tl-row .sub, html.win95 .tl-row .tl-dur, html.win95 .tl-row .n, html.win95 .q-row .sub { color: #404040; }
+html.win95 .tl-row:hover, html.win95 .q-row:hover, html.win95 .lib-row:hover { background: transparent; }
+html.win95 .tl-row.selected, html.win95 .tl-row.selected:hover, html.win95 .q-row.selected { background: var(--w95-navy); color: #fff; }
+html.win95 .tl-row.selected *, html.win95 .q-row.selected * { color: #fff !important; }
+html.win95 .tl-row.current .name, html.win95 .tl-row.current .n { color: var(--w95-navy); font-weight: 700; }
+html.win95 .tl-num .eq i { background: var(--w95-navy); }
+html.win95 .disc-head { color: #000; }
+
+/* Cards: the cover with a black frame; the name highlights like a selected desktop icon. */
+html.win95 .card { padding: 8px; }
+html.win95 .card:hover, html.win95 .card:focus-visible { background: transparent; }
+html.win95 .card-art .art { box-shadow: none; outline: 1px solid #000; }
+html.win95 .card:hover .card-art .art { transform: none; box-shadow: none; }
+html.win95 .card:hover .card-title, html.win95 .card:focus-visible .card-title { background: var(--w95-navy); color: #fff; outline: 1px dotted #ffff; }
+html.win95 .card-title { color: #000; font-weight: 400; }
+html.win95 .card-sub { color: #404040; }
+html.win95 .shortcut { background: var(--w95-face); color: #000; box-shadow: var(--w95-raised); font-weight: 400; }
+html.win95 .shortcut:hover, html.win95 .shortcut:focus-visible { background: var(--w95-face); }
+html.win95 .shortcut:active { box-shadow: var(--w95-pressed); transform: none; }
+html.win95 .shortcut .art { box-shadow: none; }
+html.win95 .browse-tile { color: #fff; box-shadow: var(--w95-raised); }
+html.win95 .top-card { background: var(--w95-face); box-shadow: var(--w95-raised); }
+html.win95 .top-card:hover { background: var(--w95-face); }
+html.win95 .hero-art { box-shadow: 2px 2px 0 #0006; outline: 1px solid #000; }
+html.win95 .hero-text h1, html.win95 .hero-text { color: #000; }
+html.win95 .setting { border-color: var(--w95-shadow); }
+html.win95 .settings section { background: var(--w95-face); }
+html.win95 .settings h2 { border-bottom: 1px solid var(--w95-shadow); box-shadow: 0 1px var(--w95-hi); padding-bottom: 4px; }
+html.win95 .lib-tab.on::after { background: var(--w95-navy); }
+
+/* ---- the player bar is the taskbar ---------------------------------------------------------- */
+html.win95 .playerbar {
+  background: var(--w95-face);
+  color: #000;
+  box-shadow: inset 0 1px var(--w95-light), inset 0 2px var(--w95-hi);
+  margin: 6px -6px 0;
+  padding: 2px 10px 0;
+}
+html.win95 .pb-meta .name, html.win95 .pb-meta .sub, html.win95 .time, html.win95 .pb-time { color: #000; }
+html.win95 .pb-art .art { outline: 1px solid #000; }
+
+/* ---- full-screen views stay dark (covers and lyrics read best that way) --------------------- */
+html.win95 .fullscreen-host, html.win95 .pp, html.win95 .pip, html.win95 .artist-hero-text, html.win95 .htpc {
+  --text: #fff;
+  --muted: #d0d0d0;
+  --dim: #9a9a9a;
+}
+html.win95 .artist-hero h1 { color: #fff; }
+
+/* ---- phones -------------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  html.win95 .layout { padding: 0; gap: 0; }
+  html.win95 .main { box-shadow: none; }
+  html.win95 .playerbar { margin: 0; background: var(--w95-face); box-shadow: inset 0 1px var(--w95-light), inset 0 2px var(--w95-hi); }
+  html.win95 .playerbar::before, html.win95 .playerbar::after { display: none; }
+  html.win95 .pb-line { background: #fff; box-shadow: var(--w95-thin-sunken); }
+  html.win95 .pb-line div { background: var(--w95-navy); }
+  html.win95 .mobile-tabs { background: var(--w95-face); box-shadow: inset 0 1px var(--w95-light), inset 0 2px var(--w95-hi); color: #000; }
+  html.win95 .mobile-tabs button { color: #000; }
+  html.win95 .phone-bar .round-btn { background: var(--w95-face); }
+}

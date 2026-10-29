@@ -545,7 +545,8 @@ impl Plex {
         for a in self.list(sess, &format!("/library/metadata/{rk}/children")).await?.iter().filter_map(to_album) {
             match a.kind.as_deref() {
                 Some("single") | Some("ep") => page.singles.push(a),
-                Some("compilation") => page.appears_on.push(a),
+                // Compilations stay with the albums, marked as such; the page files them under
+                // their own tab.
                 _ => page.albums.push(a),
             }
         }

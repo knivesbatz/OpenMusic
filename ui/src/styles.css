@@ -963,3 +963,4 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .mobile-tabs button:active svg { transform: scale(0.86); }
   .pb-meta { animation-name: om-fade; }
 }
+.tb-name { display: none; }

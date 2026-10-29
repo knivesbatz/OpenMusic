@@ -15,6 +15,7 @@ import { useSettings } from "./store/settings";
 // closest open typeface to Spotify's geometric sans; Japanese falls back to the system fonts.
 import "@fontsource-variable/figtree";
 import "./styles.css";
+import "./theme-win95.css";
 import { api, inTauri, setArtBase } from "./api";
 import { useApp } from "./store/app";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -39,14 +40,16 @@ function Root() {
   const scale = useSettings((s) => s.textScale);
   const reduced = useSettings((s) => s.reducedMotion);
   const contrast = useSettings((s) => s.highContrast);
+  const theme = useSettings((s) => s.theme);
   const lang = useSettings((s) => s.language);
   useEffect(() => {
     const el = document.documentElement;
     el.style.fontSize = 16 * scale + "px";
     el.classList.toggle("reduced-motion", reduced);
     el.classList.toggle("high-contrast", contrast);
+    el.classList.toggle("win95", theme === "win95");
     el.lang = lang;
-  }, [scale, reduced, contrast, lang]);
+  }, [scale, reduced, contrast, theme, lang]);
   return <ErrorBoundary>{isPip ? <Pip /> : <App />}</ErrorBoundary>;
 }
 

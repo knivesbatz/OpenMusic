@@ -1,8 +1,28 @@
-# OpenMusic 1.2.4
+# OpenMusic 1.2.5
 
-Volume normalization, and a fix for songs that started without sound.
+An optional Windows 95 theme, and artist discographies in release order with a Compilations tab.
 
-## New in 1.2.4
+## New in 1.2.5
+- **Windows 95 theme** (Settings → Appearance → Theme): the whole app in the classic look:
+  - grey bevelled windows on a teal desktop, with a navy caption showing the app's name (Windows)
+  - raised buttons that press in, latched toggle buttons, and an extra black frame on default buttons
+  - sunken white text boxes and drop-downs, check boxes instead of switches, and track-bar sliders
+  - 16-pixel scroll bars with a checkered track and arrow buttons
+  - menus with navy highlights and etched separators, and pale yellow tooltip-style messages
+  - track lists as white list views with raised column headers
+  - the player bar as the taskbar
+  - crisp pixel text in the Windows 95 interface font (W95FA, an open-licence recreation, re-gridded
+    so every letter lands on whole pixels, with a proper bold), and icons drawn with hard pixel edges
+  The full-screen player and song screen stay dark. Switch back to "Default (dark)" at any time.
+- **Discography in release order**: on artist pages, Albums, Singles and EPs, and Popular
+  releases now list the newest release first, like Spotify (they followed the provider's order).
+- **Compilations tab**: best-ofs, rarities and singles collections get their own tab next to
+  Singles and EPs instead of mixing with the albums. YouTube Music doesn't say which albums are
+  compilations, so the app checks MusicBrainz's list of the artist's compilations (once a month
+  per artist) and titles that say so ("Greatest Hits", "Best of", "… Collection"). PLEXSpot uses
+  the album type from your library too (compilations were under Appears on before).
+
+## Also in 1.2.4
 - **Normalize volume** (Settings → Playback): evens out loudness between songs, like Spotify.
   Loud songs are turned down to the level you pick: Quiet, Normal or Loud. It uses Plex's
   loudness analysis and ReplayGain/R128 tags in your files (local files and downloads); songs
