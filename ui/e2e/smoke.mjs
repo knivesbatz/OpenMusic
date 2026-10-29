@@ -34,9 +34,20 @@ async function test(name, fn, { youtube = false, init, userAgent } = {}) {
     r = { name, ok: true, ms: Date.now() - t0 };
   } catch (e) {
     r = { name, ok: false, error: e.message.split("\n")[0] };
+    // What the page showed, for failures that only happen on CI.
+    const state = await within(5000, page.evaluate(() => ({
+      viewport: [innerWidth, innerHeight],
+      menus: [...document.querySelectorAll(".menu")].map((m) => {
+        const b = m.getBoundingClientRect();
+        return { box: [b.x, b.y, b.width, b.height].map(Math.round), items: [...m.querySelectorAll(":scope > button")].map((x) => x.textContent.trim()) };
+      }),
+      toasts: [...document.querySelectorAll(".toast")].map((t) => t.textContent),
+    })), "diagnostics").catch(() => null);
+    r.details = [e.message.split("\n").slice(0, 8).join("\n    "), state && JSON.stringify(state)].filter(Boolean).join("\n    ");
   }
   results.push(r);
   console.log(`${r.ok ? "✓" : "✗"} ${r.name}${r.ok ? ` (${r.ms} ms)` : ` — ${r.error}`}`);
+  if (r.details) console.log("    " + r.details);
   await within(10000, page.close(), "close").catch(() => {});
 }
 
