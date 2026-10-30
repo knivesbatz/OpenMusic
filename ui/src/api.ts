@@ -142,6 +142,7 @@ export const api = {
   focusMain: () => call<void>("focus_main"),
   logUiError: (message: string) => call<void>("log_ui_error", { message }),
   gpuSet: (enabled: boolean) => call<void>("gpu_set", { enabled }),
+  audioShareSet: (enabled: boolean) => call<void>("audio_share_set", { enabled }),
   htpcLaunch: () => call<boolean>("htpc_launch"),
   htpcAutostartGet: () => call<boolean>("htpc_autostart_get"),
   htpcAutostartSet: (enabled: boolean) => call<void>("htpc_autostart_set", { enabled }),

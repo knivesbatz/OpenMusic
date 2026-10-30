@@ -3,6 +3,7 @@
 //! keeping separate identities, data directories and credentials.
 
 pub mod art;
+pub mod audio_share;
 pub mod commands;
 pub mod db;
 pub mod discord;
@@ -332,6 +333,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::artist_compilations,
             commands::log_ui_error,
             commands::gpu_set,
+            commands::audio_share_set,
             commands::yt_accounts,
             commands::plex_home_users,
             commands::plex_switch_user,
@@ -351,6 +353,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
         .run(|app, event| {
             // A clean exit removes the "running" marker; a crash leaves it for the next launch.
             if let tauri::RunEvent::Exit = event {
+                audio_share::shutdown();
                 if let Ok(dir) = app.path().app_data_dir() {
                     safe_mode::clean_exit(&dir);
                 }

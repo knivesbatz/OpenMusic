@@ -350,6 +350,25 @@ await test("Windows gets a Spotify-style title bar with navigation, search and w
   await p.waitForSelector(".page .search-top, .page h2");
 }, { init: () => { window.__MOCK__.app_info.platform = "windows"; } });
 
+await test("Windows: sharing audio with Discord turns the relay on and off, and turns itself off when Windows refuses", async (p) => {
+  await p.click('.titlebar button[aria-label="Menu"]');
+  await p.click('.menu button:has-text("Settings")');
+  const sw = p.locator('label.setting:has-text("Share audio when streaming on Discord") input');
+  assert.equal(await sw.isChecked(), false, "off by default");
+  await sw.click();
+  await p.waitForFunction(() => window.__SHARE.join() === "true");
+  await sw.click();
+  await p.waitForFunction(() => window.__SHARE.join() === "true,false");
+  await p.evaluate(() => (window.__MOCK__.audio_share_set = () => { throw "not supported: process loopback"; }));
+  await sw.click();
+  await p.waitForSelector('.toast:has-text("process loopback")');
+  await p.waitForFunction(() => [...document.querySelectorAll("label.setting")].some((l) => l.textContent.includes("Share audio when streaming") && !l.querySelector("input").checked));
+}, { init: () => {
+  window.__MOCK__.app_info.platform = "windows";
+  window.__SHARE = [];
+  window.__MOCK__.audio_share_set = (a) => (window.__SHARE.push(a.enabled), null);
+} });
+
 await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {
   await p.waitForFunction(() => typeof window.__omMedia === "function");
   const first = await p.locator(".pb-meta .name").textContent();

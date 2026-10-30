@@ -1494,7 +1494,8 @@ pub async fn pip_toggle(app: AppHandle, state: S<'_>) -> Result<bool> {
         return Ok(false);
     }
     with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", tauri::WebviewUrl::App("index.html#pip".into())), &state)
-        .title("Mini player")
+        // Named after the app so it is easy to pick in Discord's and OBS's window lists.
+        .title(format!("{} mini player", app.package_info().name))
         .inner_size(320.0, 420.0)
         .min_inner_size(220.0, 96.0)
         .decorations(false)
@@ -1897,6 +1898,15 @@ pub fn gpu_set(state: S, enabled: bool) -> Result<()> {
     Ok(())
 }
 
+
+/// "Share audio with Discord": play the app's audio from its own process, where Discord's Go Live
+/// and other per-app audio capture look for it (Windows; see audio_share.rs).
+#[tauri::command]
+pub async fn audio_share_set(app: AppHandle, enabled: bool) -> Result<()> {
+    tauri::async_runtime::spawn_blocking(move || crate::audio_share::set(app, enabled))
+        .await
+        .map_err(|e| Error::Invalid(e.to_string()))?
+}
 
 /// Mirror the player in the Android media notification (no-op on desktop, where the webview's
 /// Media Session already reaches the OS). `artwork` arrives as the track's `art://` reference.

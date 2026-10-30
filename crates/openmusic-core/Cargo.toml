@@ -37,5 +37,10 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
 keyring = { version = "3", features = ["windows-native"] }
 
+# Windows: "Share audio with Discord" (audio_share.rs) relays WebView2's audio through this process.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Media_Audio", "Win32_System_Com", "Win32_System_Com_StructuredStorage", "Win32_System_Variant", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading"] }
+windows-core = "0.62.2"
+
 [dev-dependencies]
 tempfile = "3"

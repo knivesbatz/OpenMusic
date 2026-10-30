@@ -266,7 +266,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "normalizeVolume" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "normalizeVolume" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "shareAudio" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -408,6 +408,7 @@ export function SettingsPage() {
           <h2>{t("window")}</h2>
           <Toggle k="closeToTray" label={t("closeToTray")} hint={t("closeToTrayHint")} />
           {info?.capabilities.discordPresence && <Toggle k="discordPresence" label={t("discordPresence")} hint={t("discordPresenceHint")} />}
+          {inTauri && info?.platform === "windows" && <Toggle k="shareAudio" label={t("shareAudio")} hint={t("shareAudioHint")} />}
         </section>
       )}
 

@@ -9,6 +9,7 @@ import { initUpdates } from "./store/update";
 import { loadPlaylistSorts } from "./store/playlistSort";
 import { isTouch } from "./util";
 import { startBroadcast } from "./player/bridge";
+import { initAudioShare } from "./player/audioShare";
 import { boot } from "./store/app";
 import { useSettings } from "./store/settings";
 // Figtree (SIL OFL), bundled so text looks the same on Windows and Android, offline too. The
@@ -82,6 +83,7 @@ async function start() {
   if (useApp.getState().info?.selfTest) import("./selftest").then((m) => m.runSelfTest());
   startBroadcast();
   initGamepad();
+  initAudioShare();
 }
 
 start();
