@@ -15,6 +15,7 @@ import * as P from "../player/engine";
 import { isMobileApp, openProfilePicker, refreshLibrary, setLocalOnly, useApp } from "../store/app";
 import { useSettings, type NormalizeLevel, type Quality, type Theme } from "../store/settings";
 import { confirmDialog, toast } from "../store/ui";
+import { SyncPlaylists } from "../components/SyncPlaylists";
 import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
 import { cls, fmtBytes } from "../util";
 import { CardShelf } from "./Browse";
@@ -482,6 +483,8 @@ export function SettingsPage() {
           />
         </label>
       </section>}
+
+      {inTauri && <SyncPlaylists />}
 
       <section>
         <h2>{t("lastfm")}</h2>

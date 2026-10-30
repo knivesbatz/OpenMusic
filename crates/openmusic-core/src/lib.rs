@@ -18,6 +18,7 @@ pub mod names;
 pub mod plex;
 pub mod secrets;
 pub mod state;
+pub mod sync;
 pub mod translate;
 #[cfg(desktop)]
 mod tray;
@@ -334,6 +335,12 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::log_ui_error,
             commands::gpu_set,
             commands::audio_share_set,
+            commands::listening_history,
+            commands::history_remove,
+            commands::history_clear,
+            commands::sync_receive_start,
+            commands::sync_receive_stop,
+            commands::sync_send,
             commands::yt_accounts,
             commands::plex_home_users,
             commands::plex_switch_user,

@@ -10,9 +10,9 @@ import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
 import { sortAlbums, sortArtists } from "../store/librarySort";
 import { useSettings } from "../store/settings";
-import { navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
+import { confirmDialog, navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
 import { useDisplayTrack } from "../store/songmeta";
-import type { HomeData, MediaItem, PlayContext, SearchResults, Track } from "../types";
+import type { HistoryEntry, HomeData, MediaItem, PlayContext, SearchResults, Track } from "../types";
 import { cls } from "../util";
 
 /** Play any card: tracks play directly, collections are fetched first. */
@@ -410,6 +410,7 @@ function BrowseEmpty() {
     ...(liked ? [{ label: t("likedSongs"), color: "#5038a0", go: () => navigate({ name: "playlist", id: liked.id }), icon: <I.IHeartFill size={36} /> }] : []),
     { label: t("whatsNew"), color: "#e13300", go: () => navigate({ name: "new" }), icon: <I.IBell size={36} /> },
     { label: t("recentlyPlayed"), color: "#1e3264", go: () => navigate({ name: "library", tab: "recent" }), icon: <I.IClock size={36} /> },
+    { label: t("listeningHistory"), color: "#7358ff", go: () => navigate({ name: "history" }), icon: <I.IHistory size={36} /> },
     { label: t("playlists"), color: "#8d67ab", go: () => navigate({ name: "library", tab: "playlists" }), icon: <I.IQueue size={36} /> },
     { label: t("albums"), color: "#e8115b", go: () => navigate({ name: "library", tab: "albums" }), icon: <I.IMusic size={36} /> },
     { label: t("artists"), color: "#148a08", go: () => navigate({ name: "library", tab: "artists" }), icon: <I.IMic size={36} /> },
@@ -675,7 +676,12 @@ function RecentPage() {
   const items = data.contexts.filter((c) => !seen.has(c.id) && (seen.add(c.id), true)).map(ctxItem);
   return (
     <div className="page">
-      <h1>{t("recentlyPlayed")}</h1>
+      <div className="page-head-row">
+        <h1>{t("recentlyPlayed")}</h1>
+        <button className="pill ghost small" onClick={() => navigate({ name: "history" })}>
+          <I.IHistory size={16} /> {t("listeningHistory")}
+        </button>
+      </div>
       {items.length > 0 && <Grid items={items} />}
       {data.recent.length > 0 && (
         <>
@@ -686,6 +692,101 @@ function RecentPage() {
       {!items.length && !data.recent.length && <p className="muted">{t("empty")}</p>}
     </div>
   );
+}
+
+/** Every play, newest first, grouped by day, like Spotify's listening history. */
+export function HistoryPage() {
+  const t = useT();
+  const lang = useSettings((s) => s.language);
+  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  const [more, setMore] = useState(false);
+  const [loading, setLoading] = useState(false);
+  usePageTitle(t("listeningHistory"));
+  const load = (before: number | null) => {
+    setLoading(true);
+    api
+      .listeningHistory(before)
+      .then(
+        (page) => {
+          setEntries((cur) => (before ? [...(cur ?? []), ...page] : page));
+          setMore(page.length === HISTORY_PAGE);
+        },
+        (e) => {
+          toast(errorMessage(e));
+          setEntries((cur) => cur ?? []);
+        },
+      )
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => load(null), []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const days = useMemo(() => historyDays(entries ?? [], lang, t), [entries, lang]);
+  if (!entries) return <Loading />;
+  const tracks = entries.map((e) => e.track);
+  const remove = (indexes: number[]) => {
+    const ids = new Set(indexes.map((i) => entries[i].id));
+    api.historyRemove([...ids]).then(() => setEntries((cur) => (cur ?? []).filter((e) => !ids.has(e.id))), (e) => toast(errorMessage(e)));
+  };
+  const clear = async () => {
+    if (!(await confirmDialog({ title: t("clearHistory"), body: t("clearHistoryBody"), confirm: t("clearHistory") }))) return;
+    api.historyClear().then(() => (setEntries([]), setMore(false)), (e) => toast(errorMessage(e)));
+  };
+  return (
+    <div className="page history">
+      <div className="page-head-row">
+        <h1>{t("listeningHistory")}</h1>
+        {entries.length > 0 && (
+          <button className="pill ghost small" onClick={clear}>
+            <I.ITrash size={16} /> {t("clearHistory")}
+          </button>
+        )}
+      </div>
+      <p className="muted small">{t("listeningHistoryHint")}</p>
+      {!entries.length && <p className="muted">{t("historyEmpty")}</p>}
+      {days.map((d) => (
+        <section key={d.key} className="history-day">
+          <h2>{d.label}</h2>
+          <TrackList
+            tracks={tracks.slice(d.offset, d.offset + d.count)}
+            queue={{ tracks, offset: d.offset }}
+            onRemove={(ix) => remove(ix.map((i) => i + d.offset))}
+            removeLabel={t("removeFromHistory")}
+          />
+        </section>
+      ))}
+      {more && (
+        <button className="pill ghost" disabled={loading} onClick={() => load(entries[entries.length - 1].id)}>
+          {t("showMore")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+const HISTORY_PAGE = 100;
+
+/** Consecutive runs of plays on the same local day: "Today", "Yesterday", then dates. */
+export function historyDays(entries: HistoryEntry[], lang: string, t: (k: "today" | "yesterday") => string, now = new Date()) {
+  const dayKey = (d: Date) => `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  const today = dayKey(now);
+  const y = new Date(now);
+  y.setDate(y.getDate() - 1);
+  const yesterday = dayKey(y);
+  const out: { key: string; label: string; offset: number; count: number }[] = [];
+  entries.forEach((e, i) => {
+    const d = new Date(e.playedAt * 1000);
+    const key = dayKey(d);
+    const last = out[out.length - 1];
+    if (last?.key === key) return void last.count++;
+    const label =
+      key === today
+        ? t("today")
+        : key === yesterday
+          ? t("yesterday")
+          : d.toLocaleDateString(lang, { weekday: "long", month: "long", day: "numeric", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" });
+    out.push({ key, label, offset: i, count: 1 });
+  });
+  return out;
 }
 
 function dedupe<T extends { id: string }>(xs: T[]): T[] {

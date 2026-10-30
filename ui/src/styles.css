@@ -964,3 +964,20 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .pb-meta { animation-name: om-fade; }
 }
 .tb-name { display: none; }
+
+/* Page title with an action beside it (Recently played → Listening history, Clear history). */
+.page-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.page-head-row h1 { margin-right: auto; }
+.page-head-row .pill { display: inline-flex; align-items: center; gap: 6px; }
+.history-day h2 { margin-top: 24px; }
+.history > .pill { margin: 16px 0 8px; }
+
+/* Settings → Sync playlists between devices */
+.sync-code { display: flex; flex-wrap: wrap; gap: 12px 32px; margin: 4px 0 12px; padding: 16px; border-radius: 12px; background: var(--surface-3); }
+.sync-code > div { display: flex; flex-direction: column; gap: 2px; }
+.sync-code strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; letter-spacing: 0.04em; user-select: all; }
+.sync-code p { flex-basis: 100%; margin: 0; }
+.form.sync-send { flex-direction: row; max-width: 560px; }
+.sync-send { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sync-send input:first-child { flex: 2 1 180px; }
+.sync-send input:nth-child(2) { flex: 1 1 90px; font-variant-numeric: tabular-nums; }

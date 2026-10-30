@@ -26,6 +26,8 @@ interface Props {
   numbered?: boolean;
   /** App playlist editing: removal and drag reorder. */
   onRemove?: (indexes: number[]) => void;
+  /** The menu's label for `onRemove` (default "Remove from this playlist"). */
+  removeLabel?: string;
   onReorder?: (order: number[]) => void;
   menuOpts?: TrackMenuOpts;
   limit?: number;
@@ -35,7 +37,7 @@ interface Props {
 
 const ROW = 56;
 
-export function TrackList({ tracks, context, showAlbum = true, showArt = true, numbered = true, onRemove, onReorder, limit, queue }: Props) {
+export function TrackList({ tracks, context, showAlbum = true, showArt = true, numbered = true, onRemove, removeLabel, onReorder, limit, queue }: Props) {
   const t = useT();
   const scrollRef = useContext(ScrollCtx);
   const listRef = useRef<HTMLDivElement>(null);
@@ -126,7 +128,7 @@ export function TrackList({ tracks, context, showAlbum = true, showArt = true, n
                 if (!inSel) setSel({ selected: new Set([keys[i]]), anchor: keys[i] });
                 const selection = inSel ? selectedTracks() : [tr];
                 const idx = inSel ? selectedIdx() : [i];
-                openMenu(e, trackMenu(tr, { selection, onRemoveFromPlaylist: onRemove ? () => onRemove(idx) : undefined }));
+                openMenu(e, trackMenu(tr, { selection, onRemoveFromPlaylist: onRemove ? () => onRemove(idx) : undefined, removeLabel }));
               }}
               onDragStart={(e) => {
                 if (!sel.selected.has(keys[i])) setSel({ selected: new Set([keys[i]]), anchor: keys[i] });

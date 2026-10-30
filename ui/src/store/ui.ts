@@ -16,6 +16,7 @@ export type Route =
   | { name: "liked" }
   | { name: "episodes" }
   | { name: "new" }
+  | { name: "history" }
   | { name: "local" }
   | { name: "downloads" }
   | { name: "import" }

@@ -199,6 +199,8 @@ export interface TrackMenuOpts {
   /** App playlist the track list belongs to, enables "Remove from this playlist". */
   playlistId?: string;
   onRemoveFromPlaylist?: () => void;
+  /** Label for onRemoveFromPlaylist where the list isn't a playlist (listening history). */
+  removeLabel?: string;
   queueUid?: string;
   selection?: Track[];
 }
@@ -210,7 +212,7 @@ export function trackMenu(track: Track, o: TrackMenuOpts = {}): MenuItem[] {
   const items: MenuItem[] = [
     { label: t("addToPlaylist"), icon: I.IPlus, submenu: playlistSubmenu(sel) },
   ];
-  if (o.onRemoveFromPlaylist) items.push({ label: t("removeFromPlaylist"), icon: I.ITrash, onClick: o.onRemoveFromPlaylist });
+  if (o.onRemoveFromPlaylist) items.push({ label: o.removeLabel ?? t("removeFromPlaylist"), icon: I.ITrash, onClick: o.onRemoveFromPlaylist });
   if (o.queueUid) items.push({ label: multi ? t("removeSelected", { n: sel.length }) : t("removeFromQueue"), icon: I.IMinusCircle, onClick: () => P.removeFromQueue([o.queueUid!]) });
   if (caps?.favorites) items.push(...likeItems(sel));
   items.push({ label: t("addToQueue"), icon: I.IQueueAdd, onClick: () => (P.addToQueue(sel), toast(t("addedToQueue"))) });

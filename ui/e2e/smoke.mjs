@@ -369,6 +369,75 @@ await test("Windows: sharing audio with Discord turns the relay on and off, and 
   window.__MOCK__.audio_share_set = (a) => (window.__SHARE.push(a.enabled), null);
 } });
 
+await test("Listening history lists every play by day; plays can be removed and the history cleared", async (p) => {
+  await p.click('.sidebar .side-cat:has-text("Listening history")');
+  await p.waitForSelector(".page h1:has-text('Listening history')");
+  const heads = (await p.locator(".history-day h2").allTextContents()).map((x) => x.trim());
+  assert.deepEqual(heads.slice(0, 2), ["Today", "Yesterday"]);
+  assert.equal(heads.length, 3, heads.join());
+  assert.equal(await p.locator(".history-day .tl-row:not(.tl-head)").count(), 5);
+  // The same song twice in a day stays two plays.
+  assert.equal(await p.locator('.history-day:first-of-type .tl-row:not(.tl-head) .name:has-text("Slow Lights")').count(), 2);
+  await p.locator(".history-day .tl-row:not(.tl-head)").nth(1).click({ button: "right" });
+  await p.click('.menu button:has-text("Remove from listening history")');
+  await p.waitForFunction(() => document.querySelectorAll(".history-day .tl-row:not(.tl-head)").length === 4);
+  assert.deepEqual(await p.evaluate(() => window.__REMOVED), [[4]]);
+  // Playing from history plays on through the rest of it.
+  await p.locator(".history-day .tl-row:not(.tl-head)").nth(2).dblclick();
+  await p.waitForFunction(() => document.querySelector(".pb-meta .name")?.textContent?.length > 0);
+  await p.click('.page-head-row button:has-text("Clear history")');
+  await p.click('.dialog button:has-text("Clear history")');
+  await p.waitForSelector("text=Songs you play will show up here.");
+  // Recently played links here.
+  await p.click('.sidebar .side-cat:has-text("Recently played")');
+  await p.click('.page-head-row button:has-text("Listening history")');
+  await p.waitForSelector(".page h1:has-text('Listening history')");
+}, { init: () => {
+  const d = window.__MOCK__;
+  const now = Math.floor(Date.now() / 1000);
+  const day = 86400;
+  const tr = (i) => d.search.tracks[i];
+  let entries = [
+    { id: 5, track: tr(0), playedAt: now - 60, context: null },
+    { id: 4, track: tr(1), playedAt: now - 120, context: null },
+    { id: 3, track: tr(0), playedAt: now - 180, context: null },
+    { id: 2, track: tr(2), playedAt: now - day, context: null },
+    { id: 1, track: tr(3), playedAt: now - 9 * day, context: null },
+  ];
+  // Today's plays must stay on today's date even just after midnight.
+  const midnight = new Date(); midnight.setHours(0, 0, 0, 0);
+  if (now - 180 < midnight / 1000) entries = entries.map((e, i) => (i < 3 ? { ...e, playedAt: Math.floor(midnight / 1000) + 1 } : e));
+  window.__REMOVED = [];
+  d.listening_history = () => entries;
+  d.history_remove = (a) => (window.__REMOVED.push(a.ids), (entries = entries.filter((e) => !a.ids.includes(e.id))), null);
+  d.history_clear = () => ((entries = []), null);
+} });
+
+await test("Sync playlists: receive shows an address and code; send posts to the typed address", async (p) => {
+  await p.click('button[aria-label="Settings"]');
+  await p.waitForSelector("h2:has-text('Sync playlists between devices')");
+  await p.click('.sync .setting button:has-text("Receive")');
+  await p.waitForSelector('.sync-code strong:has-text("192.168.1.23:47380")');
+  await p.waitForSelector('.sync-code strong:has-text("482913")');
+  await p.click('.sync .setting button:has-text("Stop")');
+  await p.waitForFunction(() => !document.querySelector(".sync-code"));
+  const send = p.locator('.sync-send button:has-text("Send")');
+  await p.fill('.sync-send input[aria-label="Address"]', "192.168.1.40");
+  assert.equal(await send.isDisabled(), true, "needs the 6-digit code");
+  await p.fill('.sync-send input[aria-label="Code"]', "12a3456");
+  assert.equal(await p.inputValue('.sync-send input[aria-label="Code"]'), "123456");
+  await send.click();
+  await p.waitForSelector('.toast:has-text("Sent 2 playlists (20 songs)")');
+  await p.waitForSelector('.toast:has-text("3 songs from local files stayed on this device")');
+  assert.deepEqual(await p.evaluate(() => window.__SENT), [{ address: "192.168.1.40", code: "123456" }]);
+  assert.equal(await p.inputValue('.sync-send input[aria-label="Code"]'), "", "code cleared after sending");
+}, { init: () => {
+  const d = window.__MOCK__;
+  window.__SENT = [];
+  d.sync_receive_start = { address: "192.168.1.23:47380", code: "482913", expiresAt: Math.floor(Date.now() / 1000) + 600 };
+  d.sync_send = (a) => (window.__SENT.push(a), { playlists: 2, songs: 20, skipped: 3 });
+} });
+
 await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {
   await p.waitForFunction(() => typeof window.__omMedia === "function");
   const first = await p.locator(".pb-meta .name").textContent();

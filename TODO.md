@@ -117,6 +117,14 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.7
+- ✅ Listening history page (`listening_history` pages of 100 from `history`, grouped by local day,
+  remove/clear; Sidebar, Search tile, link from Recently played) (unit + e2e)
+- 🟡 Playlist sync over Wi-Fi (`sync.rs`): receiver opens tiny_http on :47380 (fallback random) for
+  10 min with a 6-digit code (5 wrong codes close it); sender POSTs app playlists (+ covers, YT
+  cover overrides), imported by id so resending updates; local-file songs skipped; same app only.
+  Unit + e2e for the UI; not yet tried between two real devices
+
 ## 1.2.6
 - 🟡 Share audio with Discord (`shareAudio`, Windows): `audio_share.rs` captures the WebView2 process
   tree with process loopback, plays it from the app's process (default device) and mutes the
