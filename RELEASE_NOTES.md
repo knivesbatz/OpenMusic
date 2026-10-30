@@ -1,8 +1,20 @@
-# OpenMusic 1.2.5
+# OpenMusic 1.2.6
 
-An optional Windows 95 theme, and artist discographies in release order with a Compilations tab.
+Stream the app or the mini player to Discord with sound.
 
-## New in 1.2.5
+## New in 1.2.6
+- **Share audio when streaming on Discord** (Windows; Settings → Window): turn it on to share the
+  app's window or the mini player in Discord's Go Live (or OBS) and have your friends hear the
+  music too. Discord only records sound from the program that owns the shared window, and the
+  app's sound was being played by Windows' built-in web engine (Microsoft Edge WebView2) in a
+  separate program, so streams went out silent. With the setting on, the music is played through
+  YTSpot / PLEXSpot itself, a moment later than usual. If Windows doesn't hand the sound over, the
+  setting switches itself off and says why, and music keeps playing as before. Needs Windows 11
+  (or Windows 10 build 20348 or later). Off by default.
+- The mini player window is now named "YTSpot mini player" / "PLEXSpot mini player", so it's easy
+  to find in Discord's and OBS's window lists.
+
+## Also in 1.2.5
 - **Windows 95 theme** (Settings → Appearance → Theme): the whole app in the classic look:
   - grey bevelled windows on a teal desktop, with a navy caption showing the app's name (Windows)
   - raised buttons that press in, latched toggle buttons, and an extra black frame on default buttons

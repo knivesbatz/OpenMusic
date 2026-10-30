@@ -117,6 +117,12 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.6
+- 🟡 Share audio with Discord (`shareAudio`, Windows): `audio_share.rs` captures the WebView2 process
+  tree with process loopback, plays it from the app's process (default device) and mutes the
+  WebView2 sessions; turns itself off if the capture stays silent while WebView2 plays. Typechecked
+  for Windows and e2e for the setting; not yet confirmed with Discord on a real PC
+
 ## 1.2.5
 - ✅ Windows 95 theme: `theme` setting → `html.win95`; `ui/src/theme-win95.css` (system palette, inset
   box-shadow bevels, scrollbars, menus, dialogs as captioned windows, list views, taskbar player);
