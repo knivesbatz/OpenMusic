@@ -303,6 +303,37 @@ impl Db {
         Ok(tracks.len())
     }
 
+    /// The cover picked for an app playlist (not the first song's artwork it falls back to).
+    pub fn playlist_cover(&self, id: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row("SELECT cover FROM playlists WHERE id=?1", [id], |r| r.get::<_, Option<String>>(0))
+            .optional()?
+            .flatten())
+    }
+
+    /// Creates or replaces an app playlist under its id, as sent by another device (sync.rs):
+    /// sending the same playlist again updates it instead of adding a copy.
+    pub fn playlist_import(&mut self, id: &str, name: &str, description: Option<&str>, tracks: &[Track]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        let t = now();
+        tx.execute(
+            "INSERT INTO playlists(id,name,description,created_at,updated_at) VALUES(?1,?2,?3,?4,?4)
+             ON CONFLICT(id) DO UPDATE SET name=?2, description=?3, updated_at=?4",
+            params![id, name, description, t],
+        )?;
+        tx.execute("DELETE FROM playlist_items WHERE playlist_id=?1", [id])?;
+        for (pos, tr) in tracks.iter().enumerate() {
+            tx.execute(
+                "INSERT INTO playlist_items(playlist_id,position,track_id,track_json,added_at)
+                 VALUES(?1,?2,?3,?4,?5)",
+                params![id, pos as i64, tr.id, serde_json::to_string(tr)?, tr.added_at.unwrap_or(t)],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// App playlists that contain the track.
     pub fn playlists_containing(&self, track_id: &str) -> Result<Vec<String>> {
         let mut st = self.conn.prepare("SELECT DISTINCT playlist_id FROM playlist_items WHERE track_id=?1")?;
@@ -457,6 +488,40 @@ impl Db {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
+    /// Every play, newest first (the Listening history page), `limit` at a time: pass the last
+    /// entry's id as `before` for the next page.
+    pub fn history_page(&self, before: Option<i64>, limit: usize) -> Result<Vec<HistoryEntry>> {
+        let mut st = self.conn.prepare(
+            "SELECT id, track_json, played_at, context_kind, context_id, context_title, context_artwork FROM history
+             WHERE id < ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = st.query_map(params![before.unwrap_or(i64::MAX), limit as i64], |r| {
+            let ctx = match (r.get::<_, Option<String>>(3)?, r.get::<_, Option<String>>(4)?) {
+                (Some(kind), Some(id)) => Some(PlayContext { kind, id, title: r.get::<_, Option<String>>(5)?.unwrap_or_default(), artwork: r.get(6)? }),
+                _ => None,
+            };
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, ctx))
+        })?;
+        Ok(rows
+            .filter_map(|r| r.ok())
+            .filter_map(|(id, json, played_at, context)| {
+                serde_json::from_str(&json).ok().map(|track| HistoryEntry { id, track, played_at, context })
+            })
+            .collect())
+    }
+
+    pub fn history_remove(&self, ids: &[i64]) -> Result<()> {
+        for id in ids {
+            self.conn.execute("DELETE FROM history WHERE id=?1", [id])?;
+        }
+        Ok(())
+    }
+
+    pub fn history_clear(&self) -> Result<()> {
+        self.conn.execute("DELETE FROM history", [])?;
+        Ok(())
+    }
+
     /// Most-played tracks in the last `days`, used for local recommendations.
     pub fn top_tracks(&self, days: i64, limit: usize) -> Result<Vec<(Track, i64)>> {
         let mut st = self.conn.prepare(
@@ -519,6 +584,17 @@ pub struct PlayContext {
     pub title: String,
     #[serde(default)]
     pub artwork: Option<String>,
+}
+
+/// One play in the listening history.
+#[derive(Debug, Clone, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryEntry {
+    pub id: i64,
+    pub track: Track,
+    /// Unix seconds.
+    pub played_at: i64,
+    pub context: Option<PlayContext>,
 }
 
 #[cfg(test)]
@@ -609,6 +685,35 @@ mod tests {
         assert_eq!(db.cover_overrides().unwrap().get("yt:PL1").map(String::as_str), Some("art://local/cover-b.jpg"));
         assert!(db.set_cover_override("yt:PL1", None).unwrap().is_some());
         assert!(db.cover_overrides().unwrap().is_empty());
+    }
+
+    #[test]
+    fn imported_playlists_update_in_place() {
+        let mut db = Db::open_in_memory().unwrap();
+        let tr = track;
+        db.playlist_import("app:x", "Mix", None, &[tr("yt:a"), tr("yt:b")]).unwrap();
+        db.playlist_import("app:x", "Mix 2", Some("d"), &[tr("yt:c")]).unwrap();
+        let all = db.playlists().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].title, "Mix 2");
+        assert_eq!(db.playlist_tracks("app:x").unwrap().iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["yt:c"]);
+    }
+
+    #[test]
+    fn history_pages_newest_first() {
+        let db = Db::open_in_memory().unwrap();
+        let tr = track;
+        for id in ["yt:a", "yt:b", "yt:a"] {
+            db.record_play(&tr(id), None).unwrap();
+        }
+        let first = db.history_page(None, 2).unwrap();
+        assert_eq!(first.iter().map(|e| e.track.id.as_str()).collect::<Vec<_>>(), ["yt:a", "yt:b"]);
+        let rest = db.history_page(Some(first[1].id), 2).unwrap();
+        assert_eq!(rest.iter().map(|e| e.track.id.as_str()).collect::<Vec<_>>(), ["yt:a"]);
+        db.history_remove(&[rest[0].id]).unwrap();
+        assert_eq!(db.history_page(None, 10).unwrap().len(), 2);
+        db.history_clear().unwrap();
+        assert!(db.history_page(None, 10).unwrap().is_empty());
     }
 
     #[test]

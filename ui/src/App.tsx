@@ -20,7 +20,7 @@ import * as P from "./player/engine";
 import { isMobileApp, useApp } from "./store/app";
 import { PANEL_W, SIDEBAR_W, useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
-import { Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
+import { HistoryPage, Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
 import { Login } from "./pages/Login";
 import { cls } from "./util";
@@ -52,6 +52,8 @@ function Page() {
       return r.id.startsWith("yt:MPSP") ? <PodcastPage id={r.id} /> : <PlaylistPage id={r.id} />;
     case "new":
       return <WhatsNewPage />;
+    case "history":
+      return <HistoryPage />;
     case "episodes":
       return <EpisodesPage />;
     case "local":

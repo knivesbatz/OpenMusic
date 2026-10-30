@@ -991,6 +991,22 @@ pub async fn record_play(state: S<'_>, track: Track, context: Option<PlayContext
     state.db().record_play(&track, context.as_ref())
 }
 
+/// Listening history, newest play first, 100 at a time (`before`: the last id of the page shown).
+#[tauri::command(async)]
+pub fn listening_history(state: S, before: Option<i64>) -> Result<Vec<crate::db::HistoryEntry>> {
+    state.db().history_page(before, 100)
+}
+
+#[tauri::command(async)]
+pub fn history_remove(state: S, ids: Vec<i64>) -> Result<()> {
+    state.db().history_remove(&ids)
+}
+
+#[tauri::command(async)]
+pub fn history_clear(state: S) -> Result<()> {
+    state.db().history_clear()
+}
+
 /// Called when a track finished (or was played past the scrobble point).
 #[tauri::command]
 pub async fn mark_played(state: S<'_>, track: Track) -> Result<()> {
@@ -1898,6 +1914,25 @@ pub fn gpu_set(state: S, enabled: bool) -> Result<()> {
     Ok(())
 }
 
+
+// ---- playlist sync between devices (sync.rs) ----------------------------------------------------
+
+/// Let another device on the same Wi-Fi send its playlists here for the next ten minutes.
+#[tauri::command(async)]
+pub fn sync_receive_start(app: AppHandle, state: S) -> Result<crate::sync::Receiving> {
+    crate::sync::receive_start(app, state.inner().clone())
+}
+
+#[tauri::command]
+pub fn sync_receive_stop() {
+    crate::sync::receive_stop();
+}
+
+/// Send this device's app playlists to the one showing `address` and `code`.
+#[tauri::command]
+pub async fn sync_send(state: S<'_>, address: String, code: String) -> Result<crate::sync::Summary> {
+    crate::sync::send(state.inner().clone(), &address, &code).await
+}
 
 /// "Share audio with Discord": play the app's audio from its own process, where Discord's Go Live
 /// and other per-app audio capture look for it (Windows; see audio_share.rs).

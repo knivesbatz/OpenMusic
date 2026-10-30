@@ -155,6 +155,29 @@ export interface PlayContext {
   artwork?: string | null;
 }
 
+/** One play in the listening history (db.rs HistoryEntry). */
+export interface HistoryEntry {
+  id: number;
+  track: Track;
+  /** Unix seconds. */
+  playedAt: number;
+  context: PlayContext | null;
+}
+
+/** Playlist sync between devices (sync.rs). */
+export interface SyncSummary {
+  playlists: number;
+  songs: number;
+  /** Local-file songs left out. */
+  skipped: number;
+}
+
+export interface SyncReceiving {
+  address: string;
+  code: string;
+  expiresAt: number;
+}
+
 export interface HomeData {
   shelves: Shelf[];
   recent: Track[];

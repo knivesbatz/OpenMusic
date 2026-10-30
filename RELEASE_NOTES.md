@@ -1,8 +1,30 @@
-# OpenMusic 1.2.6
+# OpenMusic 1.2.7
 
-Stream the app or the mini player to Discord with sound.
+A listening history, and your playlists from the computer on your phone.
 
-## New in 1.2.6
+## New in 1.2.7
+- **Listening history** (Your Library → Listening history; on phones from Search or Recently
+  played): every song you played, newest first, grouped by Today, Yesterday and the date, and
+  not just the latest play of each song like Recently played. Play from any point and it carries
+  on through your history. Right-click (or •••) → "Remove from listening history" takes a play
+  out, and "Clear history" empties it. The app keeps your last 5,000 plays on each device.
+- **Sync playlists between devices** (Settings → Sync playlists between devices): copy the
+  playlists you made in the app from your computer to your phone over Wi-Fi (or from the phone to
+  the computer):
+  1. On the phone, press **Receive**. It shows an address and a six-digit code for ten minutes.
+  2. On the computer, type them under "Send playlists to another device" and press **Send**.
+
+  Both devices need the same app (YTSpot to YTSpot, PLEXSpot to PLEXSpot) and the same Wi-Fi.
+  Covers come along, including YTSpot's own covers for YouTube playlists. Sending again
+  updates the playlists on the phone instead of adding copies; playlists deleted on the computer
+  stay on the phone until you delete them there. Songs from local files stay on the computer,
+  since their files are there. Nothing goes through the internet. Playlists on your YouTube or
+  Plex account were already on both devices and are unchanged.
+- **Fixed: submenus opening off screen.** Pointing at a submenu (Export, Move to folder, Add to
+  playlist…) right after opening a menu low in the window could put it off screen until you
+  moved the mouse away and back.
+
+## Also in 1.2.6
 - **Share audio when streaming on Discord** (Windows; Settings → Window): turn it on to share the
   app's window or the mini player in Discord's Go Live (or OBS) and have your friends hear the
   music too. Discord only records sound from the program that owns the shared window, and the
