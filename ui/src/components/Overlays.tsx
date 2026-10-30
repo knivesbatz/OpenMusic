@@ -50,58 +50,62 @@ function MenuList({ items, x, y, root }: { items: MenuItem[]; x: number; y: numb
     else if (e.key === "ArrowLeft" && !root) (e.preventDefault(), e.stopPropagation(), (ref.current!.parentElement?.querySelector(".has-sub.open") as HTMLElement | null)?.focus());
   }
 
+  // A submenu is the menu's sibling, not its child: while a menu scales in, its transform would
+  // make it the containing block of a position: fixed child and throw the submenu off screen.
   return (
-    <div ref={ref} className="menu" role="menu" style={{ left: pos.x, top: pos.y }} onKeyDown={key} onContextMenu={(e) => e.preventDefault()}>
-      {items.map((m, i) =>
-        m.separator ? (
-          <hr key={i} />
-        ) : m.heading ? (
-          <div key={i} className="menu-head">
-            {m.label}
-          </div>
-        ) : (
-          <button
-            key={i}
-            role={m.checked !== undefined ? "menuitemradio" : "menuitem"}
-            className={cls(m.danger && "danger", m.submenu && "has-sub", open === i && "open", m.checked && "on")}
-            aria-checked={m.checked}
-            disabled={m.disabled}
-            aria-haspopup={m.submenu ? "menu" : undefined}
-            aria-expanded={m.submenu ? open === i : undefined}
-            onMouseEnter={(e) => {
-              if (m.submenu) {
-                const r = e.currentTarget.getBoundingClientRect();
-                setSub({ x: r.right - 4, y: r.top - 4 });
-                setOpen(i);
-              } else setOpen(null);
-            }}
-            onKeyDown={(e) => {
-              if (m.submenu && (e.key === "ArrowRight" || e.key === "Enter")) {
-                e.preventDefault();
-                e.stopPropagation();
-                const r = e.currentTarget.getBoundingClientRect();
-                setSub({ x: r.right - 4, y: r.top - 4 });
-                setOpen(i);
-                setTimeout(() => (document.querySelector(".menu .menu button") as HTMLElement | null)?.focus());
-              }
-            }}
-            onClick={() => {
-              if (m.submenu) return;
-              closeMenu();
-              m.onClick?.();
-            }}
-          >
-            <span className="mi">
-              {m.icon && <m.icon size={16} />}
-              <span>{m.label}</span>
-            </span>
-            {m.submenu && <span aria-hidden="true">▸</span>}
-            {!m.submenu && (m.hint || m.checked) && <span aria-hidden="true">{m.hint ?? "✓"}</span>}
-          </button>
-        ),
-      )}
+    <>
+      <div ref={ref} className={cls("menu", !root && "sub")} role="menu" style={{ left: pos.x, top: pos.y }} onKeyDown={key} onContextMenu={(e) => e.preventDefault()}>
+        {items.map((m, i) =>
+          m.separator ? (
+            <hr key={i} />
+          ) : m.heading ? (
+            <div key={i} className="menu-head">
+              {m.label}
+            </div>
+          ) : (
+            <button
+              key={i}
+              role={m.checked !== undefined ? "menuitemradio" : "menuitem"}
+              className={cls(m.danger && "danger", m.submenu && "has-sub", open === i && "open", m.checked && "on")}
+              aria-checked={m.checked}
+              disabled={m.disabled}
+              aria-haspopup={m.submenu ? "menu" : undefined}
+              aria-expanded={m.submenu ? open === i : undefined}
+              onMouseEnter={(e) => {
+                if (m.submenu) {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setSub({ x: r.right - 4, y: r.top - 4 });
+                  setOpen(i);
+                } else setOpen(null);
+              }}
+              onKeyDown={(e) => {
+                if (m.submenu && (e.key === "ArrowRight" || e.key === "Enter")) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setSub({ x: r.right - 4, y: r.top - 4 });
+                  setOpen(i);
+                  setTimeout(() => (document.querySelector(".menu.sub button") as HTMLElement | null)?.focus());
+                }
+              }}
+              onClick={() => {
+                if (m.submenu) return;
+                closeMenu();
+                m.onClick?.();
+              }}
+            >
+              <span className="mi">
+                {m.icon && <m.icon size={16} />}
+                <span>{m.label}</span>
+              </span>
+              {m.submenu && <span aria-hidden="true">▸</span>}
+              {!m.submenu && (m.hint || m.checked) && <span aria-hidden="true">{m.hint ?? "✓"}</span>}
+            </button>
+          ),
+        )}
+      </div>
       {open !== null && items[open]?.submenu && <MenuList items={items[open].submenu!} x={sub.x} y={sub.y} />}
-    </div>
+    </>
   );
 }
 

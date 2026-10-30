@@ -171,7 +171,7 @@ await test("playlist folders and custom order in the sidebar", async (p) => {
   // Move "autumn" into the folder from its context menu.
   await lib.locator(".side-item", { hasText: "autumn" }).click({ button: "right" });
   await p.hover('.menu button:has-text("Move to folder")');
-  await p.click('.menu .menu button:has-text("Moods")');
+  await p.click('.menu.sub button:has-text("Moods")');
   await lib.locator(".side-item.nested", { hasText: "autumn" }).waitFor();
   // Collapse and expand the folder.
   await lib.locator(".side-item", { hasText: "Moods" }).click();
@@ -281,7 +281,7 @@ await test("sleep timer has its own button", async (p) => {
 await test("playlist exports as Artist - Title text for Soundiiz", async (p) => {
   await p.locator(".lib-list .side-item", { hasText: "Road trip" }).click({ button: "right" });
   await p.hover('.menu button:has-text("Export")');
-  await p.click('.menu .menu button:has-text("Text file")');
+  await p.click('.menu.sub button:has-text("Text file")');
   await p.waitForFunction(() => window.__EXPORT__);
   const exp = await p.evaluate(() => window.__EXPORT__);
   assert.equal(exp.name, "Road trip.txt");
@@ -498,7 +498,7 @@ await test("Selected songs go into Liked Songs together; menus show icons", asyn
   await p.keyboard.press("Escape");
   await rows.nth(4).locator(".name").click({ button: "right" });
   await p.hover('.menu button:has-text("Add to playlist")');
-  await p.locator('.menu .menu button:has-text("Liked Songs")').waitFor();
+  await p.locator('.menu.sub button:has-text("Liked Songs")').waitFor();
 }, {
   init: () => {
     window.__RATES = [];

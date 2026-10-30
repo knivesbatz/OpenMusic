@@ -20,6 +20,9 @@ A listening history, and your playlists from the computer on your phone.
   stay on the phone until you delete them there. Songs from local files stay on the computer,
   since their files are there. Nothing goes through the internet. Playlists on your YouTube or
   Plex account were already on both devices and are unchanged.
+- **Fixed: submenus opening off screen.** Pointing at a submenu (Export, Move to folder, Add to
+  playlist…) right after opening a menu low in the window could put it off screen until you
+  moved the mouse away and back.
 
 ## Also in 1.2.6
 - **Share audio when streaming on Discord** (Windows; Settings → Window): turn it on to share the
