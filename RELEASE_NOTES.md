@@ -1,8 +1,19 @@
-# OpenMusic 1.2.7
+# OpenMusic 1.2.8
 
-A listening history, and your playlists from the computer on your phone.
+Space plays and pauses again, without skipping songs.
 
-## New in 1.2.7
+## New in 1.2.8
+- **Fixed: pressing Space could skip the song.** Two causes:
+  - A button you clicked keeps keyboard focus, and the browser "pressed" it again on Space. After
+    you clicked Next, Space skipped another song instead of pausing. The same happened to switches
+    in Settings, rows in the queue, and the buttons in the mini player.
+  - Pausing a song in the moment it was starting made the player think the song couldn't be
+    played, so it moved on to the next one.
+
+  Space now always plays and pauses, in the mini player too, unless you're typing. If you move
+  around with Tab, Space still presses the button or switch you've reached.
+
+## Also in 1.2.7
 - **Listening history** (Your Library → Listening history; on phones from Search or Recently
   played): every song you played, newest first, grouped by Today, Yesterday and the date, and
   not just the latest play of each song like Recently played. Play from any point and it carries
