@@ -279,8 +279,19 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
     startedTrack(item);
   } catch (e) {
     if (token !== loadToken) return;
+    // Paused (Space, headset button) while the song was starting: that's no reason to skip it.
+    if (interrupted(e)) {
+      set({ loading: false });
+      startedTrack(item);
+      return;
+    }
     onError(errorMessage(e));
   }
+}
+
+/** play() rejects with AbortError when pause() or a new source cuts it short; not a playback error. */
+function interrupted(e: unknown) {
+  return e instanceof DOMException && e.name === "AbortError";
 }
 
 function startedTrack(item: Q.QItem) {
@@ -629,7 +640,7 @@ export function play() {
     return;
   }
   if (s.output === "youtube") ytDeck().play();
-  else deck().play().catch((e) => onError(errorMessage(e)));
+  else deck().play().catch((e) => interrupted(e) || onError(errorMessage(e)));
 }
 
 export function pause() {

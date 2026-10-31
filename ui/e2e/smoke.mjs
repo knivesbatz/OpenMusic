@@ -438,6 +438,51 @@ await test("Sync playlists: receive shows an address and code; send posts to the
   d.sync_send = (a) => (window.__SENT.push(a), { playlists: 2, songs: 20, skipped: 3 });
 } });
 
+await test("Space plays/pauses after clicking Next or a switch, and only presses controls reached with the keyboard", async (p) => {
+  const name = () => p.locator(".playerbar .pb-meta .name").textContent();
+  const playLabel = () => p.locator(".playerbar .play-btn").getAttribute("aria-label");
+  const first = await name();
+  await p.click('.playerbar button[aria-label="Next"]');
+  await p.waitForFunction((n) => document.querySelector(".playerbar .pb-meta .name")?.textContent !== n, first);
+  await p.waitForSelector('.playerbar .play-btn[aria-label="Pause"]');
+  const song = await name();
+  const before = await playLabel();
+  // The clicked Next button still has focus: Space must not press it again.
+  await p.keyboard.press(" ");
+  await p.waitForFunction((b) => document.querySelector(".playerbar .play-btn")?.getAttribute("aria-label") !== b, before);
+  assert.equal(await name(), song, "Space skipped the song");
+  await p.keyboard.press(" ");
+  await p.waitForFunction((b) => document.querySelector(".playerbar .play-btn")?.getAttribute("aria-label") === b, before);
+  assert.equal(await name(), song);
+  // A clicked switch in Settings doesn't flip either.
+  await p.click('button[aria-label="Settings"]');
+  const sw = p.locator('label.setting:has-text("Gapless") input');
+  const on = await sw.isChecked();
+  await sw.click();
+  await p.keyboard.press(" ");
+  assert.equal(await sw.isChecked(), !on, "Space flipped the clicked switch back");
+  // Reached with the keyboard (focus ring), Space presses the control as usual.
+  await p.keyboard.press("Shift+Tab");
+  await p.keyboard.press("Tab");
+  await p.keyboard.press(" ");
+  assert.equal(await sw.isChecked(), on, "Space should toggle a switch focused with the keyboard");
+}, {
+  init: () => {
+    // Songs that really play (a 2-minute quiet tone), so play/pause can be seen.
+    const rate = 4000, n = rate * 120, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+    const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    w(0, "RIFF"); v.setUint32(4, 36 + n, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true);
+    v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true);
+    for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + Math.round(4 * Math.sin(i / 8)));
+    const wav = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+    const d = window.__MOCK__;
+    d.resolve_stream = () => ({ kind: "url", url: wav, quality: "test", offline: false });
+    d.settings_get = { crossfade: 0, volume: 0.5, gapless: true };
+    d.queue_load = { ...d.queue_load, position: 0 };
+  },
+});
+
 await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {
   await p.waitForFunction(() => typeof window.__omMedia === "function");
   const first = await p.locator(".pb-meta .name").textContent();

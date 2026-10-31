@@ -8,7 +8,7 @@ import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { select, type QItem } from "../player/queue";
 import { openMenu, useUi } from "../store/ui";
-import { cls, isTouch } from "../util";
+import { cls, isTouch, spaceTogglesPlayback } from "../util";
 import { ArtistName, TitleText, TrackArt } from "./common";
 import { useDisplayTrack } from "../store/songmeta";
 import type { Track } from "../types";
@@ -118,7 +118,7 @@ export function QueuePanel() {
                 onDoubleClick={() => P.playUid(item.uid)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") P.playUid(item.uid);
-                  if (e.key === " " && !current) {
+                  if (e.key === " " && !current && !spaceTogglesPlayback(e.nativeEvent)) {
                     e.preventDefault();
                     e.stopPropagation();
                     setSel((s) => select(order, s.selected, s.anchor, item.uid, { shift: e.shiftKey, ctrl: true }));

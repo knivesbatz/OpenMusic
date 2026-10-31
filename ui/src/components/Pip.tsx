@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { api } from "../api";
 import { useT } from "../i18n";
 import { sendCommand, type Snapshot } from "../player/bridge";
-import { cls } from "../util";
+import { cls, spaceTogglesPlayback } from "../util";
 import { Art } from "./common";
 import * as I from "./Icons";
 
@@ -21,9 +21,17 @@ export function Pip() {
     });
     emit("pip-ready").catch(() => {});
     const id = setInterval(() => setNow(Date.now()), 500);
+    // Space plays/pauses here too, instead of pressing the button that was clicked last.
+    const onKey = (e: KeyboardEvent) => {
+      if (!spaceTogglesPlayback(e)) return;
+      e.preventDefault();
+      if (!e.repeat) sendCommand("toggle");
+    };
+    addEventListener("keydown", onKey);
     return () => {
       un.then((f) => f());
       clearInterval(id);
+      removeEventListener("keydown", onKey);
     };
   }, []);
   const pos = s.playing ? Math.min(s.duration, s.position + (now - at) / 1000) : s.position;

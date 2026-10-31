@@ -23,7 +23,7 @@ import { navigate, useUi } from "./store/ui";
 import { HistoryPage, Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
 import { Login } from "./pages/Login";
-import { cls } from "./util";
+import { cls, spaceTogglesPlayback } from "./util";
 
 // Rarely used pages load on demand to keep startup light.
 const Manage = () => import("./pages/Manage");
@@ -137,11 +137,13 @@ export function App() {
         setTimeout(() => document.getElementById("global-search")?.focus());
         return;
       }
-      if (isTyping(e)) return;
-      if (e.key === " " && !(e.target as HTMLElement).closest("button, [role=option], [role=row]")) {
+      if (spaceTogglesPlayback(e)) {
         e.preventDefault();
-        P.toggle();
-      } else if (ctrl && e.key === "ArrowRight") P.next();
+        if (!e.repeat) P.toggle();
+        return;
+      }
+      if (isTyping(e)) return;
+      if (ctrl && e.key === "ArrowRight") P.next();
       else if (ctrl && e.key === "ArrowLeft") P.previous();
       else if (ctrl && e.key === "ArrowUp") (e.preventDefault(), useSettings.getState().set({ volume: Math.min(1, useSettings.getState().volume + 0.1) }));
       else if (ctrl && e.key === "ArrowDown") (e.preventDefault(), useSettings.getState().set({ volume: Math.max(0, useSettings.getState().volume - 0.1) }));

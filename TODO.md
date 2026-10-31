@@ -117,6 +117,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.8
+- ✅ Space never presses a clicked control (util.ts `spaceTogglesPlayback`: focus arriving from a
+  pointer press is tracked; keyboard-reached controls keep Space), also in the mini player and
+  queue rows; play() AbortError (pause during start) no longer counts as a playback error (e2e)
+
 ## 1.2.7
 - ✅ Listening history page (`listening_history` pages of 100 from `history`, grouped by local day,
   remove/clear; Sidebar, Search tile, link from Recently played) (unit + e2e)
