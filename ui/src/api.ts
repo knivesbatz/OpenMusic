@@ -4,8 +4,25 @@ import type * as T from "./types";
 /** True when running inside Tauri (false in a plain browser during UI development). */
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-function call<R>(cmd: string, args?: Record<string, unknown>): Promise<R> {
-  return invoke<R>(cmd, args);
+// Sign-in and session commands answer for themselves; everything else gets one retry after the
+// session is repaired.
+const NO_RECOVER = new Set(["auth_recover", "auth_status", "sign_out", "yt_login", "plex_pin_poll", "plex_pin_start", "plex_servers", "plex_select_server"]);
+let recovering: Promise<boolean> | null = null;
+
+async function call<R>(cmd: string, args?: Record<string, unknown>): Promise<R> {
+  try {
+    return await invoke<R>(cmd, args);
+  } catch (e) {
+    if (errorCode(e) !== "authExpired" || NO_RECOVER.has(cmd)) throw e;
+    // A refused request is usually a stale Plex server token or an old YouTube cookie, not a
+    // signed-out account: repair the session (once for all the requests failing together) and
+    // try again before showing an error.
+    recovering ??= invoke<boolean>("auth_recover")
+      .catch(() => false)
+      .finally(() => setTimeout(() => (recovering = null), 10_000));
+    if (!(await recovering)) throw e;
+    return invoke<R>(cmd, args);
+  }
 }
 
 export function errorMessage(e: unknown): string {

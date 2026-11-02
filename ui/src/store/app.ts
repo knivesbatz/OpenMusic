@@ -98,7 +98,7 @@ export async function boot() {
   });
   listen("auth-expired", () => {
     useApp.setState((s) => ({ auth: s.auth ? { ...s.auth, signedIn: false } : s.auth }));
-    toast("Your session expired. Please sign in again.");
+    toast(translate(useSettings.getState().language, "authExpired"));
   });
   listen("lastfm-auth-expired", () => toast(translate(useSettings.getState().language, "lastfmExpired")));
   listen<string>("connection-changed", (e) => useApp.setState({ online: e.payload === "online" }));

@@ -99,41 +99,170 @@ impl Secrets {
     }
 
     /// Windows credentials hold at most 2560 bytes, so larger values (cookie jars, server lists)
-    /// are split across `name#0..n` with the chunk count stored under `name`.
+    /// are split across chunks, with their count stored under `name`.
     pub fn set_large(&self, name: &str, value: &str) -> Result<()> {
-        const CHUNK: usize = 1200;
-        let chars: Vec<char> = value.chars().collect();
-        let chunks: Vec<String> = chars.chunks(CHUNK / 2).map(|c| c.iter().collect()).collect();
-        self.delete_large(name)?;
-        for (i, c) in chunks.iter().enumerate() {
-            self.set(&format!("{name}#{i}"), c)?;
-        }
-        self.set(name, &format!("chunks:{}", chunks.len()))
+        let _g = LARGE.lock().unwrap_or_else(|e| e.into_inner());
+        set_large(self, name, value)
     }
 
     pub fn get_large(&self, name: &str) -> Result<Option<String>> {
-        let Some(head) = self.get(name)? else { return Ok(None) };
-        let Some(n) = head.strip_prefix("chunks:").and_then(|n| n.parse::<usize>().ok()) else {
-            return Ok(Some(head));
-        };
-        let mut out = String::new();
-        for i in 0..n {
-            match self.get(&format!("{name}#{i}"))? {
-                Some(c) => out.push_str(&c),
-                None => return Ok(None),
-            }
-        }
-        Ok(Some(out))
+        get_large(self, name)
     }
 
     pub fn delete_large(&self, name: &str) -> Result<()> {
-        if let Some(head) = self.get(name)? {
-            if let Some(n) = head.strip_prefix("chunks:").and_then(|n| n.parse::<usize>().ok()) {
-                for i in 0..n {
-                    self.delete(&format!("{name}#{i}"))?;
-                }
-            }
+        let _g = LARGE.lock().unwrap_or_else(|e| e.into_inner());
+        delete_large(self, name)
+    }
+}
+
+/// Large values are written one at a time (a cookie refresh and a sign-in must not interleave).
+static LARGE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+trait Store {
+    fn get(&self, name: &str) -> Result<Option<String>>;
+    fn set(&self, name: &str, value: &str) -> Result<()>;
+    fn delete(&self, name: &str) -> Result<()>;
+}
+
+impl Store for Secrets {
+    fn get(&self, name: &str) -> Result<Option<String>> {
+        Secrets::get(self, name)
+    }
+    fn set(&self, name: &str, value: &str) -> Result<()> {
+        Secrets::set(self, name, value)
+    }
+    fn delete(&self, name: &str) -> Result<()> {
+        Secrets::delete(self, name)
+    }
+}
+
+/// The head under `name`: "chunks:<n>" (chunks at `name#i`) or "chunks:<n>:<generation>" (chunks
+/// at `name#<generation>.i`). A value short enough to fit is stored as is.
+fn parse_head(head: &str) -> Option<(usize, Option<&str>)> {
+    let rest = head.strip_prefix("chunks:")?;
+    match rest.split_once(':') {
+        Some((n, generation)) => Some((n.parse().ok()?, Some(generation))),
+        None => Some((rest.parse().ok()?, None)),
+    }
+}
+
+fn chunk_name(name: &str, generation: Option<&str>, i: usize) -> String {
+    match generation {
+        Some(g) => format!("{name}#{g}.{i}"),
+        None => format!("{name}#{i}"),
+    }
+}
+
+/// Writes the new chunks under a fresh generation first and switches the head to them only once
+/// they are all stored, then removes the old ones. Interrupted at any point (the app closed, a
+/// failed write), the stored value is the old one or the new one, never nothing: losing it would
+/// sign the user out.
+fn set_large(store: &impl Store, name: &str, value: &str) -> Result<()> {
+    const CHUNK: usize = 1200;
+    let chars: Vec<char> = value.chars().collect();
+    let chunks: Vec<String> = chars.chunks(CHUNK / 2).map(|c| c.iter().collect()).collect();
+    let old = store.get(name)?;
+    let generation = uuid::Uuid::new_v4().simple().to_string()[..8].to_string();
+    for (i, c) in chunks.iter().enumerate() {
+        store.set(&chunk_name(name, Some(&generation), i), c)?;
+    }
+    store.set(name, &format!("chunks:{}:{generation}", chunks.len()))?;
+    if let Some((n, g)) = old.as_deref().and_then(parse_head) {
+        for i in 0..n {
+            let _ = store.delete(&chunk_name(name, g, i));
         }
-        self.delete(name)
+    }
+    Ok(())
+}
+
+fn get_large(store: &impl Store, name: &str) -> Result<Option<String>> {
+    let Some(head) = store.get(name)? else { return Ok(None) };
+    let Some((n, generation)) = parse_head(&head) else { return Ok(Some(head)) };
+    let mut out = String::new();
+    for i in 0..n {
+        match store.get(&chunk_name(name, generation, i))? {
+            Some(c) => out.push_str(&c),
+            None => return Ok(None),
+        }
+    }
+    Ok(Some(out))
+}
+
+fn delete_large(store: &impl Store, name: &str) -> Result<()> {
+    if let Some((n, generation)) = store.get(name)?.as_deref().and_then(parse_head) {
+        for i in 0..n {
+            store.delete(&chunk_name(name, generation, i))?;
+        }
+    }
+    store.delete(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct Mem {
+        map: RefCell<HashMap<String, String>>,
+        /// Fail every write after this many (an interrupted save).
+        writes_left: RefCell<Option<usize>>,
+    }
+
+    impl Store for Mem {
+        fn get(&self, name: &str) -> Result<Option<String>> {
+            Ok(self.map.borrow().get(name).cloned())
+        }
+        fn set(&self, name: &str, value: &str) -> Result<()> {
+            if let Some(n) = self.writes_left.borrow_mut().as_mut() {
+                if *n == 0 {
+                    return Err(Error::Keyring("interrupted".into()));
+                }
+                *n -= 1;
+            }
+            self.map.borrow_mut().insert(name.into(), value.into());
+            Ok(())
+        }
+        fn delete(&self, name: &str) -> Result<()> {
+            self.map.borrow_mut().remove(name);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn large_values_round_trip_and_replace_cleanly() {
+        let m = Mem::default();
+        let v1 = "a".repeat(2000);
+        set_large(&m, "yt.cookie", &v1).unwrap();
+        assert_eq!(get_large(&m, "yt.cookie").unwrap().as_deref(), Some(v1.as_str()));
+        set_large(&m, "yt.cookie", "short").unwrap();
+        assert_eq!(get_large(&m, "yt.cookie").unwrap().as_deref(), Some("short"));
+        // Only the head and the current chunk are left.
+        assert_eq!(m.map.borrow().len(), 2);
+        delete_large(&m, "yt.cookie").unwrap();
+        assert!(m.map.borrow().is_empty());
+    }
+
+    #[test]
+    fn an_interrupted_save_keeps_the_old_value() {
+        let m = Mem::default();
+        let v1 = "old".repeat(500);
+        set_large(&m, "yt.cookie", &v1).unwrap();
+        *m.writes_left.borrow_mut() = Some(1);
+        assert!(set_large(&m, "yt.cookie", &"new".repeat(500)).is_err());
+        assert_eq!(get_large(&m, "yt.cookie").unwrap().as_deref(), Some(v1.as_str()));
+    }
+
+    #[test]
+    fn reads_values_saved_by_older_versions() {
+        let m = Mem::default();
+        m.set("plex.session", "chunks:2").unwrap();
+        m.set("plex.session#0", "{\"a\":").unwrap();
+        m.set("plex.session#1", "1}").unwrap();
+        assert_eq!(get_large(&m, "plex.session").unwrap().as_deref(), Some("{\"a\":1}"));
+        set_large(&m, "plex.session", "{}").unwrap();
+        assert!(m.get("plex.session#0").unwrap().is_none(), "old chunks removed");
+        assert_eq!(get_large(&m, "plex.session").unwrap().as_deref(), Some("{}"));
     }
 }

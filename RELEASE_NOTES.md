@@ -1,8 +1,29 @@
-# OpenMusic 1.2.8
+# OpenMusic 1.2.9
 
-Space plays and pauses again, without skipping songs.
+Stay signed in, and Space is just play/pause.
 
-## New in 1.2.8
+## New in 1.2.9
+- **Stay signed in.** The apps were sending people back to the sign-in screen far too often:
+  - **Any refused request signed you out.** One request YouTube turned down (it also does that
+    when it throttles, or for a restricted video) or one stale Plex server key was enough. Now
+    the app repairs the connection and tries again first. PLEXSpot fetches fresh server details
+    from Plex, and YTSpot renews its YouTube cookies. You're only sent to the sign-in screen when
+    your account really can't be reached any more.
+  - **YTSpot kept the cookies from the day you signed in.** YouTube renews them as you use it,
+    like it does in a browser. The app now keeps the renewed ones. On Windows it also refreshes
+    them in the background twice a day, so they don't run out between launches.
+  - **Saving your sign-in could lose it.** If the app closed (or a save failed) while it was
+    saving the YouTube cookies or the Plex server details, the next launch found nothing and
+    asked you to sign in. The new details are now saved completely before the old ones are
+    removed.
+- **Fixed: submenus closing as you reach them.** Moving straight onto Export, Move to folder or
+  Add to playlist right after opening a menu closed the submenu again: menus zoomed in as they
+  opened, and the lower rows slid out from under the pointer. Menus now fade in instead.
+- **Space only plays and pauses.** It no longer presses buttons, flips switches or picks rows,
+  even ones you moved to with Tab, in the main window and the mini player. In text boxes it
+  still types a space.
+
+## Also in 1.2.8
 - **Fixed: pressing Space could skip the song.** Two causes:
   - A button you clicked keeps keyboard focus, and the browser "pressed" it again on Space. After
     you clicked Next, Space skipped another song instead of pausing. The same happened to switches
@@ -10,8 +31,7 @@ Space plays and pauses again, without skipping songs.
   - Pausing a song in the moment it was starting made the player think the song couldn't be
     played, so it moved on to the next one.
 
-  Space now always plays and pauses, in the mini player too, unless you're typing. If you move
-  around with Tab, Space still presses the button or switch you've reached.
+  Space now always plays and pauses, in the mini player too, unless you're typing.
 
 ## Also in 1.2.7
 - **Listening history** (Your Library → Listening history; on phones from Search or Recently

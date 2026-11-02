@@ -438,7 +438,7 @@ await test("Sync playlists: receive shows an address and code; send posts to the
   d.sync_send = (a) => (window.__SENT.push(a), { playlists: 2, songs: 20, skipped: 3 });
 } });
 
-await test("Space plays/pauses after clicking Next or a switch, and only presses controls reached with the keyboard", async (p) => {
+await test("Space only plays/pauses: it never presses a clicked or keyboard-focused button or switch", async (p) => {
   const name = () => p.locator(".playerbar .pb-meta .name").textContent();
   const playLabel = () => p.locator(".playerbar .play-btn").getAttribute("aria-label");
   const first = await name();
@@ -461,11 +461,17 @@ await test("Space plays/pauses after clicking Next or a switch, and only presses
   await sw.click();
   await p.keyboard.press(" ");
   assert.equal(await sw.isChecked(), !on, "Space flipped the clicked switch back");
-  // Reached with the keyboard (focus ring), Space presses the control as usual.
+  // Reached with the keyboard, the switch still isn't flipped: Space pauses or plays.
   await p.keyboard.press("Shift+Tab");
   await p.keyboard.press("Tab");
+  const label = await playLabel();
   await p.keyboard.press(" ");
-  assert.equal(await sw.isChecked(), on, "Space should toggle a switch focused with the keyboard");
+  assert.equal(await sw.isChecked(), !on, "Space flipped a keyboard-focused switch");
+  await p.waitForFunction((b) => document.querySelector(".playerbar .play-btn")?.getAttribute("aria-label") !== b, label);
+  // Typing still types spaces.
+  await p.click("#global-search");
+  await p.keyboard.type("slow li");
+  assert.equal(await p.inputValue("#global-search"), "slow li");
 }, {
   init: () => {
     // Songs that really play (a 2-minute quiet tone), so play/pause can be seen.
@@ -481,6 +487,37 @@ await test("Space plays/pauses after clicking Next or a switch, and only presses
     d.settings_get = { crossfade: 0, volume: 0.5, gapless: true };
     d.queue_load = { ...d.queue_load, position: 0 };
   },
+});
+
+await test("A refused request repairs the session and retries instead of signing out", async (p) => {
+  await p.waitForSelector(".greeting");
+  await p.waitForSelector(".shelf .card");
+  assert.deepEqual(await p.evaluate(() => [window.__RECOVERS, window.__HOME_CALLS]), [1, 2]);
+  assert.equal(await p.locator(".login").count(), 0, "signed out");
+}, { init: () => {
+  const d = window.__MOCK__;
+  const home = d.home;
+  window.__RECOVERS = 0;
+  window.__HOME_CALLS = 0;
+  // The first Home request is refused as if the session had expired; the repair fixes it.
+  d.home = () => {
+    if (window.__HOME_CALLS++ === 0) throw { code: "authExpired", message: "session expired, please sign in again" };
+    return home;
+  };
+  d.auth_recover = () => (window.__RECOVERS++, true);
+} });
+
+await test("A submenu reached while its menu is still opening stays open", async (p) => {
+  // Right-click, then go straight to Export: the rows must not move out from under the pointer.
+  const box = await p.locator(".lib-list .side-item", { hasText: "Road trip" }).boundingBox();
+  await p.mouse.click(box.x + 40, box.y + box.height / 2, { button: "right" });
+  const ex = await p.evaluate(() => {
+    const b = [...document.querySelectorAll(".menu > button")].find((x) => x.textContent.includes("Export")).getBoundingClientRect();
+    return [b.x + b.width / 2, b.y + b.height / 2];
+  });
+  await p.mouse.move(ex[0], ex[1]);
+  await p.waitForTimeout(400);
+  assert.equal(await p.locator(".menu.sub").count(), 1, "the Export submenu closed");
 });
 
 await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {

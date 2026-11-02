@@ -117,6 +117,14 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.9
+- ✅ Sessions: `auth_recover` + one retry in `api.ts` for `authExpired` (Plex reconnect, YT cookie
+  refresh); `yt_session_lost` checks account_menu before emitting `auth-expired`; YT jar shared
+  (`ytm::Jar`), `Set-Cookie` merged and saved (`yt_keep_session`, on exit), desktop refresh every
+  12 h; Android refresh re-reads the CookieManager; `secrets::set_large` writes a new generation
+  before switching the head (unit + e2e). Real-account behaviour not verified
+- ✅ Space only plays/pauses (capture-phase handler, also on keyup; mini player) (e2e)
+
 ## 1.2.8
 - ✅ Space never presses a clicked control (util.ts `spaceTogglesPlayback`: focus arriving from a
   pointer press is tracked; keyboard-reached controls keep Space), also in the mini player and

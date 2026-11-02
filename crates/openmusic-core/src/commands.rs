@@ -222,16 +222,55 @@ pub async fn plex_reconnect(app: &AppHandle, state: &AppState) -> Result<()> {
     }
 }
 
+/// A request was refused for its credentials. Before giving up on it the UI calls this and retries
+/// once when it returns true: Plex servers hand out new access tokens and addresses, and YouTube's
+/// cookies are renewed from the webview's store.
+#[tauri::command]
+pub async fn auth_recover(app: AppHandle, state: S<'_>) -> Result<bool> {
+    Ok(match state.flavor {
+        Flavor::Plex => plex_reconnect(&app, &state).await.is_ok(),
+        Flavor::YouTube => yt_refresh_session(&app, &state).await,
+    })
+}
+
+/// YouTube: save cookies the responses renewed, and renew the session in the background twice a
+/// day on desktop (as an open browser tab would), so it doesn't run out between launches.
+pub fn yt_keep_session(app: AppHandle, state: Arc<AppState>) {
+    if state.flavor != Flavor::YouTube {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let mut tick = 0u64;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            tick += 1;
+            yt_save_refreshed(&state).await;
+            // Every 30 minutes (first after 2): renew when the last renewal is 12 hours old.
+            if cfg!(desktop) && tick % 60 == 4 && state.ytm().await.signed_in() {
+                let at: i64 = state.db().kv_get("yt.refreshedAt").ok().flatten().unwrap_or(0);
+                if crate::db::now() - at > 12 * 3600 {
+                    yt_refresh_session(&app, &state).await;
+                }
+            }
+        }
+    });
+}
+
+/// Saves the cookie jar if YouTube's responses renewed it.
+pub async fn yt_save_refreshed(state: &Arc<AppState>) {
+    if let Some(cookie) = state.ytm().await.take_refreshed() {
+        let st = state.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || st.secrets.set_large("yt.cookie", &cookie)).await;
+    }
+}
+
 #[tauri::command]
 pub async fn plex_reconnect_cmd(app: AppHandle, state: S<'_>) -> Result<()> {
     plex_reconnect(&app, &state).await
 }
 
 const YT_LOGIN_URL: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com/";
-const YT_KEEP: &[&str] = &[
-    "SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID", "APISID", "HSID", "SID", "SSID", "__Secure-1PSID", "__Secure-3PSID",
-    "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC", "SIDCC", "LOGIN_INFO", "PREF",
-];
+const YT_KEEP: &[&str] = ytm::SESSION_COOKIES;
 
 #[cfg(desktop)]
 fn youtube_cookie_header(app: &AppHandle, label: &str) -> String {
@@ -285,7 +324,7 @@ async fn read_cookies(app: &AppHandle, label: &'static str) -> String {
 async fn yt_adopt_cookie(app: &AppHandle, state: &AppState, cookie: String) -> Result<()> {
     state.secrets.set_large("yt.cookie", &cookie)?;
     state.db().kv_delete("ui.yt.profileChosen")?;
-    state.ytm.write().await.cookie = Some(cookie);
+    state.ytm.read().await.set_cookie(Some(cookie));
     let y = state.ytm().await;
     if let Ok(name) = y.account_name().await {
         state.db().kv_set("yt.account", &name)?;
@@ -436,26 +475,42 @@ pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
     Ok(())
 }
 
-/// Google rotates short-lived session cookies. On an auth failure, load music.youtube.com in a
-/// hidden window (same browser profile as the sign-in window) and pick up the fresh jar.
+/// Google rotates short-lived session cookies. Pick up a fresh jar from the webview's own cookie
+/// store (the browser profile the user signed in with) and use it from now on. Rate-limited: at
+/// most once every 5 minutes.
 pub async fn yt_refresh_session(app: &AppHandle, state: &AppState) -> bool {
-    // A hidden second window isn't possible on Android; there the user signs in again.
-    #[cfg(mobile)]
     {
-        let _ = (app, state);
-        false
-    }
-    #[cfg(desktop)]
-    {
-    {
-        let mut last = state.last_yt_refresh.lock().unwrap();
+        let mut last = state.last_yt_refresh.lock().unwrap_or_else(|e| e.into_inner());
         if last.map(|t| t.elapsed().as_secs() < 300).unwrap_or(false) {
             return false;
         }
         *last = Some(std::time::Instant::now());
     }
+    let cookie = yt_fresh_cookies(app, state).await;
+    if ytm::sapisid(&cookie).is_none() {
+        return false;
+    }
+    let _ = state.db().kv_set("yt.refreshedAt", &crate::db::now());
+    if state.ytm().await.cookie().as_deref() == Some(cookie.as_str()) {
+        return false;
+    }
+    let _ = state.secrets.set_large("yt.cookie", &cookie);
+    state.ytm.read().await.set_cookie(Some(cookie));
+    true
+}
+
+/// Android: the main webview's cookie store, where the user signed in.
+#[cfg(mobile)]
+async fn yt_fresh_cookies(app: &AppHandle, _state: &AppState) -> String {
+    read_cookies(app, "main").await
+}
+
+/// Desktop: load music.youtube.com in a hidden window (same browser profile as the sign-in
+/// window); its scripts renew the session cookies like an open browser tab would.
+#[cfg(desktop)]
+async fn yt_fresh_cookies(app: &AppHandle, state: &AppState) -> String {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
-    let Ok(url) = "https://music.youtube.com/".parse::<tauri::Url>() else { return false };
+    let Ok(url) = "https://music.youtube.com/".parse::<tauri::Url>() else { return String::new() };
     let built = with_browser_args(tauri::WebviewWindowBuilder::new(app, "ytrefresh", tauri::WebviewUrl::External(url)), state)
         .visible(false)
         .on_page_load(move |_w, p| {
@@ -465,20 +520,34 @@ pub async fn yt_refresh_session(app: &AppHandle, state: &AppState) -> bool {
         })
         .build();
     if built.is_err() {
-        return false;
+        return String::new();
     }
     let loaded = tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv()).await.is_ok();
+    // Give the page's scripts a moment to renew the cookies.
+    if loaded {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
     let cookie = if loaded { read_cookies(app, "ytrefresh").await } else { String::new() };
     if let Some(w) = app.get_webview_window("ytrefresh") {
         let _ = w.close();
     }
-    if ytm::sapisid(&cookie).is_some() {
-        let _ = state.secrets.set_large("yt.cookie", &cookie);
-        state.ytm.write().await.cookie = Some(cookie);
-        return true;
+    cookie
+}
+
+/// After YouTube refused a request and a refresh didn't help: is the session really gone? YouTube
+/// also refuses single requests for other reasons (403s when it throttles, restricted videos), and
+/// signing the user out for those made them sign in again and again. Only when the account
+/// itself can't be read any more does the UI go back to the sign-in screen.
+pub async fn yt_session_lost(app: &AppHandle, state: &AppState) -> bool {
+    let lost = match state.ytm().await.account_name().await {
+        Err(Error::AuthExpired) => true,
+        Ok(name) => name.is_empty(),
+        Err(_) => false,
+    };
+    if lost {
+        let _ = app.emit("auth-expired", ());
     }
-    false
-    }
+    lost
 }
 
 /// Run a YouTube call; on an auth failure refresh the cookie jar once and retry.
@@ -490,10 +559,8 @@ macro_rules! yt_call {
                 let $y = $state.ytm().await;
                 $body.await
             }
-            Err(Error::AuthExpired) => {
-                let _ = $app.emit("auth-expired", ());
-                Err(Error::AuthExpired)
-            }
+            Err(Error::AuthExpired) if yt_session_lost(&$app, &$state).await => Err(Error::AuthExpired),
+            Err(Error::AuthExpired) => Err(Error::Invalid("YouTube turned this request down. Try again in a moment.".into())),
             r => r,
         }
     }};
@@ -512,7 +579,7 @@ pub async fn sign_out(app: AppHandle, state: S<'_>) -> Result<()> {
         }
         Flavor::YouTube => {
             state.secrets.delete_large("yt.cookie")?;
-            state.ytm.write().await.cookie = None;
+            state.ytm.read().await.set_cookie(None);
             state.db().kv_delete("yt.account")?;
         }
     }
@@ -1805,7 +1872,7 @@ pub async fn yt_song_meta(
                 out.insert(vid, m);
             }
             Err(Error::AuthExpired) => {
-                let _ = app.emit("auth-expired", ());
+                yt_session_lost(&app, &state).await;
                 break;
             }
             Err(_) => {}

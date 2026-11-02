@@ -218,6 +218,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
                 })
                 .await;
             });
+            commands::yt_keep_session(handle.clone(), state.clone());
             // Scrobbles that failed while offline are retried every 10 minutes, not only when the
             // next track is scrobbled.
             let st = state.clone();
@@ -266,6 +267,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::plex_servers,
             commands::plex_select_server,
             commands::plex_reconnect_cmd,
+            commands::auth_recover,
             commands::yt_login,
             commands::sign_out,
             commands::home,
@@ -361,6 +363,12 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // A clean exit removes the "running" marker; a crash leaves it for the next launch.
             if let tauri::RunEvent::Exit = event {
                 audio_share::shutdown();
+                // Cookies YouTube renewed since the last save.
+                if let Some(state) = app.try_state::<Arc<AppState>>() {
+                    if let Some(cookie) = state.ytm.try_read().ok().and_then(|y| y.take_refreshed()) {
+                        let _ = state.secrets.set_large("yt.cookie", &cookie);
+                    }
+                }
                 if let Ok(dir) = app.path().app_data_dir() {
                     safe_mode::clean_exit(&dir);
                 }

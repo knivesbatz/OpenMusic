@@ -21,17 +21,20 @@ export function Pip() {
     });
     emit("pip-ready").catch(() => {});
     const id = setInterval(() => setNow(Date.now()), 500);
-    // Space plays/pauses here too, instead of pressing the button that was clicked last.
+    // Space plays/pauses here too, and never presses the button that was clicked last.
     const onKey = (e: KeyboardEvent) => {
       if (!spaceTogglesPlayback(e)) return;
       e.preventDefault();
-      if (!e.repeat) sendCommand("toggle");
+      e.stopPropagation();
+      if (e.type === "keydown" && !e.repeat) sendCommand("toggle");
     };
-    addEventListener("keydown", onKey);
+    addEventListener("keydown", onKey, true);
+    addEventListener("keyup", onKey, true);
     return () => {
       un.then((f) => f());
       clearInterval(id);
-      removeEventListener("keydown", onKey);
+      removeEventListener("keydown", onKey, true);
+      removeEventListener("keyup", onKey, true);
     };
   }, []);
   const pos = s.playing ? Math.min(s.duration, s.position + (now - at) / 1000) : s.position;
