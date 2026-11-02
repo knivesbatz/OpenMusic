@@ -25,6 +25,8 @@ export interface Settings {
   autoUpdate: boolean;
   /** Desktop: show the playing song on the user's Discord profile (Rich Presence). */
   discordPresence: boolean;
+  /** Private session: plays aren't recorded (history, Last.fm, Plex, Discord, YouTube history). */
+  privateSession: boolean;
   /** Windows: play the app's audio from its own process so Discord's Go Live can stream it. */
   shareAudio: boolean;
   volume: number; // 0-1
@@ -64,6 +66,7 @@ export const defaults: Settings = {
   autoUpdate: true,
   discordPresence: true,
   shareAudio: false,
+  privateSession: false,
   volume: 0.8,
   textScale: 1,
   reducedMotion: false,
@@ -103,6 +106,7 @@ export function sanitize(raw: Record<string, unknown>): Settings {
   if (!["default", "win95"].includes(s.theme)) s.theme = "default";
   s.normalizeVolume = s.normalizeVolume === true;
   s.shareAudio = s.shareAudio === true;
+  s.privateSession = s.privateSession === true;
   s.albumSort = libSort(s.albumSort, ["recent", "alpha", "artist", "year"]);
   s.artistSort = libSort(s.artistSort, ["recent", "alpha"]);
   s.sidebarWidth = clampWidth(s.sidebarWidth, SIDEBAR_W, 300);

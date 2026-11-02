@@ -1,8 +1,21 @@
-# OpenMusic 1.2.9
+# OpenMusic 1.2.10
 
-Stay signed in, and Space is just play/pause.
+A private session for listening without leaving a trace.
 
-## New in 1.2.9
+## New in 1.2.10
+- **Private session** (Settings → Privacy; on Windows also in the title bar's ••• menu): while it's
+  on, nothing you play is recorded:
+  - no listening history or Recently played
+  - no Last.fm scrobbles or "now playing"
+  - no play counts on your Plex server
+  - nothing on your Discord profile
+  - YTSpot plays through YouTube's privacy-enhanced player, so songs stay out of your YouTube
+    history and recommendations (from the next song on)
+
+  A "Private session" badge sits in the player bar while it's on; click it to end the session.
+  It stays on, across restarts, until you turn it off.
+
+## Also in 1.2.9
 - **Stay signed in.** The apps were sending people back to the sign-in screen far too often:
   - **Any refused request signed you out.** One request YouTube turned down (it also does that
     when it throttles, or for a restricted video) or one stale Plex server key was enough. Now

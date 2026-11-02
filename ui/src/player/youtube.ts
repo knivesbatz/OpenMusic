@@ -12,6 +12,14 @@ interface YTPlayer {
   setVolume(v: number): void;
   getCurrentTime(): number;
   getDuration(): number;
+  destroy(): void;
+}
+
+// Private session: YouTube's privacy-enhanced player (youtube-nocookie.com), whose plays don't
+// go into the account's watch history or recommendations.
+let privateHost = false;
+export function setYouTubePrivate(on: boolean) {
+  privateHost = on;
 }
 
 declare global {
@@ -56,6 +64,9 @@ export class YouTubeOutput {
   private player: YTPlayer | null = null;
   private ready: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
+  private wrap: HTMLElement | null = null;
+  /** The player was made for a private session. */
+  private madePrivate = false;
 
   constructor(private cb: Callbacks) {}
 
@@ -69,7 +80,10 @@ export class YouTubeOutput {
           wrap.style.cssText = "position:fixed;width:200px;height:200px;left:-10000px;top:0;pointer-events:none";
           wrap.appendChild(host);
           document.body.appendChild(wrap);
+          this.wrap = wrap;
+          this.madePrivate = privateHost;
           this.player = new window.YT!.Player(host, {
+            ...(privateHost ? { host: "https://www.youtube-nocookie.com" } : {}),
             width: 200,
             height: 200,
             playerVars: { autoplay: 0, controls: 0, disablekb: 1, playsinline: 1, origin: location.origin },
@@ -109,7 +123,23 @@ export class YouTubeOutput {
     clearInterval(this.timer);
   }
 
+  /** Drop the player so the next song gets a new one (private session switched). */
+  private reset() {
+    this.stopTimer();
+    try {
+      this.player?.destroy();
+    } catch {
+      /* already gone */
+    }
+    this.wrap?.remove();
+    this.player = null;
+    this.wrap = null;
+    this.ready = null;
+  }
+
   async load(videoId: string, startAt: number, autoplay: boolean, volume: number) {
+    // The song playing now keeps its player; the private session applies from the next one.
+    if (this.ready && this.madePrivate !== privateHost) this.reset();
     await this.init();
     this.player!.setVolume(Math.round(volume * 100));
     if (autoplay) this.player!.loadVideoById({ videoId, startSeconds: startAt });

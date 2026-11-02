@@ -267,7 +267,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "normalizeVolume" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "shareAudio" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "normalizeVolume" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "shareAudio" | "privateSession" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -483,6 +483,11 @@ export function SettingsPage() {
           />
         </label>
       </section>}
+
+      <section>
+        <h2>{t("privacy")}</h2>
+        <Toggle k="privateSession" label={t("privateSession")} hint={t("privateSessionHint")} />
+      </section>
 
       {inTauri && <SyncPlaylists />}
 
