@@ -1,8 +1,15 @@
-# OpenMusic 1.2.10
+# OpenMusic 1.2.11
 
-A private session for listening without leaving a trace.
+Artist pages show the artist's own songs.
 
-## New in 1.2.10
+## New in 1.2.11
+- **YTSpot: Popular shows the artist's own songs, not other people's uploads.** For artists with
+  few official songs on YouTube Music, the artist page's video shelves are mostly other channels'
+  uploads (fan channels, lyric videos, city-pop compilations), and Popular was filled from them.
+  Popular now only lists songs credited to the artist, and when there are fewer than five it
+  adds the artist's songs from a YouTube Music song search.
+
+## Also in 1.2.10
 - **Private session** (Settings → Privacy; on Windows also in the title bar's ••• menu): while it's
   on, nothing you play is recorded:
   - no listening history or Recently played

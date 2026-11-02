@@ -344,6 +344,16 @@ fn track_from(video_id: String, title: String, sub: &Sub, artwork: Option<String
     }
 }
 
+/// A track credited to the artist (by channel id, or by name for unlinked credits), not an upload
+/// of their music by someone else's channel.
+fn by_artist(t: &Track, artist_id: &str, name: &str) -> bool {
+    if t.artist_id.as_deref() == Some(artist_id) {
+        return true;
+    }
+    let name = name.trim();
+    !name.is_empty() && t.artist.split(&[',', '&'][..]).any(|a| a.trim().eq_ignore_ascii_case(name))
+}
+
 fn item_from_browse(id: String, pt: Option<&str>, title: String, sub: &Sub, artwork: Option<String>) -> Option<MediaItem> {
     let artist = sub.artists.iter().map(|a| a.0.as_str()).collect::<Vec<_>>().join(", ");
     let artist_id = sub.artists.first().and_then(|a| a.1.clone()).map(|i| format!("yt:{i}"));
@@ -1050,6 +1060,17 @@ impl Ytm {
         }
         // Album/single cards on an artist page omit the artist name.
         let name = page.artist.as_ref().map(|a| a.name.clone()).unwrap_or_default();
+        // Popular is the artist's own songs. Artists with few official songs on YouTube Music get
+        // pages whose video shelves are other channels' uploads (fan, lyric and compilation
+        // videos): leave those out, and top Popular up from a song search instead.
+        page.top_tracks.retain(|t| by_artist(t, id, &name));
+        if page.top_tracks.len() < 5 && !name.is_empty() {
+            if let Ok(found) = self.search_kind_pages(&name, "songs", 1).await {
+                page.top_tracks.extend(found.tracks.into_iter().filter(|t| by_artist(t, id, &name)));
+                dedupe(&mut page.top_tracks, |t| t.id.clone());
+                page.top_tracks.truncate(20);
+            }
+        }
         for a in page.albums.iter_mut().chain(page.singles.iter_mut()) {
             if a.artist.is_empty() {
                 a.artist = name.clone();
@@ -1289,6 +1310,37 @@ mod tests {
         let h = sapisid_hash("abc", 1700000000);
         assert!(h.starts_with("SAPISIDHASH 1700000000_"));
         assert_eq!(h.len(), "SAPISIDHASH 1700000000_".len() + 40);
+    }
+
+    #[test]
+    fn popular_keeps_the_artists_own_songs_only() {
+        let t = |artist: &str, id: Option<&str>| Track {
+            id: "yt:v".into(),
+            source: Source::Youtube,
+            title: "T".into(),
+            artist: artist.into(),
+            artist_id: id.map(String::from),
+            album: None,
+            album_id: None,
+            duration_ms: None,
+            artwork: None,
+            stream_key: None,
+            track_number: None,
+            explicit: false,
+            episode: false,
+            description: None,
+            published: None,
+            year: None,
+            added_at: None,
+            disc_number: None,
+        };
+        let page = "yt:UCreiko";
+        assert!(by_artist(&t("Reiko Takahashi", Some(page)), page, "Reiko Takahashi"));
+        assert!(by_artist(&t("Tatsuro Yamashita, reiko takahashi", None), page, "Reiko Takahashi"));
+        // Uploads by other channels.
+        assert!(!by_artist(&t("Akaneoka city pop", Some("yt:UCfan")), page, "Reiko Takahashi"));
+        assert!(!by_artist(&t("Love In Citypop", None), page, "Reiko Takahashi"));
+        assert!(!by_artist(&t("", None), page, ""));
     }
 
     #[test]
