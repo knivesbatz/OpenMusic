@@ -625,7 +625,7 @@ p { margin: 0 0 8px; }
 .pp { animation: om-sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .pq-backdrop { animation: om-fade 0.2s ease-out; }
 .pq-sheet { animation: om-sheet-up 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.menu, .dialog { animation: om-pop-in 0.14s ease-out; transform-origin: top left; }
+.dialog { animation: om-pop-in 0.14s ease-out; transform-origin: top left; }
 .card .card-art .art, .shortcut { transition: transform 0.2s ease-out, background 0.2s; }
 .card:hover .card-art .art { transform: translateY(-3px); }
 .play-btn:active, .fab:active, .icon-btn:active, .pill:active, .chip:active, .tv-tab:active, .pq-buttons button:active { transform: scale(0.94); }
@@ -944,7 +944,11 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .pb-meta { animation: om-rise-in 0.35s var(--ease-out); }
 /* Side panels and menus. */
 .queue-panel { animation: om-slide-in 0.3s var(--ease-out); }
-.menu, .dialog, .savedin { animation: om-scale-in 0.16s var(--ease-out); }
+.dialog, .savedin { animation: om-scale-in 0.16s var(--ease-out); }
+/* Menus fade in with a 4 px drop, not a zoom: zooming moved the lower rows out from under the
+   pointer (into the row above) while the menu opened, and threw off its fit-on-screen measure. */
+@keyframes om-menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.menu { animation: om-menu-in 0.14s var(--ease-out); }
 .toast { animation: om-rise-in 0.3s var(--ease-spring); }
 /* The song that's playing shows bouncing bars in place of its number. */
 .tl-num .eq { display: inline-flex; align-items: flex-end; justify-content: flex-end; gap: 2px; height: 14px; width: 14px; }

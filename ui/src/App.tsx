@@ -69,6 +69,11 @@ function Page() {
   }
 }
 
+/** Buttons react to Space on key-up as well; swallow it there too. */
+function onSpaceUp(e: KeyboardEvent) {
+  if (spaceTogglesPlayback(e)) (e.preventDefault(), e.stopPropagation());
+}
+
 function isTyping(e: KeyboardEvent) {
   const el = e.target as HTMLElement;
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
@@ -137,11 +142,6 @@ export function App() {
         setTimeout(() => document.getElementById("global-search")?.focus());
         return;
       }
-      if (spaceTogglesPlayback(e)) {
-        e.preventDefault();
-        if (!e.repeat) P.toggle();
-        return;
-      }
       if (isTyping(e)) return;
       if (ctrl && e.key === "ArrowRight") P.next();
       else if (ctrl && e.key === "ArrowLeft") P.previous();
@@ -152,8 +152,22 @@ export function App() {
       else if (e.altKey && e.key === "ArrowLeft") useUi.setState((s) => ({ pos: Math.max(0, s.pos - 1) }));
       else if (e.altKey && e.key === "ArrowRight") useUi.setState((s) => ({ pos: Math.min(s.stack.length - 1, s.pos + 1) }));
     };
+    // Space plays/pauses and does nothing else: caught before any button, switch, row or menu
+    // on the page sees it.
+    const onSpace = (e: KeyboardEvent) => {
+      if (!spaceTogglesPlayback(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) P.toggle();
+    };
     addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
+    addEventListener("keydown", onSpace, true);
+    addEventListener("keyup", onSpaceUp, true);
+    return () => {
+      removeEventListener("keydown", onKey);
+      removeEventListener("keydown", onSpace, true);
+      removeEventListener("keyup", onSpaceUp, true);
+    };
   }, []);
 
   if (!info) return <Loading />;

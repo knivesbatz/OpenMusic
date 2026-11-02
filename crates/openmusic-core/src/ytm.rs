@@ -28,11 +28,47 @@ const UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (
 #[derive(Clone)]
 pub struct Ytm {
     http: reqwest::Client,
-    pub cookie: Option<String>,
+    /// The signed-in cookies, shared by every copy of this client.
+    jar: std::sync::Arc<Jar>,
     pub hl: String,
     pub client_version: String,
     /// Brand-account channel to act as (InnerTube `onBehalfOfUser`); `None` = primary account.
     pub page_id: Option<String>,
+}
+
+/// The session cookies. YouTube refreshes some of them in its responses (`Set-Cookie`); keeping
+/// those, instead of replaying the jar from sign-in forever, keeps the session alive.
+#[derive(Default)]
+struct Jar {
+    cookie: std::sync::RwLock<Option<String>>,
+    /// Changed by a response since it was last saved.
+    dirty: std::sync::atomic::AtomicBool,
+}
+
+/// Session cookies worth keeping from YouTube's responses (the sign-in jar's own names).
+pub const SESSION_COOKIES: &[&str] = &[
+    "SAPISID", "__Secure-3PAPISID", "__Secure-1PAPISID", "APISID", "HSID", "SID", "SSID", "__Secure-1PSID", "__Secure-3PSID",
+    "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC", "SIDCC", "LOGIN_INFO", "PREF",
+];
+
+/// `cookie` with the values of `set_cookies` (`Set-Cookie` header values) put in. Only session
+/// cookies with a value are taken: a response never signs the app out by clearing one.
+pub fn merge_set_cookies<'a>(cookie: &str, set_cookies: impl IntoIterator<Item = &'a str>) -> String {
+    let mut pairs: Vec<(String, String)> =
+        cookie.split(';').filter_map(|kv| kv.trim().split_once('=')).map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    for sc in set_cookies {
+        let Some((k, v)) = sc.split(';').next().and_then(|kv| kv.trim().split_once('=')) else { continue };
+        let (k, v) = (k.trim(), v.trim());
+        let expired = sc.to_ascii_lowercase().split(';').any(|a| a.trim() == "max-age=0" || a.trim().starts_with("max-age=-"));
+        if v.is_empty() || expired || !SESSION_COOKIES.contains(&k) {
+            continue;
+        }
+        match pairs.iter_mut().find(|(name, _)| name == k) {
+            Some(p) => p.1 = v.to_string(),
+            None => pairs.push((k.to_string(), v.to_string())),
+        }
+    }
+    pairs.into_iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join("; ")
 }
 
 pub fn sapisid(cookie: &str) -> Option<&str> {
@@ -725,11 +761,27 @@ fn continuation_token(v: &Value) -> Option<(String, bool)> {
 
 impl Ytm {
     pub fn new(http: reqwest::Client, cookie: Option<String>, hl: &str) -> Self {
-        Ytm { http, cookie, hl: hl.to_string(), client_version: DEFAULT_CLIENT_VERSION.into(), page_id: None }
+        let jar = Jar { cookie: std::sync::RwLock::new(cookie), ..Default::default() };
+        Ytm { http, jar: std::sync::Arc::new(jar), hl: hl.to_string(), client_version: DEFAULT_CLIENT_VERSION.into(), page_id: None }
+    }
+
+    pub fn cookie(&self) -> Option<String> {
+        self.jar.cookie.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// A new jar from sign-in or a session refresh (the caller saves it).
+    pub fn set_cookie(&self, cookie: Option<String>) {
+        *self.jar.cookie.write().unwrap_or_else(|e| e.into_inner()) = cookie;
+        self.jar.dirty.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// The jar, if responses refreshed it since the last call: for saving.
+    pub fn take_refreshed(&self) -> Option<String> {
+        self.jar.dirty.swap(false, std::sync::atomic::Ordering::SeqCst).then(|| self.cookie()).flatten()
     }
 
     pub fn signed_in(&self) -> bool {
-        self.cookie.as_deref().and_then(sapisid).is_some()
+        self.cookie().as_deref().and_then(sapisid).is_some()
     }
 
     async fn post(&self, endpoint: &str, mut body: Value, query: &str) -> Result<Value> {
@@ -753,7 +805,8 @@ impl Ytm {
             .header("X-YouTube-Client-Version", &self.client_version)
             .timeout(std::time::Duration::from_secs(20))
             .json(&body);
-        if let Some(cookie) = &self.cookie {
+        let cookie = self.cookie();
+        if let Some(cookie) = &cookie {
             if let Some(sid) = sapisid(cookie) {
                 let epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
                 rb = rb
@@ -763,6 +816,20 @@ impl Ytm {
             }
         }
         let resp = rb.send().await.map_err(|e| if e.is_connect() || e.is_timeout() { Error::Offline(e.to_string()) } else { e.into() })?;
+        if let Some(cookie) = cookie.filter(|c| sapisid(c).is_some()) {
+            let set: Vec<&str> = resp.headers().get_all(reqwest::header::SET_COOKIE).iter().filter_map(|v| v.to_str().ok()).collect();
+            if !set.is_empty() {
+                let merged = merge_set_cookies(&cookie, set);
+                if merged != cookie {
+                    let mut jar = self.jar.cookie.write().unwrap_or_else(|e| e.into_inner());
+                    // Another request may have replaced the jar meanwhile (sign-in, sign-out).
+                    if jar.as_deref() == Some(cookie.as_str()) {
+                        *jar = Some(merged);
+                        self.jar.dirty.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                }
+            }
+        }
         match resp.status().as_u16() {
             401 | 403 => Err(Error::AuthExpired),
             404 => Err(Error::NotFound(endpoint.into())),
@@ -1222,6 +1289,22 @@ mod tests {
         let h = sapisid_hash("abc", 1700000000);
         assert!(h.starts_with("SAPISIDHASH 1700000000_"));
         assert_eq!(h.len(), "SAPISIDHASH 1700000000_".len() + 40);
+    }
+
+    #[test]
+    fn refreshed_cookies_replace_the_old_values_only() {
+        let jar = "SID=a; SAPISID=s; __Secure-1PSIDTS=old; PREF=x";
+        let merged = merge_set_cookies(
+            jar,
+            [
+                "__Secure-1PSIDTS=new; Domain=.youtube.com; Path=/; Secure; HttpOnly",
+                "SIDCC=cc; expires=Sat, 01-Nov-2027 00:00:00 GMT; path=/",
+                "VISITOR_INFO1_LIVE=v; path=/",
+                "SID=; Max-Age=0",
+                "SAPISID=gone; Max-Age=0",
+            ],
+        );
+        assert_eq!(merged, "SID=a; SAPISID=s; __Secure-1PSIDTS=new; PREF=x; SIDCC=cc");
     }
 
     #[test]
