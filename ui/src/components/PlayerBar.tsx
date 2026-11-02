@@ -210,6 +210,7 @@ export function PlayerBar() {
       </div>
       {tr && <MiniControls />}
       <div className="pb-right">
+        <PrivateBadge />
         {quality && (
           <span className="quality" title={offline ? t("offlineAvailable") : t("audioQuality")}>
             {offline ? "⤓ " : ""}
@@ -287,3 +288,16 @@ function MiniControls() {
   );
 }
 
+
+/** Shown during a private session; a click ends it. */
+function PrivateBadge() {
+  const t = useT();
+  const on = useSettings((s) => s.privateSession);
+  if (!on) return null;
+  return (
+    <button className="private-badge" title={t("privateSessionEnd")} aria-label={t("privateSessionEnd")} onClick={() => useSettings.getState().set({ privateSession: false })}>
+      <I.ILock size={13} />
+      <span>{t("privateSession")}</span>
+    </button>
+  );
+}

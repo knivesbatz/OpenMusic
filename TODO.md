@@ -117,6 +117,12 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.10
+- ✅ Private session (`privateSession` setting): no record_play, Last.fm, Plex mark_played or Discord
+  presence; YouTube players recreated on youtube-nocookie.com from the next song; badge in the
+  player bar, Settings → Privacy, title bar menu (e2e). YouTube history exclusion relies on
+  YouTube's privacy-enhanced mode, not verified with a real account
+
 ## 1.2.9
 - ✅ Sessions: `auth_recover` + one retry in `api.ts` for `authExpired` (Plex reconnect, YT cookie
   refresh); `yt_session_lost` checks account_menu before emitting `auth-expired`; YT jar shared

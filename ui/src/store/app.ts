@@ -100,6 +100,9 @@ export async function boot() {
     useApp.setState((s) => ({ auth: s.auth ? { ...s.auth, signedIn: false } : s.auth }));
     toast(translate(useSettings.getState().language, "authExpired"));
   });
+  useSettings.subscribe((s, prev) => {
+    if (s.privateSession !== prev.privateSession) toast(translate(s.language, s.privateSession ? "privateSessionOn" : "privateSessionOff"));
+  });
   listen("lastfm-auth-expired", () => toast(translate(useSettings.getState().language, "lastfmExpired")));
   listen<string>("connection-changed", (e) => useApp.setState({ online: e.payload === "online" }));
   listen("playlists-changed", () => {

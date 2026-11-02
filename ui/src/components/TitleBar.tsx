@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { inTauri } from "../api";
 import { useT } from "../i18n";
 import { isMobileApp, useApp } from "../store/app";
+import { useSettings } from "../store/settings";
 import { back, forward, navigate, openMenu, toast, useUi } from "../store/ui";
 import * as I from "./Icons";
 import { DesktopActions, SearchField } from "./TopBar";
@@ -50,6 +51,12 @@ function appMenu(t: ReturnType<typeof useT>) {
     { label: t("whatsNew"), icon: I.IBell, onClick: () => navigate({ name: "new" }) },
     { label: t("transferPlaylists"), icon: I.IImport, onClick: () => navigate({ name: "import" }) },
     { label: t("settings"), icon: I.ISettings, onClick: () => navigate({ name: "settings" }) },
+    {
+      label: t("privateSession"),
+      icon: I.ILock,
+      checked: useSettings.getState().privateSession,
+      onClick: () => useSettings.getState().set({ privateSession: !useSettings.getState().privateSession }),
+    },
     { label: "", separator: true },
     { label: t("keyboardShortcuts"), icon: I.IInfo, onClick: () => toast(t("shortcuts")) },
   ];

@@ -520,6 +520,40 @@ await test("A submenu reached while its menu is still opening stays open", async
   assert.equal(await p.locator(".menu.sub").count(), 1, "the Export submenu closed");
 });
 
+await test("Private session: nothing played is recorded until it's turned off", async (p) => {
+  const recorded = () => p.evaluate(() => window.__CALLS__.filter((c) => ["record_play", "lastfm_now_playing", "presence_update"].includes(c)));
+  await p.click('button[aria-label="Settings"]');
+  await p.locator('label.setting:has-text("Private session") input').click();
+  await p.waitForSelector('.toast:has-text("Private session on")');
+  await p.waitForSelector(".playerbar .private-badge");
+  await p.evaluate(() => (window.__CALLS__.length = 0));
+  await p.click('.playerbar button[aria-label="Next"]');
+  await p.waitForSelector('.playerbar .play-btn[aria-label="Pause"]');
+  await p.waitForTimeout(500);
+  assert.deepEqual(await recorded(), [], "recorded during a private session");
+  // The badge ends it; the next song is recorded again.
+  await p.click(".playerbar .private-badge");
+  await p.waitForSelector(".playerbar .private-badge", { state: "detached" });
+  await p.click('.playerbar button[aria-label="Next"]');
+  await p.waitForFunction(() => window.__CALLS__.includes("record_play"));
+  assert.ok((await recorded()).includes("presence_update"), "Discord presence after the private session");
+}, {
+  init: () => {
+    const rate = 4000, n = rate * 120, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+    const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    w(0, "RIFF"); v.setUint32(4, 36 + n, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true);
+    v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true);
+    for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + Math.round(4 * Math.sin(i / 8)));
+    const wav = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+    const d = window.__MOCK__;
+    d.resolve_stream = () => ({ kind: "url", url: wav, quality: "test", offline: false });
+    d.settings_get = { crossfade: 0, volume: 0.5, gapless: true, lastfmScrobble: true, discordPresence: true };
+    d.queue_load = { ...d.queue_load, position: 0 };
+    d.app_info = { ...d.app_info, capabilities: { ...d.app_info.capabilities, discordPresence: true } };
+  },
+});
+
 await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {
   await p.waitForFunction(() => typeof window.__omMedia === "function");
   const first = await p.locator(".pb-meta .name").textContent();

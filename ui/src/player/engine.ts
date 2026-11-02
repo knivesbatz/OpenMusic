@@ -8,7 +8,7 @@ import type { PlayContext, Stream, Track } from "../types";
 import { useSettings } from "../store/settings";
 import { navigate, toast } from "../store/ui";
 import * as Q from "./queue";
-import { YouTubeOutput } from "./youtube";
+import { setYouTubePrivate, YouTubeOutput } from "./youtube";
 import { displayTrack } from "../store/songmeta";
 
 export interface PlayerState {
@@ -294,9 +294,13 @@ function interrupted(e: unknown) {
   return e instanceof DOMException && e.name === "AbortError";
 }
 
+/** Private session: nothing about what plays is recorded or shared. */
+const isPrivate = () => useSettings.getState().privateSession;
+
 function startedTrack(item: Q.QItem) {
   scrobble = { uid: item.uid, startedAt: Math.floor(Date.now() / 1000), done: false, playedMs: 0, lastTick: Date.now() };
   if (!inTauri) return;
+  if (isPrivate()) return persistSoon();
   const ctx = get().context;
   api.recordPlay(item.track, ctx).catch(() => {});
   // Last.fm gets the official artist/album of YouTube music videos, not the uploader.
@@ -542,7 +546,7 @@ function trackScrobble() {
   // Last.fm rule: track longer than 30 s, played for half its length or 4 minutes.
   if (dur > 30 && scrobble.playedMs / 1000 >= Math.min(dur / 2, 240)) {
     scrobble.done = true;
-    if (inTauri) {
+    if (inTauri && !isPrivate()) {
       api.markPlayed(item.track).catch(() => {});
       if (useSettings.getState().lastfmScrobble) api.lastfmScrobble(displayTrack(item.track), scrobble.startedAt).catch(() => {});
     }
@@ -884,7 +888,7 @@ function initDiscordPresence() {
   const push = () => {
     const s = usePlayer.getState();
     const cur = Q.current(s.queue)?.track;
-    const on = useSettings.getState().discordPresence;
+    const on = useSettings.getState().discordPresence && !isPrivate();
     if (!cur || !on || !s.playing) {
       if (sent.id && sent.playing) api.presenceClear().catch(() => {});
       sent = { id: cur && on ? cur.id : "", playing: false, at: 0, position: 0 };
@@ -913,5 +917,9 @@ function initDiscordPresence() {
       .catch(() => {});
   };
   usePlayer.subscribe(push);
-  useSettings.subscribe((s, prev) => s.discordPresence !== prev.discordPresence && push());
+  useSettings.subscribe((s, prev) => (s.discordPresence !== prev.discordPresence || s.privateSession !== prev.privateSession) && push());
 }
+
+// YouTube players follow the private session (new players use the privacy-enhanced host).
+setYouTubePrivate(useSettings.getState().privateSession);
+useSettings.subscribe((s, prev) => s.privateSession !== prev.privateSession && setYouTubePrivate(s.privateSession));
