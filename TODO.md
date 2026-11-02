@@ -117,6 +117,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.11
+- ✅ YT artist Popular: only tracks credited to the artist (`by_artist`: channel id or name), topped
+  up from a songs search when under 5 (unit)
+
 ## 1.2.10
 - ✅ Private session (`privateSession` setting): no record_play, Last.fm, Plex mark_played or Discord
   presence; YouTube players recreated on youtube-nocookie.com from the next song; badge in the
