@@ -9,6 +9,7 @@ import { shelfTitle, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
 import { sortAlbums, sortArtists } from "../store/librarySort";
+import { useRetroCutoff } from "../store/retro";
 import { useSettings } from "../store/settings";
 import { confirmDialog, navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
 import { useDisplayTrack } from "../store/songmeta";
@@ -376,7 +377,9 @@ export function WhatsNewPage() {
   const t = useT();
   const lang = useSettings((s) => s.language);
   const [refresh, setRefresh] = useState(0);
-  const { data, error, loading } = useAsync(() => (inTauri ? api.newReleases(refresh > 0) : Promise.resolve([])), [refresh]);
+  // Windows 95 theme: what was new 28 years ago today.
+  const cutoff = useRetroCutoff();
+  const { data, error, loading } = useAsync(() => (inTauri ? api.newReleases(refresh > 0, cutoff) : Promise.resolve([])), [refresh, cutoff]);
   usePageTitle(t("whatsNew"));
   return (
     <div className="page">
@@ -386,7 +389,11 @@ export function WhatsNewPage() {
           {t("sync")}
         </button>
       </div>
-      <p className="muted">{t("whatsNewHint")}</p>
+      <p className="muted">
+        {cutoff
+          ? t("whatsNewRetro", { date: new Date(`${cutoff}T12:00:00`).toLocaleDateString(lang === "ja" ? "ja-JP" : "en-US", { dateStyle: "long" }) })
+          : t("whatsNewHint")}
+      </p>
       {loading && !data ? (
         <Loading />
       ) : error ? (

@@ -1,9 +1,19 @@
 # OpenMusic 1.2.13
 
-Copy your app playlists to YouTube Music; on Windows, holding the headphone button skips the song
-and Discord audio sharing works.
+Copy your app playlists to YouTube Music, the Windows 95 theme goes back 28 years, and on
+Windows, holding the headphone button skips the song and Discord audio sharing works.
 
 ## New in 1.2.13
+- **Windows 95 theme: back to 28 years ago.** With the theme on, artist pages and What's New only
+  show music released by today's date 28 years ago (today, 3 November 2026, that's 3 November
+  1998). The date moves forward a day every day, even with the app left open.
+  - Artist pages: Popular, the discography tabs and Appears on leave out anything newer.
+  - What's New shows what was new then: releases from the artists you follow from that year and
+    the year before (PLEXSpot also lists your library's latest releases up to that day).
+  - YouTube Music only gives release years, so exact dates come from MusicBrainz. Releases from
+    the cutoff's own year without an exact date stay hidden until the date moves past that year.
+    Songs and releases with no date at all are shown.
+  Switch back to the default theme to see everything again.
 - **YTSpot: Copy to YouTube Music.** Right-click one of your app playlists (or use its ••• menu)
   and choose Copy to YouTube Music to make it a real playlist on your YouTube account. Pick its
   name and visibility (Private, Unlisted or Public; Private is the default).

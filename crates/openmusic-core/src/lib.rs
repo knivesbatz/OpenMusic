@@ -13,6 +13,7 @@ pub mod lastfm;
 pub mod local;
 pub mod lyrics;
 pub mod model;
+pub mod retro;
 pub mod safe_mode;
 pub mod names;
 pub mod plex;
@@ -339,6 +340,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::liked_ids,
             commands::localized_artist_names,
             commands::artist_compilations,
+            commands::release_dates,
             commands::log_ui_error,
             commands::gpu_set,
             commands::audio_share_set,

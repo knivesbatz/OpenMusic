@@ -42,6 +42,35 @@ pub async fn compilation_titles(http: &reqwest::Client, name: &str) -> Result<Ve
     Ok(pick_compilations(&get(http, &url).await?, name))
 }
 
+/// First release dates of the artist's release groups (albums, singles, EPs, compilations)
+/// credited to exactly `name`, as (title, "YYYY-MM-DD" / "YYYY-MM" / "YYYY") pairs.
+pub async fn release_dates(http: &reqwest::Client, name: &str) -> Result<Vec<(String, String)>> {
+    let query = format!("artist:\"{}\"", lucene_escape(name));
+    let url = format!(
+        "https://musicbrainz.org/ws/2/release-group/?query={}&fmt=json&limit=100",
+        urlencoding::encode(&query)
+    );
+    Ok(pick_release_dates(&get(http, &url).await?, name))
+}
+
+/// (title, first release date) of the release groups credited to exactly `artist`.
+pub fn pick_release_dates(v: &Value, artist: &str) -> Vec<(String, String)> {
+    let want = norm(artist);
+    let Some(groups) = v.get("release-groups").and_then(|g| g.as_array()) else { return Vec::new() };
+    groups
+        .iter()
+        .filter(|g| {
+            let credit = g.get("artist-credit").and_then(|c| c.as_array());
+            credit.map(|c| c.len() == 1 && c[0].get("name").and_then(|n| n.as_str()).map(norm).as_deref() == Some(want.as_str())).unwrap_or(false)
+        })
+        .filter_map(|g| {
+            let title = g.get("title")?.as_str()?;
+            let date = g.get("first-release-date")?.as_str()?;
+            (date.len() >= 4).then(|| (title.to_string(), date.to_string()))
+        })
+        .collect()
+}
+
 /// One MusicBrainz web service request, at most one per second (their rate limit).
 async fn get(http: &reqwest::Client, url: &str) -> Result<Value> {
     {
@@ -141,6 +170,21 @@ mod tests {
                   "aliases": [ { "name": "ザ・ビートルズ", "locale": "ja", "primary": true } ] }
             ]
         })
+    }
+
+    #[test]
+    fn release_dates_of_the_artists_own_releases() {
+        let v = serde_json::json!({ "release-groups": [
+            { "title": "Spacy", "first-release-date": "1976-06-25", "artist-credit": [{ "name": "Tatsuro Yamashita" }] },
+            { "title": "For You", "first-release-date": "1982-01", "artist-credit": [{ "name": "tatsuro yamashita" }] },
+            { "title": "Tribute", "first-release-date": "1999-01-01", "artist-credit": [{ "name": "Various Artists" }] },
+            { "title": "Duet", "first-release-date": "1990", "artist-credit": [{ "name": "Tatsuro Yamashita" }, { "name": "Mariya Takeuchi" }] },
+            { "title": "Undated", "first-release-date": "", "artist-credit": [{ "name": "Tatsuro Yamashita" }] }
+        ]});
+        assert_eq!(
+            pick_release_dates(&v, "Tatsuro Yamashita"),
+            vec![("Spacy".to_string(), "1976-06-25".to_string()), ("For You".to_string(), "1982-01".to_string())]
+        );
     }
 
     #[test]

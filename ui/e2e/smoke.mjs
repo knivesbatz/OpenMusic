@@ -734,6 +734,50 @@ await test("Windows 95 theme: picked in Settings, applied to the whole app and s
   },
 });
 
+await test("Windows 95 theme: artist pages and What's New stop 28 years ago today", async (p) => {
+  await p.click(".shelf .card >> nth=0");
+  await p.waitForSelector(".hero-meta .link");
+  await p.click(".hero-meta .link");
+  await p.waitForSelector(".artist-hero");
+  await p.click('.chips button:has-text("Albums")');
+  // Out by the cutoff: the old album, and the cutoff-year album MusicBrainz dates to 1 January.
+  await p.waitForFunction(() => document.querySelectorAll(".shelf .grid .card").length === 2);
+  const titles = (await p.locator(".shelf .grid .card .card-title").allTextContents()).map((x) => x.trim()).sort();
+  assert.deepEqual(titles, ["Autumn Tapes", "Night Drive"]);
+  assert.deepEqual(await p.evaluate(() => window.__DATES), { name: "Aster Vale", titles: ["Autumn Tapes", "Glass Garden", "Low Tide", "Paper Moons", "Neon Rain", "Quiet Hours", "Summer Static", "Night Drive"] });
+  // Popular keeps the songs from those two albums only.
+  const shown = (await p.locator(".tl-row .name").allTextContents()).map((x) => x.trim());
+  const expected = await p.evaluate(() => {
+    const a = window.__MOCK__.artist;
+    const ok = new Set([a.albums[0].id, a.albums[1].id]);
+    return { keep: a.topTracks.filter((t) => ok.has(t.albumId)).map((t) => t.title), hide: a.topTracks.filter((t) => !ok.has(t.albumId)).map((t) => t.title) };
+  });
+  assert.ok(shown.some((x) => expected.keep.includes(x)), JSON.stringify(shown));
+  assert.ok(!shown.some((x) => expected.hide.includes(x)), JSON.stringify(shown));
+  // What's New asks for the cutoff and says which day it is.
+  await p.locator('button[aria-label="What\'s New"]').first().click();
+  await p.waitForSelector(".page h1:has-text(\"What's New\")");
+  const before = await p.evaluate(() => window.__NEW_BEFORE);
+  assert.match(before, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(Number(before.slice(0, 4)), new Date().getFullYear() - 28);
+  assert.ok((await p.locator(".page p.muted").first().textContent()).includes("28 years ago"));
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.settings_get = { theme: "win95" };
+    const cy = new Date().getFullYear() - 28;
+    const a = d.artist;
+    const years = [cy - 10, cy, cy, cy + 5, cy + 6];
+    a.albums = a.albums.map((al, i) => ({ ...al, year: years[i] }));
+    a.singles = a.singles.map((al) => ({ ...al, year: cy + 20 }));
+    a.appearsOn = a.appearsOn.map((al) => ({ ...al, year: cy + 20 }));
+    // Popular songs: no year of their own, so they follow their album.
+    a.topTracks = a.topTracks.map((t, i) => ({ ...t, albumId: a.albums[i % 5].id, album: null, year: null }));
+    d.release_dates = (q) => ((window.__DATES = q), { "Autumn Tapes": `${cy}-01-01`, "Glass Garden": `${cy}-12-31` });
+    d.new_releases = (q) => ((window.__NEW_BEFORE = q.before), []);
+  },
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");
