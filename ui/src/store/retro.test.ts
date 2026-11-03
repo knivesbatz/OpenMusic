@@ -56,6 +56,22 @@ describe("artist pages in the Windows 95 theme", () => {
     expect(retroArtist(page, "1998-11-04", {}).singles.map((a) => a.id)).toEqual(["Single", "Older single"]);
   });
 
+  it("never lets a same-titled older release make a newer one look old", () => {
+    const p: ArtistPage = { ...page, albums: [al("Akina", 2017), al("Fixer", 2015)], singles: [], appearsOn: [], topTracks: [] };
+    // MusicBrainz has a 1993 compilation called "AKINA": not this 2017 album.
+    expect(retroArtist(p, "1998-11-03", { Akina: "1993-11-10", Fixer: "2015-12-30" }).albums).toEqual([]);
+    // Every Weezer album is "Weezer (… Album)", and they all match MusicBrainz's 1994 "Weezer".
+    const w: ArtistPage = {
+      ...p,
+      albums: [al("Weezer", 2026), al("Weezer (Black Album)", 2019), al("Weezer (Green Album)", 2001), al("Pinkerton", 1996), al("Weezer (Blue Album)", 1994)],
+    };
+    const wDates = { Weezer: "1994-05-10", "Weezer (Black Album)": "1994-05-10", "Weezer (Green Album)": "1994-05-10", Pinkerton: "1996-09-24", "Weezer (Blue Album)": "1994-05-10" };
+    expect(retroArtist(w, "1998-11-03", wDates).albums.map((a) => a.id)).toEqual(["Pinkerton", "Weezer (Blue Album)"]);
+    // Same year: the date narrows it down to the day.
+    const q: ArtistPage = { ...p, albums: [al("Early", 1998), al("Late", 1998)] };
+    expect(retroArtist(q, "1998-11-03", { Early: "1998-03-04", Late: "1998-12-01" }).albums.map((a) => a.id)).toEqual(["Early"]);
+  });
+
   it("asks for dates only where the year doesn't settle it", () => {
     expect(datesWanted(page, null)).toEqual([]);
     expect(datesWanted(page, "1998-11-03")).toEqual(["Reissue", "Late One", "Early One", "Guest", "new song", "mb dated", "unknown"]);

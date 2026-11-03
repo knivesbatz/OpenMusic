@@ -1,9 +1,16 @@
-# OpenMusic 1.2.13
+# OpenMusic 1.2.14
 
-Copy your app playlists to YouTube Music, the Windows 95 theme goes back 28 years, and on
-Windows, holding the headphone button skips the song and Discord audio sharing works.
+The Windows 95 theme no longer lets newer albums back in.
 
-## New in 1.2.13
+## New in 1.2.14
+- **Windows 95 theme: newer albums no longer reappear after a few seconds.** Once the release
+  dates arrived from MusicBrainz, an album could take the date of an older release with the same
+  title: YouTube's 2017 "Akina" took the date of a 1993 compilation called "AKINA", and every
+  "Weezer (… Album)" took the 1994 Blue Album's. A date from MusicBrainz now only counts when it's
+  in the same year YouTube gives the album, so it can pin down the day but never make an album
+  older than it is.
+
+## Also in 1.2.13
 - **Windows 95 theme: back to 28 years ago.** With the theme on, artist pages and What's New only
   show music released by today's date 28 years ago (today, 3 November 2026, that's 3 November
   1998). The date moves forward a day every day, even with the app left open.

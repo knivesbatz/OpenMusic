@@ -74,7 +74,13 @@ export function datesWanted(p: ArtistPage, cutoff: string | null): string[] {
  */
 export function retroArtist(p: ArtistPage, cutoff: string | null, dates: Record<string, string>): ArtistPage {
   if (!cutoff) return p;
-  const dated = (a: Album): Album => (a.released || !dates[a.title] ? a : { ...a, released: dates[a.title] });
+  // A MusicBrainz date only narrows the provider's year down to a day: a release with the same
+  // title from another year is a different release (YouTube's 2017 "Akina" is not the 1993
+  // compilation "AKINA"), so it never makes a release older than the provider says.
+  const dated = (a: Album): Album => {
+    const d = dates[a.title];
+    return a.released || !d || (a.year && Number(d.slice(0, 4)) !== a.year) ? a : { ...a, released: d };
+  };
   const byId = new Map([...p.albums, ...p.singles, ...p.appearsOn, ...(p.localAlbums ?? [])].map((a) => [a.id, dated(a)]));
   const albums = (l: Album[]) => l.map(dated).filter((a) => releasedBy(a, cutoff));
   const tracks = (l: Track[]) =>

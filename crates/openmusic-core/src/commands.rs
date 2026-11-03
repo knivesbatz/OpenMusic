@@ -979,7 +979,10 @@ pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool, before: O
             let dates = mb_release_dates(&state, &name).await;
             for al in page.albums.iter_mut().chain(page.singles.iter_mut()) {
                 if al.released.is_none() {
-                    al.released = dates.get(&ytm::match_key(&al.title)).cloned();
+                    // Only a date in the provider's own year: a same-titled release from another
+                    // year is a different release.
+                    let d = dates.get(&ytm::match_key(&al.title));
+                    al.released = d.filter(|d| al.year.is_none_or(|y| crate::retro::cutoff_year(d) == Some(y))).cloned();
                 }
             }
         }
