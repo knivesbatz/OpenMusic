@@ -22,7 +22,7 @@ describe("Windows 95 theme cutoff", () => {
     expect(releasedBy({ year: 1998 }, cut)).toBe(false);
     expect(releasedBy({ year: 2024, released: null }, cut)).toBe(false);
     expect(releasedBy({ year: 1990, released: "2003-05-01" }, cut)).toBe(false);
-    expect(releasedBy({}, cut)).toBe(true);
+    expect(releasedBy({}, cut)).toBe(false);
   });
 });
 
@@ -48,13 +48,16 @@ describe("artist pages in the Windows 95 theme", () => {
     expect(v.albums[1].released).toBe("1998-03-14");
     expect(v.singles.map((a) => a.id)).toEqual(["Older single"]);
     expect(v.appearsOn).toEqual([]);
-    expect(v.topTracks.map((t) => t.id)).toEqual(["old song", "dated by year", "unknown"]);
+    // Songs with no date anywhere are left out; YouTube gives most songs none.
+    expect(v.topTracks.map((t) => t.id)).toEqual(["old song", "dated by year"]);
+    // A song MusicBrainz dates by its own title.
+    expect(retroArtist(page, "1998-11-03", { unknown: "1983-06-08" }).topTracks.map((t) => t.id)).toEqual(["old song", "dated by year", "unknown"]);
     // The next day the November 4 single is out.
     expect(retroArtist(page, "1998-11-04", {}).singles.map((a) => a.id)).toEqual(["Single", "Older single"]);
   });
 
   it("asks for dates only where the year doesn't settle it", () => {
     expect(datesWanted(page, null)).toEqual([]);
-    expect(datesWanted(page, "1998-11-03")).toEqual(["Reissue", "Late One", "Early One", "Guest"]);
+    expect(datesWanted(page, "1998-11-03")).toEqual(["Reissue", "Late One", "Early One", "Guest", "new song", "mb dated", "unknown"]);
   });
 });

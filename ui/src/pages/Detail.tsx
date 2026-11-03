@@ -231,7 +231,7 @@ export function ArtistPage({ id }: { id: string }) {
   // where the provider only knows the year.
   const cutoff = useRetroCutoff();
   const wanted = useMemo(() => (page ? datesWanted(page, cutoff) : []), [page, cutoff]);
-  const { data: mbDates } = useAsync(
+  const { data: mbDates, loading: datesLoading } = useAsync(
     () => (wanted.length && artistName ? api.releaseDates(artistName, wanted) : Promise.resolve({} as Record<string, string>)),
     [artistName, wanted.join("\u001f")],
   );
@@ -277,6 +277,7 @@ export function ArtistPage({ id }: { id: string }) {
         </div>
       </header>
       <ActionBar tracks={popular} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
+      {cutoff && datesLoading && wanted.length > 0 && <p className="muted small retro-dates">{t("retroDates")}</p>}
       {popular.length > 0 && (
         <section>
           <h2>{t("popular")}</h2>

@@ -19,7 +19,8 @@ export function cutoffFor(now: Date): string {
 /**
  * Whether a release was out on `cutoff`. Mirrors `retro::released_by` in Rust: a partial date
  * ("YYYY-MM" or "YYYY") counts as the end of its month or year, a year alone only counts when
- * it's before the cutoff's year, and releases with no date at all are kept.
+ * it's before the cutoff's year, and anything with no date at all is left out (YouTube gives
+ * most songs none; `releaseDates` fills in what MusicBrainz knows).
  */
 export function releasedBy(r: { year?: number | null; released?: string | null }, cutoff: string): boolean {
   const rel = r.released && r.released.length >= 4 ? r.released : null;
@@ -28,7 +29,7 @@ export function releasedBy(r: { year?: number | null; released?: string | null }
     return full <= cutoff;
   }
   if (r.year) return r.year < Number(cutoff.slice(0, 4));
-  return true;
+  return false;
 }
 
 /** The cutoff while the Windows 95 theme is on (null otherwise); re-renders at local midnight. */
@@ -46,16 +47,23 @@ export function useRetroCutoff(): string | null {
 }
 
 /**
- * Titles worth looking up exact release dates for (MusicBrainz, `api.releaseDates`): releases
- * without a date whose year doesn't already settle it, and the albums of songs without a year.
+ * Titles worth looking up release dates for (MusicBrainz, `api.releaseDates`): releases without a
+ * date whose year doesn't already settle it, and songs without a year or a dated album (their
+ * album's title, and their own).
  */
 export function datesWanted(p: ArtistPage, cutoff: string | null): string[] {
   if (!cutoff) return [];
   const year = Number(cutoff.slice(0, 4));
+  const releases = [...p.albums, ...p.singles, ...p.appearsOn, ...(p.localAlbums ?? [])];
+  const byId = new Map(releases.map((a) => [a.id, a]));
   const out = new Set<string>();
-  for (const a of [...p.albums, ...p.singles, ...p.appearsOn, ...(p.localAlbums ?? [])])
-    if (!a.released && (!a.year || a.year >= year)) out.add(a.title);
-  for (const tr of [...p.topTracks, ...(p.localTracks ?? [])]) if (!tr.year && tr.album) out.add(tr.album);
+  for (const a of releases) if (!a.released && (!a.year || a.year >= year)) out.add(a.title);
+  for (const tr of [...p.topTracks, ...(p.localTracks ?? [])]) {
+    const al = tr.albumId ? byId.get(tr.albumId) : undefined;
+    if (tr.year || al?.released || (al?.year && al.year < year)) continue;
+    if (tr.album) out.add(tr.album);
+    out.add(tr.title);
+  }
   return [...out].slice(0, 200);
 }
 
@@ -72,7 +80,8 @@ export function retroArtist(p: ArtistPage, cutoff: string | null, dates: Record<
   const tracks = (l: Track[]) =>
     l.filter((tr) => {
       const al = tr.albumId ? byId.get(tr.albumId) : undefined;
-      return releasedBy({ year: tr.year ?? al?.year, released: al?.released ?? (tr.album ? dates[tr.album] : null) }, cutoff);
+      const released = al?.released ?? (tr.album ? dates[tr.album] : undefined) ?? dates[tr.title];
+      return releasedBy({ year: tr.year ?? al?.year, released }, cutoff);
     });
   return {
     ...p,

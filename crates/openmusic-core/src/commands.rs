@@ -787,45 +787,156 @@ pub(crate) fn recent_releases(pages: Vec<ArtistPage>, this_year: u32, before: Op
     out
 }
 
-/// First release dates of an artist's releases from MusicBrainz, keyed by `ytm::match_key` of the
-/// title. Cached for a month; empty when MusicBrainz can't be reached.
-async fn mb_release_dates(state: &AppState, name: &str) -> std::collections::HashMap<String, String> {
-    let key = format!("mbdates:{}", name.trim().to_lowercase());
-    let cached = state.db().cache_get::<std::collections::HashMap<String, String>>(&key, false);
-    if let Ok(Some(cached)) = cached {
-        return cached;
+type DateMap = std::collections::HashMap<String, String>;
+
+/// Keep the earliest date per title key; at the same start, the more precise date.
+fn add_earliest(map: &mut DateMap, title: &str, date: String) {
+    let k = ytm::match_key(title);
+    if k.is_empty() {
+        return;
     }
-    match crate::names::release_dates(&state.http, name.trim()).await {
+    let order = |d: &str| (format!("{d:0<10}"), std::cmp::Reverse(d.len()));
+    map.entry(k).and_modify(|e| if order(&date) < order(e) { *e = date.clone() }).or_insert(date);
+}
+
+/// Title keys a provider's title can match: itself, and the part before " - " or " / "
+/// ("クリスマス・イブ - Christmas Eve" is MusicBrainz's "クリスマス・イブ").
+fn title_variants(title: &str) -> Vec<String> {
+    let mut v = vec![title.trim().to_string()];
+    for sep in [" - ", " / ", " – "] {
+        if let Some((head, _)) = title.split_once(sep) {
+            v.push(head.trim().to_string());
+        }
+    }
+    v.retain(|t| !t.is_empty());
+    v.dedup();
+    v
+}
+
+/// The artist's MusicBrainz id, cached for a month ("" when there is none, for a week).
+async fn mb_artist_id(state: &AppState, name: &str) -> Option<String> {
+    let key = format!("mbid:{}", name.trim().to_lowercase());
+    let cached = state.db().cache_get::<String>(&key, false);
+    if let Ok(Some(id)) = cached {
+        return Some(id).filter(|i| !i.is_empty());
+    }
+    match crate::names::artist_mbid(&state.http, name.trim()).await {
+        Ok(id) => {
+            let _ = state.db().cache_put(&key, &id.clone().unwrap_or_default(), if id.is_some() { 30 * 86400 } else { 7 * 86400 });
+            id
+        }
+        Err(e) => {
+            log::info!("MusicBrainz artist {name}: {e}");
+            None
+        }
+    }
+}
+
+/// First release dates of an artist's releases from MusicBrainz, keyed by `ytm::match_key` of the
+/// title: every release group of the artist (found by id, whatever name it's credited under), or
+/// those credited to exactly `name` when MusicBrainz has no such artist. Cached for a month.
+async fn mb_release_dates(state: &AppState, name: &str) -> DateMap {
+    let key = format!("mbdates2:{}", name.trim().to_lowercase());
+    let cached = state.db().cache_get::<DateMap>(&key, false);
+    if let Ok(Some(map)) = cached {
+        return map;
+    }
+    let got = match mb_artist_id(state, name).await {
+        Some(id) => crate::names::release_group_dates(&state.http, &id).await,
+        None => crate::names::release_dates(&state.http, name.trim()).await,
+    };
+    match got {
         Ok(pairs) => {
-            let mut map = std::collections::HashMap::new();
+            let mut map = DateMap::new();
             for (title, date) in pairs {
-                let k = ytm::match_key(&title);
-                if k.is_empty() {
-                    continue;
-                }
-                // The earliest release of a title; at the same start, the more precise date.
-                let order = |d: &str| (format!("{d:0<10}"), std::cmp::Reverse(d.len()));
-                map.entry(k).and_modify(|e: &mut String| if order(&date) < order(e) { *e = date.clone() }).or_insert(date);
+                add_earliest(&mut map, &title, date);
             }
             let _ = state.db().cache_put(&key, &map, 30 * 86400);
             map
         }
         Err(e) => {
             log::info!("MusicBrainz release dates for {name}: {e}");
-            std::collections::HashMap::new()
+            DateMap::new()
         }
     }
 }
 
-/// Release dates for an artist's releases by title (MusicBrainz), for the Windows 95 theme's
-/// cutoff where the provider only knows the year. Titles without a match are left out.
+/// First release dates of the artist's songs with these titles (MusicBrainz recordings), keyed
+/// like `mb_release_dates`. Each title's answer (a date, or none) is cached for a month.
+async fn mb_song_dates(state: &AppState, name: &str, titles: &[String]) -> DateMap {
+    let mut out = DateMap::new();
+    let Some(id) = mb_artist_id(state, name).await else { return out };
+    let mut ask: Vec<String> = Vec::new();
+    for t in titles {
+        for v in title_variants(t) {
+            let k = ytm::match_key(&v);
+            if k.is_empty() || out.contains_key(&k) {
+                continue;
+            }
+            let cached = state.db().cache_get::<String>(&format!("mbrec:{id}:{k}"), false);
+            match cached {
+                Ok(Some(d)) if !d.is_empty() => {
+                    out.insert(k, d);
+                }
+                Ok(Some(_)) => {}
+                _ => ask.push(v),
+            }
+        }
+    }
+    ask.dedup();
+    for chunk in ask.chunks(20).take(3) {
+        match crate::names::recording_dates(&state.http, &id, chunk).await {
+            Ok(pairs) => {
+                let mut found = DateMap::new();
+                for (title, date) in pairs {
+                    add_earliest(&mut found, &title, date);
+                }
+                for v in chunk {
+                    let k = ytm::match_key(v);
+                    let d = found.get(&k).cloned();
+                    let _ = state.db().cache_put(&format!("mbrec:{id}:{k}"), &d.clone().unwrap_or_default(), 30 * 86400);
+                    if let Some(d) = d {
+                        out.insert(k, d);
+                    }
+                }
+            }
+            Err(e) => {
+                log::info!("MusicBrainz song dates for {name}: {e}");
+                break;
+            }
+        }
+    }
+    out
+}
+
+/// Release dates by title (MusicBrainz) for the Windows 95 theme's cutoff, where the provider only
+/// knows the year or nothing: releases first, then songs. Titles without a match are left out.
 #[tauri::command]
-pub async fn release_dates(state: S<'_>, name: String, titles: Vec<String>) -> Result<std::collections::HashMap<String, String>> {
+pub async fn release_dates(state: S<'_>, name: String, titles: Vec<String>) -> Result<DateMap> {
     if name.trim().is_empty() {
         return Ok(Default::default());
     }
-    let map = mb_release_dates(&state, &name).await;
-    Ok(titles.into_iter().filter_map(|t| map.get(&ytm::match_key(&t)).map(|d| (t, d.clone()))).collect())
+    let groups = mb_release_dates(&state, &name).await;
+    let lookup = |map: &DateMap, t: &str| title_variants(t).iter().find_map(|v| map.get(&ytm::match_key(v)).cloned());
+    let mut out = DateMap::new();
+    let mut rest = Vec::new();
+    for t in titles.into_iter().take(200) {
+        match lookup(&groups, &t) {
+            Some(d) => {
+                out.insert(t, d);
+            }
+            None => rest.push(t),
+        }
+    }
+    if !rest.is_empty() {
+        let songs = mb_song_dates(&state, &name, &rest).await;
+        for t in rest {
+            if let Some(d) = lookup(&songs, &t) {
+                out.insert(t, d);
+            }
+        }
+    }
+    Ok(out)
 }
 
 fn current_year() -> u32 {
