@@ -786,7 +786,11 @@ export function initRemoteControls() {
     else if (payload.action === "seek" && payload.positionMs != null) seek(payload.positionMs / 1000);
   };
   listen<{ action: string; positionMs?: number }>("media-action", ({ payload }) => onAction(payload));
-  if (!/Android/i.test(navigator.userAgent)) return initDiscordPresence();
+  if (!/Android/i.test(navigator.userAgent)) {
+    // Windows: the app's own media controls (headphone buttons, the media flyout) show the player.
+    mirrorNowPlaying();
+    return initDiscordPresence();
+  }
   const w = window as unknown as AndroidBridge;
   w.__omBackground = onAppBackground;
   // The media plugin calls this directly for notification, headset and lock-screen buttons, and
@@ -797,6 +801,14 @@ export function initRemoteControls() {
   const launch = w.OpenMusicMedia?.takeLaunch?.();
   if (launch) onWidgetLaunch(JSON.parse(launch));
   initRecentWidget();
+  mirrorNowPlaying((json) => w.OpenMusicMedia?.update(json));
+}
+
+/**
+ * Keep the system's media controls showing the player: the Android notification, or the Windows
+ * media controls. `direct` also sends each update straight to the Android notification.
+ */
+function mirrorNowPlaying(direct?: (json: string) => void) {
   let sent = { id: "", playing: false, at: 0, position: 0 };
   let seq = 0;
   usePlayer.subscribe((s) => {
@@ -820,12 +832,12 @@ export function initRemoteControls() {
       artwork: t.artwork ?? null,
       playing: s.playing,
       positionMs: Math.round(s.position * 1000),
-      durationMs: Math.round(s.duration * 1000),
+      durationMs: Math.round(s.duration * 1000) || (t.durationMs ?? 0),
     };
     // Straight to the notification (works while the app is in the background), then through the
     // app, which adds the cover as a local file.
     try {
-      w.OpenMusicMedia?.update(JSON.stringify({ ...now, artwork: null }));
+      direct?.(JSON.stringify({ ...now, artwork: null }));
     } catch {
       /* the app's route below still updates it */
     }

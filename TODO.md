@@ -122,6 +122,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   the first 50 video ids, the rest via `browse/edit_playlist` in batches of 50; non-YouTube songs
   matched by a songs search (`same_song`: title key, artist overlap, ±20 s; unit); unmatched ones
   listed after (e2e). Not run against a real account
+- 🟡 Windows headset hold-to-skip: own SMTC session (`smtc.rs`) with fast-forward/rewind enabled
+  (one skip per held burst, `Presses`; unit), display + timeline from `media_update`, seek from
+  the flyout; WebView2's `HardwareMediaKeyHandling` off when SMTC is available
+  (`safe_mode::browser_args`). Windows typecheck only; not tried with real headphones
 - 🟡 Discord audio share made the music silent: process loopback records after the mixer's session
   mute. WebView2 sessions are now turned down (`quiet_level`, -60 dB float / -30 dB PCM) and the
   capture boosted back (`apply_gain`, never past full scale); the boost is chosen by measuring the

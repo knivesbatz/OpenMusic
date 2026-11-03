@@ -10,12 +10,21 @@ use std::path::Path;
 const MARKER: &str = "running.marker";
 const GPU_OFF: &str = "gpu-off";
 
-/// Browser arguments for safe mode. They replace wry's defaults, which are repeated here.
 /// WebView2 arguments. Setting our own replaces wry's defaults, so they are repeated here, plus
 /// autoplay: the player starts the next song (and the crossfade's second player) without a click.
-pub const NORMAL_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
-pub const SAFE_ARGS: &str =
-    "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --disable-gpu --disable-gpu-compositing";
+/// `own_media_keys`: the app runs its own Windows media controls (`smtc`), so WebView2's are off.
+/// Safe mode also turns GPU acceleration off. Every webview must get the same arguments.
+pub fn browser_args(safe: bool, own_media_keys: bool) -> String {
+    let mut a = String::from("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection");
+    if own_media_keys {
+        a.push_str(",HardwareMediaKeyHandling");
+    }
+    a.push_str(" --autoplay-policy=no-user-gesture-required");
+    if safe {
+        a.push_str(" --disable-gpu --disable-gpu-compositing");
+    }
+    a
+}
 
 /// Decide this launch's mode and mark the app as running. `Some("auto")` after an unclean exit,
 /// `Some("manual")` when turned off in Settings, `None` otherwise.

@@ -2020,7 +2020,7 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
     state: &AppState,
 ) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, M> {
     #[cfg(windows)]
-    return b.additional_browser_args(if state.safe_mode.get().is_some() { crate::safe_mode::SAFE_ARGS } else { crate::safe_mode::NORMAL_ARGS });
+    return b.additional_browser_args(&crate::safe_mode::browser_args(state.safe_mode.get().is_some(), crate::smtc::available()));
     #[cfg(not(windows))]
     {
         let _ = state;
@@ -2064,17 +2064,26 @@ pub async fn audio_share_set(app: AppHandle, enabled: bool) -> Result<()> {
         .map_err(|e| Error::Invalid(e.to_string()))?
 }
 
-/// Mirror the player in the Android media notification (no-op on desktop, where the webview's
-/// Media Session already reaches the OS). `artwork` arrives as the track's `art://` reference.
+/// Mirror the player in the Android media notification, and on Windows in the app's own media
+/// controls (`smtc`). `artwork` arrives as the track's `art://` reference.
 #[tauri::command]
 pub async fn media_update(app: AppHandle, state: S<'_>, mut now: tauri_plugin_openmusic_media::NowPlaying) -> Result<()> {
-    if cfg!(mobile) {
-        now.artwork = match now.artwork.take() {
-            Some(a) => art::cached_file(state.inner().clone(), &a, 512).await.map(|p| p.to_string_lossy().into_owned()),
-            None => None,
-        };
+    let art = match now.artwork.take() {
+        Some(a) if cfg!(any(mobile, windows)) => art::cached_file(state.inner().clone(), &a, 512).await.map(|p| p.to_string_lossy().into_owned()),
+        _ => None,
+    };
+    #[cfg(mobile)]
+    {
+        now.artwork = art;
         let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::update(&app, &now)).await;
     }
+    #[cfg(windows)]
+    {
+        let _ = &app;
+        let _ = tauri::async_runtime::spawn_blocking(move || crate::smtc::update(&now, art)).await;
+    }
+    #[cfg(not(any(mobile, windows)))]
+    let _ = (&app, &now, art);
     Ok(())
 }
 
@@ -2098,9 +2107,15 @@ pub async fn widget_refresh(app: AppHandle, state: S<'_>) -> Result<()> {
 
 #[tauri::command]
 pub async fn media_stop(app: AppHandle) -> Result<()> {
-    if cfg!(mobile) {
-        let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
+    #[cfg(mobile)]
+    let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
+    #[cfg(windows)]
+    {
+        let _ = &app;
+        let _ = tauri::async_runtime::spawn_blocking(crate::smtc::stop).await;
     }
+    #[cfg(not(any(mobile, windows)))]
+    let _ = &app;
     Ok(())
 }
 

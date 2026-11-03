@@ -17,6 +17,7 @@ pub mod safe_mode;
 pub mod names;
 pub mod plex;
 pub mod secrets;
+pub mod smtc;
 pub mod state;
 pub mod sync;
 pub mod translate;
@@ -175,7 +176,10 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // Windows: the UI draws a Spotify-style title bar with its own window buttons.
             #[cfg(windows)]
             let main = main.decorations(false);
-            main.build()?;
+            let _main = main.build()?;
+            // Windows: headphone and media keys, the media flyout (see smtc.rs).
+            #[cfg(windows)]
+            smtc::init(&handle, &_main);
             // Desktop only: Android release builds block plain-HTTP requests from the webview, so
             // there the UI uses the in-process art:// protocol.
             #[cfg(desktop)]
