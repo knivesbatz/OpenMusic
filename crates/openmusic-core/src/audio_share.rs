@@ -6,12 +6,88 @@
 //! mini player included, streams without audio.
 //!
 //! When the setting is on, a relay thread records the WebView2 processes' audio with Windows
-//! process loopback (Windows 10 build 20348 / Windows 11 and later), plays it again from the app's
-//! own process, and mutes the WebView2 audio sessions so the music is heard once. Process loopback
-//! taps a stream before the volume mixer's per-app mute. If on some system it doesn't (the capture
-//! stays silent while WebView2 plays), the relay unmutes WebView2, stops and tells the UI why.
+//! process loopback (Windows 10 build 20348 / Windows 11 and later) and plays it again from the
+//! app's own process. The WebView2 audio sessions are turned down to almost nothing in the volume
+//! mixer so the music is heard once.
+//!
+//! They are turned down rather than muted: process loopback records a stream after the mixer's
+//! per-app volume, so muting WebView2 made the recording, and so the music, silent. The relay
+//! measures this when audio first plays (a moment at full volume, a moment turned down) and, when
+//! the recording follows the mixer volume, boosts it back by the same amount. If the capture hears
+//! nothing while WebView2 plays, the relay restores WebView2's volume, stops and tells the UI why.
 
 use crate::error::{Error, Result};
+
+/// Mixer volume for the WebView2 sessions while the relay plays: about -60 dB with a float
+/// capture, about -30 dB with a 16-bit one (whose boosted copy would lose too much detail lower).
+pub fn quiet_level(float: bool) -> f32 {
+    if float {
+        0.001
+    } else {
+        0.03
+    }
+}
+
+/// Level of one captured packet, before any gain: peak and sum of squares of the samples
+/// (scaled to ±1), and the sample count.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Level {
+    pub peak: f32,
+    pub sum_sq: f64,
+    pub n: u64,
+}
+
+impl Level {
+    /// Anything above this is sound; exact zeros and -0.0 are not.
+    pub fn audible(&self) -> bool {
+        self.peak > 1e-6
+    }
+}
+
+/// Measures a packet of 32-bit float or 16-bit PCM samples, then multiplies it by `gain` in
+/// place. A packet that the gain would push past full scale (audio that reached the capture at
+/// full volume, e.g. a WebView2 session not turned down yet) keeps its own level instead.
+pub fn apply_gain(packet: &mut [u8], float: bool, gain: f32) -> Level {
+    let mut level = Level::default();
+    let size = if float { 4 } else { 2 };
+    let read = |c: &[u8]| -> f32 {
+        if float {
+            f32::from_le_bytes([c[0], c[1], c[2], c[3]])
+        } else {
+            i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0
+        }
+    };
+    for c in packet.chunks_exact(size) {
+        let v = read(c);
+        let v = if v.is_finite() { v } else { 0.0 };
+        level.peak = level.peak.max(v.abs());
+        level.sum_sq += (v as f64) * (v as f64);
+        level.n += 1;
+    }
+    let gain = if level.peak * gain > 1.0 { 1.0 } else { gain };
+    if gain != 1.0 {
+        for c in packet.chunks_exact_mut(size) {
+            let v = (read(c) * gain).clamp(-1.0, 1.0);
+            if float {
+                c.copy_from_slice(&v.to_le_bytes());
+            } else {
+                c.copy_from_slice(&((v * 32767.0).round() as i16).to_le_bytes());
+            }
+        }
+    }
+    level
+}
+
+/// After measuring the capture with WebView2 at full volume and then turned down to `quiet`:
+/// the gain that restores the music's level. The capture follows the mixer volume when the
+/// turned-down level drops by most of the expected amount; otherwise it doesn't (gain 1).
+pub fn calibrated_gain(full_rms: f64, quiet_rms: f64, quiet: f32) -> f32 {
+    if quiet_rms < full_rms * (quiet as f64) * 30.0 {
+        1.0 / quiet
+    } else {
+        1.0
+    }
+}
 
 /// Emitted when the relay stops by itself; the payload says why.
 pub const STOPPED_EVENT: &str = "audio-share-stopped";
@@ -106,7 +182,7 @@ mod imp {
         let mut ready = Some(ready);
         let reason = relay(&stop, &mut ready).err();
         // Whatever happened, the app must not stay silent.
-        mute_webview(&webview_tree(&processes()), false);
+        set_webview_volume(&webview_tree(&processes()), 1.0);
         unsafe { CoUninitialize() };
         if let Some(reason) = reason {
             log::warn!("audio share stopped: {reason}");
@@ -138,14 +214,38 @@ mod imp {
 
     const MS: u32 = 48; // frames per millisecond
 
+    /// Measuring how the capture follows WebView2's mixer volume (see the module comment).
+    enum Gain {
+        /// Step 0/1: WebView2 at full volume, settling then measuring; step 2/3: turned down.
+        Measuring { step: u8, since: Instant, full: (f64, u64), quiet: (f64, u64) },
+        Fixed(f32),
+    }
+
+    /// The WebView2 sessions' mixer volume: full while measuring at full volume, else turned down.
+    fn webview_level(gain: &Gain, quiet: f32) -> f32 {
+        match gain {
+            Gain::Measuring { step, .. } if *step < 2 => 1.0,
+            _ => quiet,
+        }
+    }
+
+    const SETTLE: Duration = Duration::from_millis(150);
+    const MEASURE: Duration = Duration::from_millis(250);
+
     fn relay(stop: &AtomicBool, ready: &mut Option<mpsc::Sender<std::result::Result<(), String>>>) -> std::result::Result<(), String> {
         let mut browser = browser_pid(&processes()).ok_or("the app's WebView2 process was not found")?;
         let (mut capture, fmt) = Capture::open(browser)?;
         let mut render = Render::open(&fmt).map_err(|e| format!("no audio output device: {e}"))?;
         let block = fmt.nBlockAlign as usize;
+        let float = fmt.wFormatTag == 3;
+        let quiet = super::quiet_level(float);
         if let Some(tx) = ready.take() {
             let _ = tx.send(Ok(()));
         }
+        let mut gain = Gain::Measuring { step: 0, since: Instant::now(), full: (0.0, 0), quiet: (0.0, 0) };
+        // Audio at full level while the WebView2 sessions are turned down (in total): proof that
+        // the capture doesn't follow the mixer volume after all.
+        let mut loud_while_quiet = Duration::ZERO;
 
         let mut queue: VecDeque<u8> = VecDeque::new();
         let mut primed = false;
@@ -154,13 +254,42 @@ mod imp {
         let mut heard = false;
         let mut silent_since: Option<Instant> = None;
         let mut render_errors = 0;
+        let mut last_heard = Instant::now() - Duration::from_secs(10);
+        let mut tree = webview_tree(&processes());
 
         while !stop.load(Ordering::SeqCst) {
             unsafe { WaitForSingleObject(capture.event, 20) };
-            match capture.read(&mut queue) {
-                Ok(Some(loud)) => {
-                    heard |= loud;
+            let g = match gain {
+                Gain::Fixed(g) => g,
+                Gain::Measuring { .. } => 1.0,
+            };
+            match capture.read(&mut queue, float, g) {
+                Ok(Some(level)) => {
+                    heard |= level.audible();
+                    if level.audible() {
+                        last_heard = Instant::now();
+                    }
                     last_data = Instant::now();
+                    let secs = Duration::from_secs_f64(level.n as f64 / 2.0 / 48_000.0);
+                    match &mut gain {
+                        Gain::Measuring { step, full, quiet: q, .. } => {
+                            if *step == 1 {
+                                full.0 += level.sum_sq;
+                                full.1 += level.n;
+                            } else if *step == 3 {
+                                q.0 += level.sum_sq;
+                                q.1 += level.n;
+                            }
+                        }
+                        Gain::Fixed(g) if *g != 1.0 && level.peak > quiet * 4.0 => {
+                            loud_while_quiet += secs;
+                            if loud_while_quiet > Duration::from_millis(1500) {
+                                log::warn!("audio share: the capture isn't following the mixer volume; no boost");
+                                gain = Gain::Fixed(1.0);
+                            }
+                        }
+                        Gain::Fixed(_) => {}
+                    }
                 }
                 Ok(None) => {}
                 Err(_) => {
@@ -180,30 +309,13 @@ mod imp {
             if !primed && queue.len() >= (40 * MS) as usize * block {
                 primed = true;
             }
-            if primed {
-                match render.write(&mut queue, block) {
-                    Ok(true) => {}
-                    Ok(false) => primed = false, // ran dry: build up a little again before playing
-                    Err(_) => {
-                        render_errors += 1;
-                        render = reopen(&fmt, render_errors)?;
-                        primed = false;
-                    }
-                }
-            }
-            // Idle (paused): stop the output stream so it doesn't keep the PC awake.
-            if last_data.elapsed() > Duration::from_secs(2) {
-                queue.clear();
-                render.pause();
-                primed = false;
-            }
-
-            // Often enough that a new WebView2 audio session is muted before it is heard twice.
+            // Often enough that a new WebView2 audio session is turned down before it is heard twice.
             if last_check.elapsed() >= Duration::from_millis(300) {
                 last_check = Instant::now();
                 let all = processes();
-                let active = mute_webview(&webview_tree(&all), true);
-                // WebView2 plays but the capture hears nothing: the mute reached the capture too.
+                tree = webview_tree(&all);
+                let active = set_webview_volume(&tree, webview_level(&gain, quiet));
+                // WebView2 plays but the capture hears nothing.
                 if active && !heard {
                     let since = *silent_since.get_or_insert_with(Instant::now);
                     if since.elapsed() >= Duration::from_secs(8) {
@@ -223,6 +335,65 @@ mod imp {
                     capture = Capture::open_as(browser, &fmt)?;
                 }
                 render_errors = 0;
+            }
+
+            // Measuring: WebView2 is heard directly (and briefly turned down); nothing is relayed.
+            if let Gain::Measuring { step, since, full, quiet: q } = &mut gain {
+                queue.clear();
+                primed = false;
+                let playing = last_heard.elapsed() < Duration::from_millis(500);
+                match *step {
+                    _ if !playing && *step != 0 => {
+                        // Paused part-way: start again, at full volume, when the music is back.
+                        set_webview_volume(&tree, 1.0);
+                        *step = 0;
+                        *since = Instant::now();
+                        *full = (0.0, 0);
+                        *q = (0.0, 0);
+                    }
+                    0 | 2 if since.elapsed() >= SETTLE && playing => {
+                        *step += 1;
+                        *since = Instant::now();
+                    }
+                    1 if since.elapsed() >= MEASURE => {
+                        let rms = (full.0 / full.1.max(1) as f64).sqrt();
+                        if rms > 1e-4 {
+                            *step = 2;
+                            set_webview_volume(&tree, quiet);
+                        } else {
+                            // Too quiet to tell (a gap between songs): measure again.
+                            *step = 0;
+                            *full = (0.0, 0);
+                        }
+                        *since = Instant::now();
+                    }
+                    3 if since.elapsed() >= MEASURE => {
+                        let full_rms = (full.0 / full.1.max(1) as f64).sqrt();
+                        let quiet_rms = (q.0 / q.1.max(1) as f64).sqrt();
+                        let g = super::calibrated_gain(full_rms, quiet_rms, quiet);
+                        log::info!("audio share: full {full_rms:.5}, turned down {quiet_rms:.7}, gain {g}");
+                        gain = Gain::Fixed(g);
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            if primed {
+                match render.write(&mut queue, block) {
+                    Ok(true) => {}
+                    Ok(false) => primed = false, // ran dry: build up a little again before playing
+                    Err(_) => {
+                        render_errors += 1;
+                        render = reopen(&fmt, render_errors)?;
+                        primed = false;
+                    }
+                }
+            }
+            // Idle (paused): stop the output stream so it doesn't keep the PC awake.
+            if last_data.elapsed() > Duration::from_secs(2) {
+                queue.clear();
+                render.pause();
+                primed = false;
             }
         }
         render.pause();
@@ -337,9 +508,10 @@ mod imp {
             }
         }
 
-        /// Appends every waiting packet to `queue`. Some(true) when any of it was audible.
-        fn read(&self, queue: &mut VecDeque<u8>) -> windows::core::Result<Option<bool>> {
-            let mut got = None;
+        /// Appends every waiting packet to `queue`, multiplied by `gain`. The level of what was
+        /// read (before the gain), or None when nothing was waiting.
+        fn read(&self, queue: &mut VecDeque<u8>, float: bool, gain: f32) -> windows::core::Result<Option<super::Level>> {
+            let mut got: Option<super::Level> = None;
             unsafe {
                 loop {
                     if self.reader.GetNextPacketSize()? == 0 {
@@ -351,16 +523,19 @@ mod imp {
                     self.reader.GetBuffer(&mut data, &mut frames, &mut flags, None, None)?;
                     let bytes = frames as usize * self.block;
                     let silent = flags & (AUDCLNT_BUFFERFLAGS_SILENT.0 as u32) != 0 || data.is_null();
-                    let mut loud = false;
+                    let mut level = super::Level { n: frames as u64 * 2, ..Default::default() };
                     if silent {
                         queue.extend(std::iter::repeat_n(0u8, bytes));
                     } else {
-                        let slice = std::slice::from_raw_parts(data, bytes);
-                        loud = slice.iter().any(|&b| b != 0);
-                        queue.extend(slice.iter().copied());
+                        let mut packet = std::slice::from_raw_parts(data, bytes).to_vec();
+                        level = super::apply_gain(&mut packet, float, gain);
+                        queue.extend(packet);
                     }
                     self.reader.ReleaseBuffer(frames)?;
-                    got = Some(got.unwrap_or(false) | loud);
+                    let g = got.get_or_insert_with(Default::default);
+                    g.peak = g.peak.max(level.peak);
+                    g.sum_sq += level.sum_sq;
+                    g.n += level.n;
                 }
             }
             Ok(got)
@@ -510,9 +685,9 @@ mod imp {
         all.iter().find(|(pid, parent, _)| tree.contains(pid) && !tree.contains(parent)).map(|(pid, ..)| *pid)
     }
 
-    /// Mutes (or unmutes) the audio sessions of `pids` on every output device. True when one of
-    /// them is playing.
-    fn mute_webview(pids: &HashSet<u32>, mute: bool) -> bool {
+    /// Sets the mixer volume of the audio sessions of `pids` on every output device, and unmutes
+    /// them (older versions muted them). True when one of them is playing.
+    fn set_webview_volume(pids: &HashSet<u32>, level: f32) -> bool {
         let mut active = false;
         if pids.is_empty() {
             return active;
@@ -535,8 +710,11 @@ mod imp {
                         active = true;
                     }
                     if let Ok(volume) = session.cast::<ISimpleAudioVolume>() {
-                        if volume.GetMute().map(|m| m.as_bool() != mute).unwrap_or(true) {
-                            let _ = volume.SetMute(mute, std::ptr::null());
+                        if volume.GetMute().map(|m| m.as_bool()).unwrap_or(true) {
+                            let _ = volume.SetMute(false, std::ptr::null());
+                        }
+                        if volume.GetMasterVolume().map(|v| (v - level).abs() > 1e-4).unwrap_or(true) {
+                            let _ = volume.SetMasterVolume(level, std::ptr::null());
                         }
                     }
                 }
@@ -551,3 +729,61 @@ pub use imp::shutdown;
 
 #[cfg(not(windows))]
 pub fn shutdown() {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn floats(v: &[f32]) -> Vec<u8> {
+        v.iter().flat_map(|x| x.to_le_bytes()).collect()
+    }
+
+    fn read_floats(b: &[u8]) -> Vec<f32> {
+        b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    }
+
+    #[test]
+    fn turned_down_audio_is_boosted_back() {
+        let q = quiet_level(true);
+        let mut p = floats(&[0.0005, -0.0002, 0.0, -0.0]);
+        let l = apply_gain(&mut p, true, 1.0 / q);
+        assert!((l.peak - 0.0005).abs() < 1e-9 && l.n == 4 && l.audible());
+        let out = read_floats(&p);
+        assert!((out[0] - 0.5).abs() < 1e-4 && (out[1] + 0.2).abs() < 1e-4, "{out:?}");
+    }
+
+    #[test]
+    fn negative_zero_is_silence() {
+        // Muted float audio comes back as -0.0, whose bytes aren't all zero.
+        let mut p = floats(&[-0.0, -0.0, 0.0]);
+        assert!(!apply_gain(&mut p, true, 1.0).audible());
+    }
+
+    #[test]
+    fn full_level_audio_is_never_boosted() {
+        // A session that hasn't been turned down yet: passed through, not blown up.
+        let mut p = floats(&[0.5, -0.3]);
+        apply_gain(&mut p, true, 1000.0);
+        assert_eq!(read_floats(&p), vec![0.5, -0.3]);
+    }
+
+    #[test]
+    fn pcm_is_boosted_too() {
+        let mut p: Vec<u8> = [500i16, -500].iter().flat_map(|x| x.to_le_bytes()).collect();
+        let l = apply_gain(&mut p, false, 10.0);
+        assert!(l.audible());
+        let out: Vec<i16> = p.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+        assert!((out[0] - 5000).abs() <= 1 && (out[1] + 5000).abs() <= 1, "{out:?}");
+    }
+
+    #[test]
+    fn gain_follows_how_the_capture_reacts_to_the_mixer() {
+        let q = quiet_level(true);
+        // The capture dropped with the mixer volume (what silenced the music): boost.
+        assert_eq!(calibrated_gain(0.2, 0.0002, q), 1.0 / q);
+        assert_eq!(calibrated_gain(0.2, 0.0, q), 1.0 / q);
+        // The capture kept its level (louder or quieter music in the second moment): no boost.
+        assert_eq!(calibrated_gain(0.2, 0.1, q), 1.0);
+        assert_eq!(calibrated_gain(0.2, 0.4, q), 1.0);
+    }
+}

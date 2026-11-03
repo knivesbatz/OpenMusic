@@ -122,6 +122,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   the first 50 video ids, the rest via `browse/edit_playlist` in batches of 50; non-YouTube songs
   matched by a songs search (`same_song`: title key, artist overlap, ±20 s; unit); unmatched ones
   listed after (e2e). Not run against a real account
+- 🟡 Discord audio share made the music silent: process loopback records after the mixer's session
+  mute. WebView2 sessions are now turned down (`quiet_level`, -60 dB float / -30 dB PCM) and the
+  capture boosted back (`apply_gain`, never past full scale); the boost is chosen by measuring the
+  capture at full and turned-down volume (`calibrated_gain`; unit). -0.0 counts as silence, so the
+  8 s "capture hears nothing" fallback fires again. Windows typecheck only; not tried on a real PC
 
 ## 1.2.12
 - 🟡 Headset buttons (Android `PlaybackService.onMediaButtonEvent`): hold play/pause = next, 1/2/3

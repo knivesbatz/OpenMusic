@@ -1,6 +1,6 @@
 # OpenMusic 1.2.13
 
-Copy your app playlists to YouTube Music.
+Copy your app playlists to YouTube Music, and Discord audio sharing works.
 
 ## New in 1.2.13
 - **YTSpot: Copy to YouTube Music.** Right-click one of your app playlists (or use its ••• menu)
@@ -12,6 +12,12 @@ Copy your app playlists to YouTube Music.
     listed when the copy is done.
   - It's a one-time copy: later changes to the app playlist aren't copied over.
   - Nothing else on your YouTube account is changed.
+- **Windows: "Share audio when streaming on Discord" no longer silences the music.** The app used
+  to mute its player in the Windows volume mixer and play a recording of it instead, but Windows
+  applies that mute to the recording too, so nothing was heard at all. The player is now turned
+  down to almost nothing instead of muted (it shows near 0 in the volume mixer while sharing),
+  and the recording is turned back up to full. When sharing starts, the app checks how Windows
+  handles this on your PC, during the first half second of music, before relaying anything.
 
 ## Also in 1.2.12
 - **Headphone buttons on Android.** Holding the button on your headphones or earbuds to skip did
