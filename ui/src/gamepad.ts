@@ -128,6 +128,8 @@ export function initGamepad() {
       } else if (e.key === "BrowserBack" || e.key === "GoBack" || (e.key === "Backspace" && !typing)) {
         e.preventDefault();
         goBack();
+      } else if (e.repeat && e.key.startsWith("Media")) {
+        // A held media key repeats: act on the first press only.
       } else if (e.key === "MediaPlayPause") P.toggle();
       else if (e.key === "MediaTrackNext") P.next();
       else if (e.key === "MediaTrackPrevious") P.previous();

@@ -117,6 +117,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.12
+- 🟡 Headset buttons (Android `PlaybackService.onMediaButtonEvent`): hold play/pause = next, 1/2/3
+  presses = toggle/next/previous, fast-forward/rewind/skip keys = next/previous once per press;
+  HTPC-mode media keys ignore key repeats. Compiled in CI only; not tried with real headphones
+
 ## 1.2.11
 - ✅ YT artist Popular: only tracks credited to the artist (`by_artist`: channel id or name), topped
   up from a songs search when under 5 (unit)
