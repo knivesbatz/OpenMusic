@@ -1,8 +1,19 @@
-# OpenMusic 1.2.12
+# OpenMusic 1.2.13
 
-Holding the headphone button skips the song.
+Copy your app playlists to YouTube Music.
 
-## New in 1.2.12
+## New in 1.2.13
+- **YTSpot: Copy to YouTube Music.** Right-click one of your app playlists (or use its ••• menu)
+  and choose Copy to YouTube Music to make it a real playlist on your YouTube account. Pick its
+  name and visibility (Private, Unlisted or Public; Private is the default).
+  - YouTube songs are copied as they are.
+  - Other songs, like local files, are looked up on YouTube Music by title and artist. Only a
+    match on both (and on length, when known) is added, and the songs it couldn't find are
+    listed when the copy is done.
+  - It's a one-time copy: later changes to the app playlist aren't copied over.
+  - Nothing else on your YouTube account is changed.
+
+## Also in 1.2.12
 - **Headphone buttons on Android.** Holding the button on your headphones or earbuds to skip did
   nothing. Android counted holding play/pause as one press, and the fast-forward that many earbuds
   send while the button is held was ignored. Now:

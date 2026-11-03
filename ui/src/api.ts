@@ -132,6 +132,7 @@ export const api = {
   savedIn: (track: T.Track) => call<{ appPlaylists: string[]; remote: { id: string; title: string; contains: boolean }[] }>("saved_in", { track }),
   ytPlaylistEdit: (playlistId: string, track: T.Track, add: boolean) => call<void>("yt_playlist_edit", { playlistId, track, add }),
   hidePlaylist: (id: string, title: string) => call<void>("hide_playlist", { id, title }),
+  ytCopyPlaylist: (id: string, title: string, privacy: T.YtPrivacy) => call<T.YtCopyResult>("yt_copy_playlist", { id, title, privacy }),
 
   localFolders: () => call<string[]>("local_folders"),
   localAddFolder: (path: string) => call<T.ScanReport>("local_add_folder", { path }),

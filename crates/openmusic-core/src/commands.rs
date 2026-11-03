@@ -1263,6 +1263,60 @@ pub async fn yt_playlist_edit(app: AppHandle, state: S<'_>, playlist_id: String,
     yt_call!(app, state, |y| y.edit_playlist(&playlist_id, &vid, add))
 }
 
+/// What "Copy to YouTube Music" did: the new playlist, how many songs it holds, and the songs
+/// that couldn't be found on YouTube Music ("Artist - Title").
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtCopyResult {
+    pub playlist_id: String,
+    pub added: usize,
+    pub missing: Vec<String>,
+}
+
+/// Copy an app playlist to the user's YouTube account as a new playlist. YouTube songs go over
+/// as they are; other songs (local files) are matched by a YouTube Music song search and left
+/// out when there's no confident match. Emits `yt-copy-progress` {done, total} while matching.
+#[tauri::command]
+pub async fn yt_copy_playlist(app: AppHandle, state: S<'_>, id: String, title: String, privacy: String) -> Result<YtCopyResult> {
+    if state.flavor != Flavor::YouTube {
+        return Err(Error::Unsupported("copying playlists to YouTube".into()));
+    }
+    let (pl, tracks) = {
+        let db = state.db();
+        let pl = db.playlist_get(&id)?.ok_or_else(|| Error::Invalid("playlist not found".into()))?;
+        (pl, db.playlist_tracks(&id)?)
+    };
+    let title = match title.trim() {
+        "" => pl.title.clone(),
+        t => t.chars().take(150).collect(),
+    };
+    let total = tracks.len();
+    let mut ids = Vec::new();
+    let mut missing = Vec::new();
+    for (i, t) in tracks.iter().enumerate() {
+        let vid = match (&t.source, &t.stream_key) {
+            (Source::Youtube, Some(v)) => Some(v.clone()),
+            _ => match yt_call!(app, state, |y| y.find_song(&t.title, &t.artist, t.duration_ms)) {
+                Ok(found) => found.and_then(|f| f.stream_key),
+                Err(Error::AuthExpired) => return Err(Error::AuthExpired),
+                Err(_) => None,
+            },
+        };
+        match vid {
+            Some(v) => ids.push(v),
+            None if t.artist.is_empty() => missing.push(t.title.clone()),
+            None => missing.push(format!("{} - {}", t.artist, t.title)),
+        }
+        let _ = app.emit("yt-copy-progress", serde_json::json!({ "done": i + 1, "total": total }));
+    }
+    if ids.is_empty() {
+        return Err(Error::Invalid("None of these songs were found on YouTube Music, so no playlist was created.".into()));
+    }
+    let description = pl.description.clone().unwrap_or_default();
+    let playlist_id = yt_call!(app, state, |y| y.create_playlist(&title, &description, &privacy, &ids))?;
+    Ok(YtCopyResult { playlist_id, added: ids.len(), missing })
+}
+
 /// Save a text export (a playlist as "Artist - Title" lines) where the user picks. Returns the
 /// path, or `None` when the dialog was cancelled. Only .txt/.csv names are written.
 #[tauri::command]

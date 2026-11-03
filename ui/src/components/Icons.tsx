@@ -58,6 +58,7 @@ export const IFolder = make(<path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10
 export const IEdit = make(<><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="m13.5 6.5 4 4" /></>);
 export const IBookmark = make(<path d="M6 3h12v18l-6-4.5L6 21z" />, true);
 export const IChevronDown = make(<path d="m6 9 6 6 6-6" />);
+export const ICloudUp = make(<><path d="M7 18a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.7 8 4.5 4.5 0 0 1 17 18" /><path d="M12 21v-9M9 15l3-3 3 3" /></>);
 export const IShare = make(<><path d="M12 15V3M7 8l5-5 5 5" /><path d="M5 12v8h14v-8" /></>);
 export const IHandle = make(<path d="M4 8h16M4 12h16M4 16h16" />);
 export const IDrag = make(<path d="M5 9h14M5 15h14" />);

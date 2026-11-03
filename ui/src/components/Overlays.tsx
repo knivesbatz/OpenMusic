@@ -113,10 +113,12 @@ export function DialogHost() {
   const t = useT();
   const d = useUi((s) => s.dialog);
   const [value, setValue] = useState("");
+  const [choice, setChoice] = useState("");
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!d) return;
     setValue(d.input?.value ?? "");
+    setChoice(d.choice?.value ?? "");
     const prev = document.activeElement as HTMLElement | null;
     setTimeout(() => (ref.current?.querySelector("input, .dialog-actions button:last-child") as HTMLElement | null)?.focus());
     return () => prev?.focus();
@@ -124,7 +126,7 @@ export function DialogHost() {
   if (!d) return null;
   const done = (ok: boolean) => {
     useUi.setState({ dialog: null });
-    d.resolve(ok, value);
+    d.resolve(ok, value, choice);
   };
   return (
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && done(false)}>
@@ -137,7 +139,7 @@ export function DialogHost() {
         onKeyDown={(e) => {
           if (e.key === "Escape") done(false);
           if (e.key === "Tab") {
-            const f = [...ref.current!.querySelectorAll<HTMLElement>("input, button")];
+            const f = [...ref.current!.querySelectorAll<HTMLElement>("input, select, button")];
             const i = f.indexOf(document.activeElement as HTMLElement);
             if (e.shiftKey && i === 0) (e.preventDefault(), f[f.length - 1].focus());
             else if (!e.shiftKey && i === f.length - 1) (e.preventDefault(), f[0].focus());
@@ -150,6 +152,18 @@ export function DialogHost() {
           <label className="field">
             <span>{d.input.label}</span>
             <input value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === "Enter" && done(true)} maxLength={200} />
+          </label>
+        )}
+        {d.choice && (
+          <label className="field">
+            <span>{d.choice.label}</span>
+            <select value={choice} onChange={(e) => setChoice(e.target.value)}>
+              {d.choice.options.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </label>
         )}
         <div className="dialog-actions">

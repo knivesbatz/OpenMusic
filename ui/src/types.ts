@@ -282,3 +282,14 @@ export interface NowPlaying {
   positionMs: number;
   durationMs: number;
 }
+
+/** YouTube playlist visibility (`yt_copy_playlist`). */
+export type YtPrivacy = "PRIVATE" | "UNLISTED" | "PUBLIC";
+
+/** Mirrors `commands::YtCopyResult`. */
+export interface YtCopyResult {
+  playlistId: string;
+  added: number;
+  /** "Artist - Title" of songs not found on YouTube Music. */
+  missing: string[];
+}

@@ -1,13 +1,14 @@
 // Shared actions behind context menus and buttons, so every surface (track rows, queue, player bar,
 // fullscreen, cards) offers the same behavior.
+import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { api, errorMessage, inTauri } from "./api";
 import { translate, type Key } from "./i18n";
 import * as P from "./player/engine";
 import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
 import { useSettings } from "./store/settings";
-import { confirmDialog, navigate, promptDialog, toast, useUi, type MenuItem } from "./store/ui";
-import type { Album, Artist, Playlist, Podcast, Track } from "./types";
+import { confirmDialog, formDialog, navigate, promptDialog, toast, useUi, type MenuItem } from "./store/ui";
+import type { Album, Artist, Playlist, Podcast, Track, YtPrivacy } from "./types";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 import * as I from "./components/Icons";
 
@@ -336,6 +337,8 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCo
       ],
     });
   }
+  if (pl.local && flavor === "youtube" && useApp.getState().auth?.signedIn)
+    items.push({ label: t("copyToYt"), icon: I.ICloudUp, onClick: () => copyToYouTube(pl) });
   if (pl.local || flavor === "youtube") items.push({ label: "", separator: true });
   if (pl.local) items.push({ label: t("delete"), icon: I.ITrash, danger: true, onClick: () => deletePlaylist(pl) });
   else if (flavor === "youtube") items.push({ label: t("hidePlaylist"), icon: I.IEyeOff, danger: true, onClick: () => hidePlaylist(pl) });
@@ -365,6 +368,51 @@ async function exportPlaylist(pl: Playlist, tracks: Track[], kind: "txt" | "csv"
   } catch {
     // No file dialog (Android): the text goes to the clipboard to paste into Soundiiz instead.
     copy(kind === "txt" ? content : playlistText(tracks));
+  }
+}
+
+let copying = false;
+
+/**
+ * YTSpot: copy an app playlist to the user's YouTube account as a new playlist. Songs from
+ * elsewhere are matched on YouTube Music by the app; the ones it can't find are listed after.
+ */
+export async function copyToYouTube(pl: Playlist) {
+  if (copying) return toast(t("ytCopyBusy"));
+  const form = await formDialog({
+    title: t("copyToYt"),
+    body: t("ytCopyBody"),
+    confirm: t("ytCopyGo"),
+    input: { label: t("playlistName"), value: pl.title },
+    choice: {
+      label: t("ytVisibility"),
+      value: "PRIVATE",
+      options: [
+        { value: "PRIVATE", label: t("ytPrivate") },
+        { value: "UNLISTED", label: t("ytUnlisted") },
+        { value: "PUBLIC", label: t("ytPublic") },
+      ],
+    },
+  });
+  if (!form) return;
+  copying = true;
+  let toastId = toast(t("ytCopyStarted"));
+  const stop = await listen<{ done: number; total: number }>("yt-copy-progress", ({ payload }) => {
+    toastId = toast(t("ytCopyProgress", payload), toastId);
+  }).catch(() => () => {});
+  try {
+    const r = await api.ytCopyPlaylist(pl.id, form.value, form.choice as YtPrivacy);
+    toast(t("ytCopied", { n: r.added }), toastId);
+    refreshLibrary(false);
+    const shown = r.missing.slice(0, 20).join("\n");
+    const more = r.missing.length > 20 ? "\n" + t("andMore", { n: r.missing.length - 20 }) : "";
+    const body = r.missing.length ? `${t("ytCopiedSome", { n: r.added, total: r.added + r.missing.length })}\n\n${shown}${more}` : t("ytCopiedAll", { n: r.added });
+    if (await confirmDialog({ title: t("ytCopiedTitle"), body, confirm: t("openPlaylist") })) navigate({ name: "playlist", id: r.playlistId });
+  } catch (e) {
+    toast(errorMessage(e), toastId);
+  } finally {
+    stop();
+    copying = false;
   }
 }
 

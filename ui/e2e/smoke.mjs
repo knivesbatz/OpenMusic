@@ -787,6 +787,39 @@ await test(
 );
 
 await test(
+  "App playlists can be copied to YouTube Music",
+  async (p) => {
+    await p.locator(".lib-list .side-item", { hasText: "Road trip" }).click();
+    await p.click('.page button[aria-label="More options"]');
+    await p.click('.menu button:has-text("Copy to YouTube Music")');
+    const dlg = p.locator(".dialog");
+    // The dialog fills its fields right after it opens.
+    await p.waitForFunction(() => document.querySelector(".dialog input")?.value === "Road trip");
+    assert.equal(await dlg.locator("select").inputValue(), "PRIVATE");
+    await dlg.locator("input").fill("Road trip (YT)");
+    await dlg.locator("select").selectOption("UNLISTED");
+    await dlg.locator('button:has-text("Copy")').click();
+    await p.waitForFunction(() => window.__COPY);
+    assert.deepEqual(await p.evaluate(() => window.__COPY), { id: "app:1", title: "Road trip (YT)", privacy: "UNLISTED" });
+    // The result lists the songs that weren't found, and opens the new playlist.
+    await p.waitForSelector(".dialog h2:has-text('Copied to YouTube Music')");
+    const body = await p.locator(".dialog p").textContent();
+    assert.ok(body.includes("5 of 6") && body.includes("Someone - Home demo"), body);
+    await p.click('.dialog button:has-text("Open playlist")');
+    await p.waitForFunction(() => window.__CALLS__.filter((c) => c === "playlist").length >= 2);
+  },
+  {
+    youtube: true,
+    init: () => {
+      const d = window.__MOCK__;
+      const base = d.playlist;
+      d.playlist = (a) => (a.id === "app:1" ? { ...base(a), playlist: { id: "app:1", title: "Road trip", artwork: null, trackCount: 6, local: true } } : base(a));
+      d.yt_copy_playlist = (a) => ((window.__COPY = a), { playlistId: "yt:VLPLnew", added: 5, missing: ["Someone - Home demo"] });
+    },
+  },
+);
+
+await test(
   "in-app self-test (--self-test, used on Windows CI) reaches the end",
   async (p) => {
     await p.waitForFunction(() => window.__SELFTEST_EXIT, null, { timeout: 90000 });

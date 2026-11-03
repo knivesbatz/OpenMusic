@@ -117,6 +117,12 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.13
+- 🟡 YTSpot "Copy to YouTube Music" for app playlists (`yt_copy_playlist`): `playlist/create` with
+  the first 50 video ids, the rest via `browse/edit_playlist` in batches of 50; non-YouTube songs
+  matched by a songs search (`same_song`: title key, artist overlap, ±20 s; unit); unmatched ones
+  listed after (e2e). Not run against a real account
+
 ## 1.2.12
 - 🟡 Headset buttons (Android `PlaybackService.onMediaButtonEvent`): hold play/pause = next, 1/2/3
   presses = toggle/next/previous, fast-forward/rewind/skip keys = next/previous once per press;
