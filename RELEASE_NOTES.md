@@ -1,8 +1,14 @@
-# OpenMusic 1.2.14
+# OpenMusic 1.2.15
 
-The Windows 95 theme no longer lets newer albums back in.
+Get the newest Android version straight from Settings.
 
-## New in 1.2.14
+## New in 1.2.15
+- **Android: "Latest version for Android"** (Settings → About): **Open in browser** opens the
+  newest release's APK for this app (YTSpot or PLEXSpot) from GitHub in your browser, which
+  downloads it; open the download to install. If GitHub can't be reached, it opens the latest
+  release page instead. Phones only.
+
+## Also in 1.2.14
 - **Windows 95 theme: newer albums no longer reappear after a few seconds.** Once the release
   dates arrived from MusicBrainz, an album could take the date of an older release with the same
   title: YouTube's 2017 "Akina" took the date of a 1993 compilation called "AKINA", and every

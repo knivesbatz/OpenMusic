@@ -20,6 +20,20 @@ import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
 import { cls, fmtBytes } from "../util";
 import { CardShelf } from "./Browse";
 
+const RELEASES_LATEST = "https://github.com/knivesbatz/OpenMusic/releases/latest";
+
+/** Phones: the newest release's APK for this app, opened in the browser (which downloads it). */
+async function openLatestApk() {
+  let url = RELEASES_LATEST;
+  try {
+    url = (await api.updateCheck()).url || RELEASES_LATEST;
+  } catch {
+    /* offline or GitHub refused: the release page still lists the APKs */
+  }
+  if (inTauri) await openUrl(url).catch((e) => toast(errorMessage(e)));
+  else window.open(url, "_blank");
+}
+
 export function LocalPage() {
   const t = useT();
   const [folders, setFolders] = useState<string[]>([]);
@@ -556,6 +570,17 @@ export function SettingsPage() {
           </button>
         </div>
         {!isMobileApp() && <Toggle k="autoUpdate" label={t("autoUpdate")} hint={t("autoUpdateHint")} />}
+        {isMobileApp() && (
+          <div className="setting">
+            <div className="grow">
+              <div>{t("latestApk")}</div>
+              <div className="muted small">{t("latestApkHint")}</div>
+            </div>
+            <button className="pill ghost small" onClick={openLatestApk}>
+              {t("openInBrowser")}
+            </button>
+          </div>
+        )}
       </section>
 
       <footer className="credits">
