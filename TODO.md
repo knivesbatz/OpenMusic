@@ -125,7 +125,9 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Windows 95 theme cutoff (today − 28 years, re-rendered at local midnight; `store/retro.ts`,
   `retro.rs`): artist pages filtered in the UI (`retroArtist`), What's New built for the cutoff
   (`new_releases(before)`); `Album.released` (Plex originallyAvailableAt, MusicBrainz first release
-  dates via `release_dates`). Partial dates count as their end; undated items stay (unit + e2e)
+  dates via `release_dates`: artist found by MBID incl. aliases, all release groups, plus a
+  batched recording search for Popular songs). Partial dates count as their end; undated items
+  are hidden (unit + e2e; MusicBrainz matching checked live for Tatsuro Yamashita)
 - 🟡 Windows headset hold-to-skip: own SMTC session (`smtc.rs`) with fast-forward/rewind enabled
   (one skip per held burst, `Presses`; unit), display + timeline from `media_update`, seek from
   the flyout; WebView2's `HardwareMediaKeyHandling` off when SMTC is available

@@ -1,10 +1,11 @@
 //! Windows 95 theme "time travel": with the theme on, the UI passes a cutoff date (today's date 28
-//! years ago, moving a day each day) and the app only shows releases out by then. Artist pages
-//! filter in the UI; What's New is built for the cutoff here.
+//! years ago, moving a day each day) and the app only shows releases known to be out by then.
+//! Artist pages filter in the UI; What's New is built for the cutoff here.
 
 /// Whether a release with this year and/or date ("YYYY-MM-DD", "YYYY-MM" or "YYYY") was out on
 /// `cutoff` ("YYYY-MM-DD"). A partial date counts as the end of its month or year, so nothing is
-/// shown before it can have come out. Releases with no date at all are kept.
+/// shown before it can have come out. Releases with no date at all are left out too: YouTube
+/// gives most songs none, and keeping them let today's music through.
 pub fn released_by(year: Option<u32>, released: Option<&str>, cutoff: &str) -> bool {
     if let Some(r) = released.filter(|r| r.len() >= 4 && r.is_char_boundary(4)) {
         let full = match r.len() {
@@ -16,7 +17,7 @@ pub fn released_by(year: Option<u32>, released: Option<&str>, cutoff: &str) -> b
     }
     match (year, cutoff_year(cutoff)) {
         (Some(y), Some(cy)) => y < cy,
-        _ => true,
+        _ => false,
     }
 }
 
@@ -60,8 +61,8 @@ mod tests {
         assert!(released_by(Some(1997), None, cut));
         assert!(!released_by(Some(1998), None, cut));
         assert!(!released_by(Some(2024), None, cut));
-        // No date: kept.
-        assert!(released_by(None, None, cut));
+        // No date: left out.
+        assert!(!released_by(None, None, cut));
         // The next day, a release from that day appears.
         assert!(released_by(None, Some("1998-11-04"), "1998-11-04"));
     }
