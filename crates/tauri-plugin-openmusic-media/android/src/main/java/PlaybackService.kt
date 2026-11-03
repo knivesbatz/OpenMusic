@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
 
@@ -34,6 +35,10 @@ class PlaybackService : Service() {
     private const val CHANNEL_ID = "playback"
     private const val NOTIFICATION_ID = 7300
     private const val ACTION = "app.openmusic.media.ACTION"
+    /** A press at least this long is a hold, even when the headset sends no key repeats. */
+    private const val HOLD_MS = 600L
+    /** How long to wait for another press before acting on one, two or three presses. */
+    private const val TAPS_MS = 400L
   }
 
   private lateinit var session: MediaSession
@@ -64,6 +69,16 @@ class PlaybackService : Service() {
       override fun onSkipToPrevious() = MediaBridge.emit("previous")
       override fun onStop() = MediaBridge.emit("pause")
       override fun onSeekTo(pos: Long) = MediaBridge.emit("seek", pos)
+      override fun onFastForward() = MediaBridge.emit("next")
+      override fun onRewind() = MediaBridge.emit("previous")
+      override fun onMediaButtonEvent(intent: Intent): Boolean {
+        val key = if (Build.VERSION.SDK_INT >= 33) {
+          intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        } else {
+          @Suppress("DEPRECATION") intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+        }
+        return (key != null && onButton(key)) || super.onMediaButtonEvent(intent)
+      }
     })
     session.isActive = true
     ContextCompat.registerReceiver(this, noisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), ContextCompat.RECEIVER_EXPORTED)
@@ -71,6 +86,67 @@ class PlaybackService : Service() {
       val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
       nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Playback", NotificationManager.IMPORTANCE_LOW))
     }
+  }
+
+  private var presses = 0
+  private var held = false
+  private val actOnPresses = Runnable {
+    when (presses) {
+      1 -> MediaBridge.emit("toggle")
+      2 -> MediaBridge.emit("next")
+      0 -> {}
+      else -> MediaBridge.emit("previous")
+    }
+    presses = 0
+  }
+
+  /**
+   * Headset, earbud and Bluetooth buttons. Android's default treats holding play/pause as one
+   * press and ignores fast-forward and rewind (what many earbuds send while a button is held),
+   * so holding the button to skip did nothing. Here one press plays or pauses, two skip, three
+   * go back, and holding skips. Next, previous, fast-forward and rewind act once per press,
+   * however long the button is held.
+   */
+  private fun onButton(key: KeyEvent): Boolean {
+    when (key.keyCode) {
+      KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+        if (key.action == KeyEvent.ACTION_DOWN) {
+          if (key.repeatCount == 0) {
+            main.removeCallbacks(actOnPresses)
+            presses++
+            held = false
+          } else if (!held) {
+            holdToSkip()
+          }
+        } else if (key.action == KeyEvent.ACTION_UP) {
+          if (!held && key.eventTime - key.downTime >= HOLD_MS) holdToSkip()
+          if (held) held = false else main.postDelayed(actOnPresses, TAPS_MS)
+        }
+        return true
+      }
+      KeyEvent.KEYCODE_MEDIA_NEXT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+      KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD, KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> return once(key, "next")
+      KeyEvent.KEYCODE_MEDIA_PREVIOUS, KeyEvent.KEYCODE_MEDIA_REWIND,
+      KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD, KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> return once(key, "previous")
+      else -> return false
+    }
+  }
+
+  private fun holdToSkip() {
+    held = true
+    presses = 0
+    main.removeCallbacks(actOnPresses)
+    MediaBridge.emit("next")
+  }
+
+  /** Acts on the first key-down only, so a held button skips one song, not one per repeat. */
+  private fun once(key: KeyEvent, action: String): Boolean {
+    if (key.action == KeyEvent.ACTION_DOWN && key.repeatCount == 0) {
+      main.removeCallbacks(actOnPresses)
+      if (presses > 0) actOnPresses.run()
+      MediaBridge.emit(action)
+    }
+    return true
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -91,6 +167,7 @@ class PlaybackService : Service() {
       unregisterReceiver(noisy)
     } catch (e: Exception) {
     }
+    main.removeCallbacks(actOnPresses)
     session.release()
     loader.shutdownNow()
     super.onDestroy()

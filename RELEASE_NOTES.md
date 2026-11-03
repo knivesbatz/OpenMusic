@@ -1,8 +1,18 @@
-# OpenMusic 1.2.11
+# OpenMusic 1.2.12
 
-Artist pages show the artist's own songs.
+Holding the headphone button skips the song.
 
-## New in 1.2.11
+## New in 1.2.12
+- **Headphone buttons on Android.** Holding the button on your headphones or earbuds to skip did
+  nothing. Android counted holding play/pause as one press, and the fast-forward that many earbuds
+  send while the button is held was ignored. Now:
+  - one press plays or pauses
+  - holding the button skips to the next song
+  - two presses skip, three go back
+  - next, previous, fast-forward and rewind buttons move one song per press, however long you
+    hold them
+
+## Also in 1.2.11
 - **YTSpot: Popular shows the artist's own songs, not other people's uploads.** For artists with
   few official songs on YouTube Music, the artist page's video shelves are mostly other channels'
   uploads (fan channels, lyric videos, city-pop compilations), and Popular was filled from them.
