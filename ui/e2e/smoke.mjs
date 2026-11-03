@@ -781,6 +781,30 @@ await test("Windows 95 theme: artist pages and What's New stop 28 years ago toda
   },
 });
 
+await test("Phones: Settings opens the newest APK in the browser", async (p) => {
+  await p.locator('button[aria-label="Settings"]').first().click();
+  const row = p.locator(".setting", { hasText: "Latest version for Android" });
+  await row.waitFor();
+  await row.locator("button", { hasText: "Open in browser" }).click();
+  await p.waitForFunction(() => window.__OPENED);
+  assert.equal(await p.evaluate(() => window.__OPENED), "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk");
+}, {
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36",
+  init: () => {
+    const d = window.__MOCK__;
+    d.app_info = { ...d.app_info, platform: "android" };
+    d.update_check = { available: false, current: "9.9.9", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk", ready: false };
+    d["plugin:opener|open_url"] = (a) => ((window.__OPENED = a.url), null);
+  },
+});
+
+await test("Desktop Settings has no Android download link", async (p) => {
+  await p.click('button[aria-label="Settings"]');
+  await p.waitForSelector(".page h1:has-text('Settings')");
+  await p.locator(".setting", { hasText: "Check for updates" }).first().waitFor();
+  assert.equal(await p.locator(".setting", { hasText: "Latest version for Android" }).count(), 0);
+});
+
 await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");

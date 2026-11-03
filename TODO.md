@@ -117,6 +117,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.15
+- ✅ Android Settings → About: "Open in browser" for the newest APK (`update_check` url, else the
+  releases/latest page; e2e, desktop hidden)
+
 ## 1.2.14
 - ✅ Windows 95 cutoff: MusicBrainz dates only apply in the provider's own year (same-titled
   releases: YT 2017 "Akina" vs MB 1993 "AKINA", "Weezer (… Album)" vs 1994 "Weezer"; unit)
