@@ -117,6 +117,25 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.13
+- 🟡 YTSpot "Copy to YouTube Music" for app playlists (`yt_copy_playlist`): `playlist/create` with
+  the first 50 video ids, the rest via `browse/edit_playlist` in batches of 50; non-YouTube songs
+  matched by a songs search (`same_song`: title key, artist overlap, ±20 s; unit); unmatched ones
+  listed after (e2e). Not run against a real account
+- ✅ Windows 95 theme cutoff (today − 28 years, re-rendered at local midnight; `store/retro.ts`,
+  `retro.rs`): artist pages filtered in the UI (`retroArtist`), What's New built for the cutoff
+  (`new_releases(before)`); `Album.released` (Plex originallyAvailableAt, MusicBrainz first release
+  dates via `release_dates`). Partial dates count as their end; undated items stay (unit + e2e)
+- 🟡 Windows headset hold-to-skip: own SMTC session (`smtc.rs`) with fast-forward/rewind enabled
+  (one skip per held burst, `Presses`; unit), display + timeline from `media_update`, seek from
+  the flyout; WebView2's `HardwareMediaKeyHandling` off when SMTC is available
+  (`safe_mode::browser_args`). Windows typecheck only; not tried with real headphones
+- 🟡 Discord audio share made the music silent: process loopback records after the mixer's session
+  mute. WebView2 sessions are now turned down (`quiet_level`, -60 dB float / -30 dB PCM) and the
+  capture boosted back (`apply_gain`, never past full scale); the boost is chosen by measuring the
+  capture at full and turned-down volume (`calibrated_gain`; unit). -0.0 counts as silence, so the
+  8 s "capture hears nothing" fallback fires again. Windows typecheck only; not tried on a real PC
+
 ## 1.2.12
 - 🟡 Headset buttons (Android `PlaybackService.onMediaButtonEvent`): hold play/pause = next, 1/2/3
   presses = toggle/next/previous, fast-forward/rewind/skip keys = next/previous once per press;

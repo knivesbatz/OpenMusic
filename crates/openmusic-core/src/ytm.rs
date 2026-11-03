@@ -382,6 +382,7 @@ fn item_from_browse(id: String, pt: Option<&str>, title: String, sub: &Sub, artw
                 _ => "album",
             }
             .into()),
+            released: None,
         }),
         "MUSIC_PAGE_TYPE_ARTIST" | "MUSIC_PAGE_TYPE_USER_CHANNEL" | "MUSIC_PAGE_TYPE_LIBRARY_ARTIST" => {
             // Library artist rows browse to "MPLA<channelId>"; the artist page itself is the channel.
@@ -1099,6 +1100,7 @@ impl Ytm {
                 _ => "album",
             }
             .into()),
+            released: None,
         };
         let mut tracks = page_tracks(&v);
         for (i, t) in tracks.iter_mut().enumerate() {
@@ -1264,6 +1266,95 @@ impl Ytm {
             _ => Ok(()),
         }
     }
+
+    /// Create a playlist on the user's account holding these songs, in order. `privacy` is
+    /// PRIVATE, UNLISTED or PUBLIC (anything else is PRIVATE). Returns the new id (`yt:VL…`).
+    pub async fn create_playlist(&self, title: &str, description: &str, privacy: &str, video_ids: &[String]) -> Result<String> {
+        const CHUNK: usize = 50;
+        let privacy = match privacy {
+            "PUBLIC" | "UNLISTED" => privacy,
+            _ => "PRIVATE",
+        };
+        let (first, rest) = video_ids.split_at(video_ids.len().min(CHUNK));
+        let mut body = json!({ "title": title, "description": description, "privacyStatus": privacy });
+        if !first.is_empty() {
+            body["videoIds"] = json!(first);
+        }
+        let v = self.post("playlist/create", body, "").await?;
+        let id = v
+            .get("playlistId")
+            .and_then(|s| s.as_str())
+            .ok_or_else(|| Error::Invalid("YouTube didn't create the playlist. Try again in a moment.".into()))?
+            .to_string();
+        let mut added = first.len();
+        for chunk in rest.chunks(CHUNK) {
+            let actions: Vec<Value> = chunk.iter().map(|vid| json!({ "action": "ACTION_ADD_VIDEO", "addedVideoId": vid })).collect();
+            let v = self.post("browse/edit_playlist", json!({ "playlistId": id, "actions": actions }), "").await;
+            match v.as_ref().ok().and_then(|v| v.get("status")).and_then(|s| s.as_str()) {
+                Some(s) if s != "STATUS_SUCCEEDED" => {}
+                _ if v.is_ok() => {
+                    added += chunk.len();
+                    continue;
+                }
+                _ => {}
+            }
+            return Err(Error::Invalid(format!(
+                "The playlist was created on YouTube, but YouTube stopped accepting songs after {added} of {}.",
+                video_ids.len()
+            )));
+        }
+        Ok(format!("yt:VL{id}"))
+    }
+
+    /// The YouTube Music song for a song from elsewhere (a local file): the first song result
+    /// whose title and artist match, or `None` rather than a guess.
+    pub async fn find_song(&self, title: &str, artist: &str, duration_ms: Option<u64>) -> Result<Option<Track>> {
+        let q = format!("{artist} {title}");
+        let found = self.search_kind_pages(q.trim(), "songs", 1).await?;
+        Ok(found.tracks.into_iter().take(10).find(|c| same_song(c, title, artist, duration_ms)))
+    }
+}
+
+/// Lowercase letters and digits only (any script), with bracketed parts like "(Remastered)" or
+/// "[Official Audio]" removed, so spelling and punctuation differences still match.
+pub fn match_key(s: &str) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    for c in s.chars() {
+        match c {
+            '(' | '[' | '（' | '【' => depth += 1,
+            ')' | ']' | '）' | '】' => depth = depth.saturating_sub(1),
+            _ if depth == 0 && c.is_alphanumeric() => out.extend(c.to_lowercase()),
+            _ => {}
+        }
+    }
+    out
+}
+
+fn split_artists(s: &str) -> impl Iterator<Item = String> + '_ {
+    s.split(&[',', '&', '、', '/'][..])
+        .flat_map(|a| a.split(" feat. ").flat_map(|a| a.split(" ft. ")))
+        .flat_map(|a| a.split(" x "))
+        .map(match_key)
+        .filter(|a| !a.is_empty())
+}
+
+/// Whether a YouTube Music song is the same song as `title` by `artist`: the titles match (or
+/// one starts with the other, for "Song - 2011 Remaster"), an artist matches, and the lengths
+/// are within 20 seconds when both are known.
+fn same_song(c: &Track, title: &str, artist: &str, duration_ms: Option<u64>) -> bool {
+    let (want, got) = (match_key(title), match_key(&c.title));
+    if want.is_empty() || got.is_empty() || !(want == got || got.starts_with(&want) || want.starts_with(&got)) {
+        return false;
+    }
+    if let (Some(a), Some(b)) = (duration_ms, c.duration_ms) {
+        if a.abs_diff(b) > 20_000 {
+            return false;
+        }
+    }
+    let theirs: Vec<String> = split_artists(&c.artist).collect();
+    let mut ours = split_artists(artist).peekable();
+    ours.peek().is_none() || ours.any(|a| theirs.iter().any(|b| *b == a || b.contains(&a) || a.contains(b.as_str())))
 }
 
 /// A playlist in YouTube Music's "Save to playlist" dialog.
@@ -1294,6 +1385,40 @@ fn parse_playlist_options(v: &Value) -> Vec<PlaylistOption> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn matches_songs_from_elsewhere_strictly() {
+        let song = |title: &str, artist: &str, ms: Option<u64>| Track {
+            title: title.into(),
+            artist: artist.into(),
+            id: "yt:x".into(),
+            source: Source::Youtube,
+            artist_id: None,
+            album: None,
+            album_id: None,
+            duration_ms: ms,
+            artwork: None,
+            stream_key: None,
+            track_number: None,
+            explicit: false,
+            episode: false,
+            description: None,
+            published: None,
+            year: None,
+            added_at: None,
+            disc_number: None,
+        };
+        let c = song("Plastic Love (2021 Remaster)", "Mariya Takeuchi", Some(474_000));
+        assert!(same_song(&c, "Plastic Love", "Mariya Takeuchi", Some(470_000)));
+        assert!(same_song(&c, "plastic love", "MARIYA TAKEUCHI & Someone", None));
+        assert!(same_song(&c, "Plastic Love", "", None));
+        assert!(!same_song(&c, "Plastic Love", "Someone Else", None));
+        assert!(!same_song(&c, "Plastic Love", "Mariya Takeuchi", Some(240_000)));
+        assert!(!same_song(&c, "Love", "Mariya Takeuchi", None));
+        let jp = song("真夜中のドア〜stay with me", "松原みき", None);
+        assert!(same_song(&jp, "真夜中のドア〜Stay With Me", "松原みき", None));
+        assert!(!same_song(&jp, "", "松原みき", None));
+    }
 
     #[test]
     fn duration_parsing() {

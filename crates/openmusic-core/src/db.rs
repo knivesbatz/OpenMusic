@@ -665,7 +665,7 @@ mod tests {
     fn saved_albums_and_artists() {
         use crate::model::{Album, Artist};
         let db = Db::open_in_memory().unwrap();
-        let album = |id: &str| Album { id: id.into(), title: "T".into(), artist: "A".into(), artist_id: None, year: None, artwork: None, kind: None };
+        let album = |id: &str| Album { id: id.into(), title: "T".into(), artist: "A".into(), artist_id: None, year: None, artwork: None, kind: None, released: None };
         db.save_item("album", "plex:1", &album("plex:1")).unwrap();
         db.save_item("album", "plex:2", &album("plex:2")).unwrap();
         db.save_item("album", "plex:1", &album("plex:1")).unwrap(); // idempotent

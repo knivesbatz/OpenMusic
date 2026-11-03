@@ -1,8 +1,42 @@
-# OpenMusic 1.2.12
+# OpenMusic 1.2.13
 
-Holding the headphone button skips the song.
+Copy your app playlists to YouTube Music, the Windows 95 theme goes back 28 years, and on
+Windows, holding the headphone button skips the song and Discord audio sharing works.
 
-## New in 1.2.12
+## New in 1.2.13
+- **Windows 95 theme: back to 28 years ago.** With the theme on, artist pages and What's New only
+  show music released by today's date 28 years ago (today, 3 November 2026, that's 3 November
+  1998). The date moves forward a day every day, even with the app left open.
+  - Artist pages: Popular, the discography tabs and Appears on leave out anything newer.
+  - What's New shows what was new then: releases from the artists you follow from that year and
+    the year before (PLEXSpot also lists your library's latest releases up to that day).
+  - YouTube Music only gives release years, so exact dates come from MusicBrainz. Releases from
+    the cutoff's own year without an exact date stay hidden until the date moves past that year.
+    Songs and releases with no date at all are shown.
+  Switch back to the default theme to see everything again.
+- **YTSpot: Copy to YouTube Music.** Right-click one of your app playlists (or use its ••• menu)
+  and choose Copy to YouTube Music to make it a real playlist on your YouTube account. Pick its
+  name and visibility (Private, Unlisted or Public; Private is the default).
+  - YouTube songs are copied as they are.
+  - Other songs, like local files, are looked up on YouTube Music by title and artist. Only a
+    match on both (and on length, when known) is added, and the songs it couldn't find are
+    listed when the copy is done.
+  - It's a one-time copy: later changes to the app playlist aren't copied over.
+  - Nothing else on your YouTube account is changed.
+- **Windows: holding the headphone button skips the song.** Most earbuds send "fast-forward" while
+  a button is held, and the app's player only understood play/pause, next and previous, so
+  holding did nothing. The app now runs its own Windows media controls:
+  - holding the button (fast-forward) skips one song, and rewind goes back one
+  - play/pause, next and previous work as before, from headphones, keyboards and the Windows
+    media flyout, which still shows the song, cover and progress
+- **Windows: "Share audio when streaming on Discord" no longer silences the music.** The app used
+  to mute its player in the Windows volume mixer and play a recording of it instead, but Windows
+  applies that mute to the recording too, so nothing was heard at all. The player is now turned
+  down to almost nothing instead of muted (it shows near 0 in the volume mixer while sharing),
+  and the recording is turned back up to full. When sharing starts, the app checks how Windows
+  handles this on your PC, during the first half second of music, before relaying anything.
+
+## Also in 1.2.12
 - **Headphone buttons on Android.** Holding the button on your headphones or earbuds to skip did
   nothing. Android counted holding play/pause as one press, and the fast-forward that many earbuds
   send while the button is held was ignored. Now:

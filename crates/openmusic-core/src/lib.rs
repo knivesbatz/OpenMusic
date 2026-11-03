@@ -13,10 +13,12 @@ pub mod lastfm;
 pub mod local;
 pub mod lyrics;
 pub mod model;
+pub mod retro;
 pub mod safe_mode;
 pub mod names;
 pub mod plex;
 pub mod secrets;
+pub mod smtc;
 pub mod state;
 pub mod sync;
 pub mod translate;
@@ -175,7 +177,10 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // Windows: the UI draws a Spotify-style title bar with its own window buttons.
             #[cfg(windows)]
             let main = main.decorations(false);
-            main.build()?;
+            let _main = main.build()?;
+            // Windows: headphone and media keys, the media flyout (see smtc.rs).
+            #[cfg(windows)]
+            smtc::init(&handle, &_main);
             // Desktop only: Android release builds block plain-HTTP requests from the webview, so
             // there the UI uses the in-process art:// protocol.
             #[cfg(desktop)]
@@ -289,6 +294,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::saved_in,
             commands::pl_remove_track,
             commands::yt_playlist_edit,
+            commands::yt_copy_playlist,
             commands::save_text_file,
             commands::new_releases,
             commands::self_test_log,
@@ -334,6 +340,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::liked_ids,
             commands::localized_artist_names,
             commands::artist_compilations,
+            commands::release_dates,
             commands::log_ui_error,
             commands::gpu_set,
             commands::audio_share_set,

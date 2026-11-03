@@ -74,7 +74,9 @@ export const api = {
   signOut: () => call<void>("sign_out"),
 
   home: (refresh: boolean) => call<T.HomeData>("home", { refresh }),
-  newReleases: (refresh: boolean) => call<T.Shelf[]>("new_releases", { refresh }),
+  /** `before`: the Windows 95 theme's cutoff date (what was new then). */
+  newReleases: (refresh: boolean, before: string | null = null) => call<T.Shelf[]>("new_releases", { refresh, before }),
+  releaseDates: (name: string, titles: string[]) => call<Record<string, string> | null>("release_dates", { name, titles }).then((v) => v ?? {}),
   search: (query: string) => call<T.SearchResults>("search", { query }),
   searchKind: (query: string, kind: string) => call<T.SearchResults>("search_kind", { query, kind }),
   artist: (id: string) => call<T.ArtistPage>("artist", { id }),
@@ -132,6 +134,7 @@ export const api = {
   savedIn: (track: T.Track) => call<{ appPlaylists: string[]; remote: { id: string; title: string; contains: boolean }[] }>("saved_in", { track }),
   ytPlaylistEdit: (playlistId: string, track: T.Track, add: boolean) => call<void>("yt_playlist_edit", { playlistId, track, add }),
   hidePlaylist: (id: string, title: string) => call<void>("hide_playlist", { id, title }),
+  ytCopyPlaylist: (id: string, title: string, privacy: T.YtPrivacy) => call<T.YtCopyResult>("yt_copy_playlist", { id, title, privacy }),
 
   localFolders: () => call<string[]>("local_folders"),
   localAddFolder: (path: string) => call<T.ScanReport>("local_add_folder", { path }),

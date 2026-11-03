@@ -50,7 +50,9 @@ interface Dialog {
   confirm: string;
   danger?: boolean;
   input?: { label: string; value: string };
-  resolve: (ok: boolean, value?: string) => void;
+  /** A pick-one list under the input, e.g. a playlist's visibility. */
+  choice?: { label: string; value: string; options: { value: string; label: string }[] };
+  resolve: (ok: boolean, value?: string, choice?: string) => void;
 }
 
 interface UiState {
@@ -113,10 +115,22 @@ export const back = () => useUi.setState((s) => ({ pos: Math.max(0, s.pos - 1) }
 export const forward = () => useUi.setState((s) => ({ pos: Math.min(s.stack.length - 1, s.pos + 1) }));
 
 let toastId = 0;
-export function toast(text: string) {
-  const id = ++toastId;
-  useUi.setState((s) => ({ toasts: [...s.toasts.slice(-2), { id, text }] }));
-  setTimeout(() => useUi.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })), 4000);
+const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+/** Show a toast for a few seconds. Pass the id of a toast still showing to change its text instead. */
+export function toast(text: string, replace?: number): number {
+  const showing = replace != null && useUi.getState().toasts.some((t) => t.id === replace);
+  const id = showing ? replace! : ++toastId;
+  useUi.setState((s) => ({ toasts: showing ? s.toasts.map((t) => (t.id === id ? { id, text } : t)) : [...s.toasts.slice(-2), { id, text }] }));
+  clearTimeout(toastTimers.get(id));
+  toastTimers.set(
+    id,
+    setTimeout(() => {
+      toastTimers.delete(id);
+      useUi.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+    }, 4000),
+  );
+  return id;
 }
 
 export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void }, items: MenuItem[]) {
@@ -134,5 +148,16 @@ export function confirmDialog(opts: Omit<Dialog, "resolve" | "input">): Promise<
 export function promptDialog(opts: Omit<Dialog, "resolve">): Promise<string | null> {
   return new Promise((resolve) =>
     useUi.setState({ dialog: { ...opts, resolve: (ok, v) => resolve(ok ? (v ?? "").trim() || null : null) } }),
+  );
+}
+
+/** A dialog with a text input and a pick-one list: both values, or null when cancelled. */
+export function formDialog(
+  opts: Omit<Dialog, "resolve" | "input" | "choice"> & Required<Pick<Dialog, "input" | "choice">>,
+): Promise<{ value: string; choice: string } | null> {
+  return new Promise((resolve) =>
+    useUi.setState({
+      dialog: { ...opts, resolve: (ok, v, c) => resolve(ok && (v ?? "").trim() ? { value: (v ?? "").trim(), choice: c ?? opts.choice.value } : null) },
+    }),
   );
 }

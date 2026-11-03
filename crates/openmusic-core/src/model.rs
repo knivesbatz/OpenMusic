@@ -75,6 +75,9 @@ pub struct Album {
     /// "album" | "single" | "ep" | "compilation"
     #[serde(default)]
     pub kind: Option<String>,
+    /// Release date where known ("YYYY-MM-DD", or "YYYY-MM" / "YYYY"): Plex, MusicBrainz.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub released: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

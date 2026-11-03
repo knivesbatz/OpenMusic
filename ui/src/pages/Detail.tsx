@@ -10,6 +10,7 @@ import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
 import { newestFirst, splitCompilations } from "../store/discography";
+import { datesWanted, retroArtist, useRetroCutoff } from "../store/retro";
 import { setPlaylistSort, sortTracks, usePlaylistSort, type SortKey } from "../store/playlistSort";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, toast } from "../store/ui";
@@ -222,10 +223,19 @@ type Disc = "popular" | "albums" | "singles" | "compilations" | "appears";
 
 export function ArtistPage({ id }: { id: string }) {
   const t = useT();
-  const { data, error, loading, reload } = useAsync(() => api.artist(id), [id]);
+  const { data: page, error, loading, reload } = useAsync(() => api.artist(id), [id]);
   // Compilations by name from MusicBrainz (YouTube Music doesn't mark them; Plex only when tagged).
-  const artistName = data?.artist?.name ?? "";
+  const artistName = page?.artist?.name ?? "";
   const { data: mbCompilations } = useAsync(() => (artistName ? api.artistCompilations(artistName) : Promise.resolve([])), [artistName]);
+  // Windows 95 theme: only what was out 28 years ago today, with exact dates from MusicBrainz
+  // where the provider only knows the year.
+  const cutoff = useRetroCutoff();
+  const wanted = useMemo(() => (page ? datesWanted(page, cutoff) : []), [page, cutoff]);
+  const { data: mbDates } = useAsync(
+    () => (wanted.length && artistName ? api.releaseDates(artistName, wanted) : Promise.resolve({} as Record<string, string>)),
+    [artistName, wanted.join("\u001f")],
+  );
+  const data = useMemo(() => page && retroArtist(page, cutoff, mbDates ?? {}), [page, cutoff, mbDates]);
   usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }));
   const [more, setMore] = useState(false);
   const [disc, setDisc] = useState<Disc>("popular");

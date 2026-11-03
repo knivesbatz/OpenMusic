@@ -288,6 +288,7 @@ pub fn albums(db: &Db) -> Result<Vec<Album>> {
             year: r.get(2)?,
             artwork: r.get(3)?,
             kind: Some("album".into()),
+            released: None,
         })
     })?;
     Ok(rows.collect::<std::result::Result<_, _>>()?)

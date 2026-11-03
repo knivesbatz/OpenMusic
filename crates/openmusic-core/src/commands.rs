@@ -766,12 +766,14 @@ pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPa
 }
 
 /// Recent albums and singles from these artists (released this year or last), newest first.
-pub(crate) fn recent_releases(pages: Vec<ArtistPage>, this_year: u32) -> Vec<Album> {
+/// With a cutoff (Windows 95 theme), "this year" is the cutoff's and later releases are left out.
+pub(crate) fn recent_releases(pages: Vec<ArtistPage>, this_year: u32, before: Option<&str>) -> Vec<Album> {
     let mut out: Vec<Album> = Vec::new();
     for page in pages {
         let name = page.artist.map(|a| a.name).unwrap_or_default();
         for mut al in page.albums.into_iter().chain(page.singles) {
-            if al.year.is_some_and(|y| y + 1 >= this_year) && !out.iter().any(|x| x.id == al.id) {
+            let out_by = before.is_none_or(|c| crate::retro::released_by(al.year, al.released.as_deref(), c));
+            if out_by && al.year.is_some_and(|y| y + 1 >= this_year) && !out.iter().any(|x| x.id == al.id) {
                 if al.artist.is_empty() {
                     al.artist = name.clone();
                 }
@@ -779,10 +781,51 @@ pub(crate) fn recent_releases(pages: Vec<ArtistPage>, this_year: u32) -> Vec<Alb
             }
         }
     }
-    // Stable: within a year, artists keep the order they were followed in.
-    out.sort_by_key(|a| std::cmp::Reverse(a.year));
+    // Stable: within a year (or date), artists keep the order they were followed in.
+    out.sort_by_key(|a| std::cmp::Reverse(crate::retro::sort_key(a.year, a.released.as_deref())));
     out.truncate(40);
     out
+}
+
+/// First release dates of an artist's releases from MusicBrainz, keyed by `ytm::match_key` of the
+/// title. Cached for a month; empty when MusicBrainz can't be reached.
+async fn mb_release_dates(state: &AppState, name: &str) -> std::collections::HashMap<String, String> {
+    let key = format!("mbdates:{}", name.trim().to_lowercase());
+    let cached = state.db().cache_get::<std::collections::HashMap<String, String>>(&key, false);
+    if let Ok(Some(cached)) = cached {
+        return cached;
+    }
+    match crate::names::release_dates(&state.http, name.trim()).await {
+        Ok(pairs) => {
+            let mut map = std::collections::HashMap::new();
+            for (title, date) in pairs {
+                let k = ytm::match_key(&title);
+                if k.is_empty() {
+                    continue;
+                }
+                // The earliest release of a title; at the same start, the more precise date.
+                let order = |d: &str| (format!("{d:0<10}"), std::cmp::Reverse(d.len()));
+                map.entry(k).and_modify(|e: &mut String| if order(&date) < order(e) { *e = date.clone() }).or_insert(date);
+            }
+            let _ = state.db().cache_put(&key, &map, 30 * 86400);
+            map
+        }
+        Err(e) => {
+            log::info!("MusicBrainz release dates for {name}: {e}");
+            std::collections::HashMap::new()
+        }
+    }
+}
+
+/// Release dates for an artist's releases by title (MusicBrainz), for the Windows 95 theme's
+/// cutoff where the provider only knows the year. Titles without a match are left out.
+#[tauri::command]
+pub async fn release_dates(state: S<'_>, name: String, titles: Vec<String>) -> Result<std::collections::HashMap<String, String>> {
+    if name.trim().is_empty() {
+        return Ok(Default::default());
+    }
+    let map = mb_release_dates(&state, &name).await;
+    Ok(titles.into_iter().filter_map(|t| map.get(&ytm::match_key(&t)).map(|d| (t, d.clone()))).collect())
 }
 
 fn current_year() -> u32 {
@@ -795,8 +838,14 @@ fn current_year() -> u32 {
 /// (YouTube Music's New releases; for Plex, the library's newest releases and additions).
 /// Cached for an hour.
 #[tauri::command]
-pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Vec<Shelf>> {
-    let key = "newreleases";
+pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool, before: Option<String>) -> Result<Vec<Shelf>> {
+    // Windows 95 theme: what was new on the cutoff date (today 28 years ago).
+    let before = before.filter(|b| crate::retro::valid_cutoff(b));
+    let key = match &before {
+        Some(b) => format!("newreleases:{b}"),
+        None => "newreleases".to_string(),
+    };
+    let key = key.as_str();
     if !refresh {
         if let Some(c) = state.db().cache_get::<Vec<Shelf>>(key, false)? {
             return Ok(c);
@@ -809,26 +858,52 @@ pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result
         let got = futures_util::future::join_all(chunk.iter().map(|a| artist(app.clone(), state.clone(), a.id.clone()))).await;
         pages.extend(got.into_iter().filter_map(|r| r.ok()));
     }
+    let this_year = before.as_deref().and_then(crate::retro::cutoff_year).unwrap_or_else(current_year);
+    if before.is_some() {
+        // Only the year is known for YouTube releases: their exact dates from MusicBrainz, for
+        // the releases in the cutoff's year (whether they were out by that day).
+        for page in pages.iter_mut() {
+            let needs = page.albums.iter().chain(&page.singles).any(|a| a.released.is_none() && a.year == Some(this_year));
+            let Some(name) = page.artist.as_ref().map(|a| a.name.clone()).filter(|_| needs) else { continue };
+            let dates = mb_release_dates(&state, &name).await;
+            for al in page.albums.iter_mut().chain(page.singles.iter_mut()) {
+                if al.released.is_none() {
+                    al.released = dates.get(&ytm::match_key(&al.title)).cloned();
+                }
+            }
+        }
+    }
+    let out_by = |a: &Album| before.as_deref().is_none_or(|c| crate::retro::released_by(a.year, a.released.as_deref(), c));
     let mut shelves = Vec::new();
-    let mine = recent_releases(pages, current_year());
+    let mine = recent_releases(pages, this_year, before.as_deref());
     if !mine.is_empty() {
         shelves.push(Shelf { title: "fromArtistsYouFollow".into(), subtitle: None, items: mine.into_iter().map(MediaItem::Album).collect() });
     }
     match state.flavor {
         Flavor::Plex => {
             if let Ok(sess) = state.plex_session().await {
-                let latest = state.plex.latest_releases(&sess).await;
+                let mut latest = state.plex.latest_releases(&sess, before.as_deref().and_then(crate::retro::cutoff_year)).await;
+                latest.retain(out_by);
+                latest.truncate(30);
                 if !latest.is_empty() {
                     shelves.push(Shelf { title: "latestReleases".into(), subtitle: None, items: latest.into_iter().map(MediaItem::Album).collect() });
                 }
-                let added = state.plex.recently_added(&sess).await;
+                let mut added = state.plex.recently_added(&sess).await;
+                added.retain(out_by);
                 if !added.is_empty() {
                     shelves.push(Shelf { title: "recentlyAdded".into(), subtitle: None, items: added.into_iter().map(MediaItem::Album).collect() });
                 }
             }
         }
         Flavor::YouTube => {
-            if let Ok(feed) = yt_call!(app, state, |y| y.new_releases()) {
+            if let Ok(mut feed) = yt_call!(app, state, |y| y.new_releases()) {
+                if before.is_some() {
+                    // Only releases out by the cutoff (none, in practice: the feed is this week's).
+                    for shelf in feed.iter_mut() {
+                        shelf.items.retain(|i| matches!(i, MediaItem::Album(a) if out_by(a)));
+                    }
+                    feed.retain(|s| !s.items.is_empty());
+                }
                 shelves.extend(feed);
             }
         }
@@ -1261,6 +1336,60 @@ pub async fn yt_playlist_edit(app: AppHandle, state: S<'_>, playlist_id: String,
     }
     let vid = track.stream_key.clone().ok_or_else(|| Error::Invalid("no video id".into()))?;
     yt_call!(app, state, |y| y.edit_playlist(&playlist_id, &vid, add))
+}
+
+/// What "Copy to YouTube Music" did: the new playlist, how many songs it holds, and the songs
+/// that couldn't be found on YouTube Music ("Artist - Title").
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct YtCopyResult {
+    pub playlist_id: String,
+    pub added: usize,
+    pub missing: Vec<String>,
+}
+
+/// Copy an app playlist to the user's YouTube account as a new playlist. YouTube songs go over
+/// as they are; other songs (local files) are matched by a YouTube Music song search and left
+/// out when there's no confident match. Emits `yt-copy-progress` {done, total} while matching.
+#[tauri::command]
+pub async fn yt_copy_playlist(app: AppHandle, state: S<'_>, id: String, title: String, privacy: String) -> Result<YtCopyResult> {
+    if state.flavor != Flavor::YouTube {
+        return Err(Error::Unsupported("copying playlists to YouTube".into()));
+    }
+    let (pl, tracks) = {
+        let db = state.db();
+        let pl = db.playlist_get(&id)?.ok_or_else(|| Error::Invalid("playlist not found".into()))?;
+        (pl, db.playlist_tracks(&id)?)
+    };
+    let title = match title.trim() {
+        "" => pl.title.clone(),
+        t => t.chars().take(150).collect(),
+    };
+    let total = tracks.len();
+    let mut ids = Vec::new();
+    let mut missing = Vec::new();
+    for (i, t) in tracks.iter().enumerate() {
+        let vid = match (&t.source, &t.stream_key) {
+            (Source::Youtube, Some(v)) => Some(v.clone()),
+            _ => match yt_call!(app, state, |y| y.find_song(&t.title, &t.artist, t.duration_ms)) {
+                Ok(found) => found.and_then(|f| f.stream_key),
+                Err(Error::AuthExpired) => return Err(Error::AuthExpired),
+                Err(_) => None,
+            },
+        };
+        match vid {
+            Some(v) => ids.push(v),
+            None if t.artist.is_empty() => missing.push(t.title.clone()),
+            None => missing.push(format!("{} - {}", t.artist, t.title)),
+        }
+        let _ = app.emit("yt-copy-progress", serde_json::json!({ "done": i + 1, "total": total }));
+    }
+    if ids.is_empty() {
+        return Err(Error::Invalid("None of these songs were found on YouTube Music, so no playlist was created.".into()));
+    }
+    let description = pl.description.clone().unwrap_or_default();
+    let playlist_id = yt_call!(app, state, |y| y.create_playlist(&title, &description, &privacy, &ids))?;
+    Ok(YtCopyResult { playlist_id, added: ids.len(), missing })
 }
 
 /// Save a text export (a playlist as "Artist - Title" lines) where the user picks. Returns the
@@ -1966,7 +2095,7 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
     state: &AppState,
 ) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, M> {
     #[cfg(windows)]
-    return b.additional_browser_args(if state.safe_mode.get().is_some() { crate::safe_mode::SAFE_ARGS } else { crate::safe_mode::NORMAL_ARGS });
+    return b.additional_browser_args(&crate::safe_mode::browser_args(state.safe_mode.get().is_some(), crate::smtc::available()));
     #[cfg(not(windows))]
     {
         let _ = state;
@@ -2010,17 +2139,26 @@ pub async fn audio_share_set(app: AppHandle, enabled: bool) -> Result<()> {
         .map_err(|e| Error::Invalid(e.to_string()))?
 }
 
-/// Mirror the player in the Android media notification (no-op on desktop, where the webview's
-/// Media Session already reaches the OS). `artwork` arrives as the track's `art://` reference.
+/// Mirror the player in the Android media notification, and on Windows in the app's own media
+/// controls (`smtc`). `artwork` arrives as the track's `art://` reference.
 #[tauri::command]
 pub async fn media_update(app: AppHandle, state: S<'_>, mut now: tauri_plugin_openmusic_media::NowPlaying) -> Result<()> {
-    if cfg!(mobile) {
-        now.artwork = match now.artwork.take() {
-            Some(a) => art::cached_file(state.inner().clone(), &a, 512).await.map(|p| p.to_string_lossy().into_owned()),
-            None => None,
-        };
+    let art = match now.artwork.take() {
+        Some(a) if cfg!(any(mobile, windows)) => art::cached_file(state.inner().clone(), &a, 512).await.map(|p| p.to_string_lossy().into_owned()),
+        _ => None,
+    };
+    #[cfg(mobile)]
+    {
+        now.artwork = art;
         let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::update(&app, &now)).await;
     }
+    #[cfg(windows)]
+    {
+        let _ = &app;
+        let _ = tauri::async_runtime::spawn_blocking(move || crate::smtc::update(&now, art)).await;
+    }
+    #[cfg(not(any(mobile, windows)))]
+    let _ = (&app, &now, art);
     Ok(())
 }
 
@@ -2044,9 +2182,15 @@ pub async fn widget_refresh(app: AppHandle, state: S<'_>) -> Result<()> {
 
 #[tauri::command]
 pub async fn media_stop(app: AppHandle) -> Result<()> {
-    if cfg!(mobile) {
-        let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
+    #[cfg(mobile)]
+    let _ = tauri::async_runtime::spawn_blocking(move || tauri_plugin_openmusic_media::stop(&app)).await;
+    #[cfg(windows)]
+    {
+        let _ = &app;
+        let _ = tauri::async_runtime::spawn_blocking(crate::smtc::stop).await;
     }
+    #[cfg(not(any(mobile, windows)))]
+    let _ = &app;
     Ok(())
 }
 
@@ -2138,7 +2282,7 @@ mod tests {
 
     #[test]
     fn recent_releases_from_followed_artists() {
-        let al = |id: &str, year: Option<u32>| Album { id: id.into(), title: id.into(), artist: String::new(), artist_id: None, year, artwork: None, kind: None };
+        let al = |id: &str, year: Option<u32>| Album { id: id.into(), title: id.into(), artist: String::new(), artist_id: None, year, artwork: None, kind: None, released: None };
         let page = |name: &str, albums: Vec<Album>, singles: Vec<Album>| ArtistPage {
             artist: Some(Artist { id: name.into(), name: name.into(), artwork: None }),
             albums,
@@ -2151,6 +2295,7 @@ mod tests {
                 page("B", vec![al("dup", Some(2026)), al("noyear", None)], vec![al("dup", Some(2026))]),
             ],
             2026,
+            None,
         );
         let ids: Vec<_> = got.iter().map(|a| a.id.as_str()).collect();
         assert_eq!(ids, ["single", "dup", "last"]);
