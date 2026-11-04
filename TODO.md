@@ -313,4 +313,6 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   macOS), release attaches `*.dmg`; keyring `apple-native` (it fell back to an in-memory store);
   UI served from `http://localhost:47321/47322` via tauri-plugin-localhost so YouTube's embed and
   http Plex servers work (`ui_url`, `capabilities/macos.json`); Safari user agent for Google
-  sign-in; updater offers `_universal.dmg` in the browser. Built in CI only; not run on a Mac yet
+  sign-in; updater downloads `_universal.dmg` and swaps the bundle (hdiutil + ditto, relaunch).
+  Startup: check at 2 s, auto-install + reopen when nothing plays (kv `update.autoInstall`
+  guards loops). Built in CI only; not run on a Mac yet

@@ -1,11 +1,13 @@
 // Updates from the latest GitHub release: checked at startup and every 6 hours. Windows downloads
 // the installer in the background (Settings → Install updates automatically) and installs it when
-// the app closes or on "Restart to update"; Android offers the new APK and macOS the new disk image.
+// the app closes or on "Restart to update" (macOS likewise, from the disk image); Android offers
+// the new APK. At startup, with nothing playing yet, a downloaded update installs right away.
 import { create } from "zustand";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorMessage, inTauri } from "../api";
 import { translate } from "../i18n";
-import { isMobileApp, useApp } from "./app";
+import { usePlayer } from "../player/engine";
+import { isMobileApp } from "./app";
 import { useSettings } from "./settings";
 import { toast } from "./ui";
 
@@ -21,9 +23,9 @@ export interface UpdateState {
 export const useUpdate = create<UpdateState>(() => ({ version: null, url: null, notes: null, status: "idle", dismissed: false }));
 const tr = (k: Parameters<typeof translate>[1], v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
-/** Phones and Macs download the new version in the browser (an APK, a disk image) and the user
- * installs it; Windows downloads the installer itself and installs it on close. */
-export const updatesInBrowser = () => isMobileApp() || useApp.getState().info?.platform === "macos";
+/** Phones download the new APK in the browser (Android asks before installing); Windows and macOS
+ * download the update themselves and install it. */
+export const updatesInBrowser = () => isMobileApp();
 
 export async function checkForUpdates(manual = false) {
   if (!inTauri) return;
@@ -61,8 +63,30 @@ export async function downloadUpdate() {
 
 export const restartToUpdate = () => api.updateRestart().catch((e) => toast(errorMessage(e)));
 
+const STARTUP_WINDOW_MS = 10 * 60_000;
+const startedAt = Date.now();
+
+/** Startup: check right away; with "Install updates automatically" on, a new version downloads
+ * and, while nothing is playing in the first minutes, installs and reopens the app. Once music
+ * plays it waits for the app to close (or "Restart to update"). A version that was already tried
+ * at a recent startup isn't tried again (so a failed install can't loop). */
+export async function updateOnStart() {
+  if (!inTauri || updatesInBrowser()) return;
+  await checkForUpdates(false);
+  const s = useUpdate.getState();
+  if (s.status !== "ready" || !s.version || !useSettings.getState().autoUpdate) return;
+  if (usePlayer.getState().playing || Date.now() - startedAt > STARTUP_WINDOW_MS) return;
+  const tried = await api.kvGet<{ version: string; at: number }>("update.autoInstall").catch(() => null);
+  if (tried && tried.version === s.version && Date.now() - tried.at < 6 * 3600_000) return;
+  await api.kvSet("update.autoInstall", { version: s.version, at: Date.now() }).catch(() => {});
+  toast(tr("updatingNow", { v: s.version }));
+  await new Promise((r) => setTimeout(r, 1500));
+  if (usePlayer.getState().playing) return;
+  restartToUpdate();
+}
+
 export function initUpdates() {
   if (!inTauri) return;
-  setTimeout(() => checkForUpdates(false), 8000);
+  setTimeout(() => void updateOnStart(), 2000);
   setInterval(() => checkForUpdates(false), 6 * 3600_000);
 }

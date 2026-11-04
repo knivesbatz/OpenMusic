@@ -5,7 +5,7 @@ Two Spotify-style music players for **Windows**, **macOS** and **Android**, shar
 - **YTSpot**: a YouTube Music client (`apps/ytspot`)
 - **PLEXSpot**: a Plex Music client (`apps/plexspot`)
 
-**Download:** [latest release](https://github.com/knivesbatz/OpenMusic/releases/latest). It has the Windows installers (`*_x64-setup.exe`), the Mac disk images (`*_universal.dmg`, for Apple silicon and Intel Macs, macOS 11 or later) and Android APKs (`*_android-arm64.apk`). The Windows apps update themselves from the latest release; the Mac and Android apps tell you when there's a new one.
+**Download:** [latest release](https://github.com/knivesbatz/OpenMusic/releases/latest). It has the Windows installers (`*_x64-setup.exe`), the Mac disk images (`*_universal.dmg`, for Apple silicon and Intel Macs, macOS 11 or later) and Android APKs (`*_android-arm64.apk`). The Windows and Mac apps check for a new version when they start and update themselves; the Android apps tell you when there's a new one.
 
 **Installing on a Mac:** open the `.dmg` and drag the app into Applications. The apps aren't notarized by Apple (that needs a paid developer account), so the first time macOS says it can't check the app: open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to the app's name, then confirm. After that it opens normally.
 

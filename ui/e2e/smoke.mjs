@@ -1011,6 +1011,39 @@ await test("Your Library: Spotify's Sort by and View as menu, remembered", async
   },
 });
 
+await test("Updates: a new version found at startup downloads and installs while nothing plays", async (p) => {
+  await p.waitForFunction(() => window.__CALLS__.includes("update_restart"), null, { timeout: 12000 });
+  const calls = await p.evaluate(() => window.__CALLS__);
+  assert.ok(calls.indexOf("update_check") < calls.indexOf("update_download") && calls.indexOf("update_download") < calls.indexOf("update_restart"), calls.join(","));
+  assert.ok((await p.locator(".toast").allTextContents()).some((x) => x.includes("Updating to 9.9.9")));
+  assert.deepEqual(await p.evaluate(() => window.__KV["update.autoInstall"]?.version), "9.9.9");
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    window.__KV = {};
+    d.kv_set = (a) => ((window.__KV[a.key] = a.value), null);
+    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_x64-setup.exe", ready: false };
+    d.update_download = null;
+    d.update_restart = null;
+  },
+});
+
+await test("Updates: a version already tried at a recent start isn't installed again", async (p) => {
+  await p.waitForFunction(() => window.__CALLS__.includes("update_download"), null, { timeout: 12000 });
+  await p.waitForTimeout(2500);
+  assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("update_restart"))));
+  // It waits for the app to close instead: the banner offers Restart to update.
+  await p.waitForSelector(".update-banner");
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.kv_get = (a) => (a.key === "update.autoInstall" ? { version: "9.9.9", at: Date.now() - 60_000 } : null);
+    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_x64-setup.exe", ready: false };
+    d.update_download = null;
+    d.update_restart = null;
+  },
+});
+
 await browser.close();
 server.httpServer.close();
 const failed = results.filter((r) => !r.ok).length;

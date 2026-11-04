@@ -2313,7 +2313,8 @@ pub async fn update_check(app: AppHandle, state: S<'_>) -> Result<crate::updater
     crate::updater::check(&state.http, &product).await
 }
 
-/// Windows: fetch the new installer in the background; it installs when the app closes.
+/// Windows and macOS: fetch the new installer / disk image in the background; it installs when the
+/// app closes or on "Restart to update".
 #[tauri::command]
 pub async fn update_download(state: S<'_>, url: String) -> Result<()> {
     crate::updater::download(&state.http, &url, &state.dirs.data.join("updates")).await
@@ -2323,7 +2324,9 @@ pub async fn update_download(state: S<'_>, url: String) -> Result<()> {
 #[tauri::command]
 pub fn update_restart(app: AppHandle) -> Result<()> {
     if !crate::updater::run_pending(true) {
-        return Err(Error::Invalid("no update has been downloaded".into()));
+        return Err(Error::Invalid(
+            "The update couldn't be installed. Download the new version from the release page on GitHub.".into(),
+        ));
     }
     app.exit(0);
     Ok(())
