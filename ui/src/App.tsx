@@ -3,7 +3,7 @@ import { PlayerBar } from "./components/PlayerBar";
 import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
 import { Sidebar } from "./components/Sidebar";
-import { TopBar } from "./components/TopBar";
+import { AccountDrawer, TopBar } from "./components/TopBar";
 import { TitleBar, useTitleBar } from "./components/TitleBar";
 import { TvNav } from "./components/TvNav";
 import { ContextMenu, DialogHost, InfoDialog, Toasts } from "./components/Overlays";
@@ -227,6 +227,7 @@ export function App() {
       )}
       {profilePicker && <ProfilePicker />}
       <ProfileEditDialog />
+      <AccountDrawer />
       <ContextMenu />
       <SavedInPanel />
       <DialogHost />

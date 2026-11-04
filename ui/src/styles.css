@@ -1078,3 +1078,99 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .hero-art-edit { transition: opacity var(--t-med) var(--ease-out); }
 .side-text.inline { flex-direction: row; align-items: baseline; gap: 6px; }
 .side-text.inline .sub { flex: none; font-size: 0.8125rem; }
+
+/* ---- Phones: the ••• menu as a bottom sheet (Spotify mobile) -------------------------------------- */
+.sheet-bg { position: fixed; inset: 0; z-index: 70; background: #000000b3; display: flex; flex-direction: column; justify-content: flex-end; animation: om-fade var(--t-med) var(--ease-out); }
+.menu-sheet { background: #242424; border-radius: 14px 14px 0 0; max-height: 86vh; display: flex; flex-direction: column; padding-bottom: max(12px, env(safe-area-inset-bottom)); animation: om-sheet-up var(--t-slow) var(--ease-out); transition: transform var(--t-med) var(--ease-out); }
+.sheet-top { flex: none; padding: 8px 16px 0; touch-action: none; }
+.sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: #ffffff4d; margin: 0 auto 12px; }
+.sheet-head { display: flex; align-items: center; gap: 12px; padding: 4px 0 14px; border-bottom: 1px solid #ffffff1a; }
+.sheet-head .art { width: 48px; height: 48px; flex: none; border-radius: 4px; }
+.sheet-head .art.round { border-radius: 50%; }
+.sheet-head-text { min-width: 0; }
+.sheet-head-text .t { font-weight: 700; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-head-text .s { color: var(--muted); font-size: 0.875rem; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-back { display: flex; align-items: center; gap: 12px; width: 100%; padding: 4px 0 14px; font-weight: 700; font-size: 1rem; border-bottom: 1px solid #ffffff1a; }
+.sheet-items { overflow-y: auto; padding: 6px 0; overscroll-behavior: contain; }
+.sheet-item { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 52px; padding: 0 20px; text-align: left; font-size: 1rem; color: var(--text); }
+.sheet-item:active { background: #ffffff12; }
+.sheet-item:disabled { opacity: 0.4; }
+.sheet-item.danger { color: var(--danger); }
+.sheet-item.on { color: var(--green); }
+.sheet-icon { width: 24px; display: grid; place-items: center; color: var(--muted); flex: none; }
+.sheet-item.on .sheet-icon, .sheet-item.danger .sheet-icon { color: inherit; }
+.sheet-label { flex: 1; min-width: 0; }
+.sheet-hint { color: var(--muted); font-size: 0.875rem; }
+.sheet-heading { padding: 12px 20px 4px; color: var(--muted); font-size: 0.8125rem; font-weight: 700; }
+.sheet-items hr { border: 0; border-top: 1px solid #ffffff1a; margin: 6px 20px; }
+.menu-sheet .menu-icons { padding: 6px 16px 10px; }
+
+/* ---- Phones: account drawer (tap your picture) ---------------------------------------------------- */
+@keyframes om-drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
+.drawer-bg { position: fixed; inset: 0; z-index: 70; background: #000000a6; animation: om-fade var(--t-med) var(--ease-out); }
+.drawer { position: absolute; left: 0; top: 0; bottom: 0; width: min(86vw, 360px); background: #1f1f1f; display: flex; flex-direction: column; padding-top: max(16px, env(safe-area-inset-top)); animation: om-drawer-in var(--t-slow) var(--ease-out); box-shadow: 8px 0 24px #0008; }
+.drawer-me { display: flex; align-items: center; gap: 12px; padding: 12px 20px 20px; text-align: left; border-bottom: 1px solid #ffffff1a; }
+.avatar-btn.big { width: 48px; height: 48px; font-size: 1.25rem; background: #f573a0; flex: none; }
+.avatar-btn.big:has(.art) { background: transparent; }
+.drawer-me-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.drawer-me-text strong { font-size: 1.125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drawer-items { overflow-y: auto; padding: 8px 0; }
+.drawer-item { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 56px; padding: 0 20px; text-align: left; font-size: 1rem; }
+.drawer-item:active { background: #ffffff12; }
+.drawer-icon { width: 24px; display: grid; place-items: center; color: var(--text); flex: none; }
+.drawer-switch { width: 36px; height: 20px; border-radius: 10px; background: #535353; position: relative; flex: none; transition: background var(--t-fast); }
+.drawer-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform var(--t-fast) var(--ease-out); }
+.drawer-switch.on { background: var(--green); }
+.drawer-switch.on::after { transform: translateX(16px); }
+
+/* ---- Phones: top bars (Home chips, Your Library, Search) ------------------------------------------ */
+@media (max-width: 760px) {
+  .topbar.phone-bar { gap: 10px; }
+  .phone-chips { margin: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 8px; }
+  .phone-chips::-webkit-scrollbar { display: none; }
+  .phone-chips .chip { height: 32px; padding: 0 14px; font-size: 0.875rem; flex: none; }
+  .phone-h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; margin: 0; white-space: nowrap; }
+  .topbar.phone-search { display: flex; flex-direction: column; align-items: stretch; gap: 12px; padding: 10px 16px 10px; background: var(--surface); }
+  .topbar.phone-search.solid { box-shadow: 0 1px 0 #ffffff0f; }
+  .phone-search-head { display: flex; align-items: center; gap: 12px; padding-top: 2px; }
+  .phone-search-field { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 12px; border-radius: 6px; background: #fff; color: #121212; }
+  .phone-search-field input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #121212; font: inherit; font-size: 1rem; font-weight: 600; }
+  .phone-search-field input::placeholder { color: #535353; font-weight: 600; }
+  .phone-search-field input::-webkit-search-cancel-button { display: none; }
+  .phone-search-field .icon-btn { color: #121212; }
+  /* Search tab's browse page: "Browse all" is a section title under the field. */
+  .browse-page > h1 { font-size: 1rem; margin: 6px 0 12px; }
+  /* Your Library */
+  .lib-phone { padding-top: 0; }
+  .lib-chips { margin: 2px 0 14px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .lib-chips::-webkit-scrollbar { display: none; }
+  .lib-chips .chip { flex: none; height: 32px; padding: 0 14px; font-size: 0.875rem; }
+  .lib-chips .chip.clear { width: 32px; padding: 0; display: grid; place-items: center; }
+  .lib-sortbar { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px; }
+  .lib-sortbtn { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; font-weight: 600; padding: 6px 0; }
+  .lib-rows.lib-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 12px; }
+  .lib-grid .lib-row { flex-direction: column; align-items: stretch; gap: 8px; padding: 0; }
+  .lib-grid .lib-row > .art { width: 100%; height: auto; }
+  .lib-grid .lib-row-text .name { font-size: 0.8125rem; }
+  .lib-grid .lib-row-text .sub { font-size: 0.75rem; }
+}
+
+/* ---- Phones: song screen header ("PLAYING FROM PLAYLIST") and About the artist -------------------- */
+.pp-context { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
+.pp-ctx-title { font-weight: 700; font-size: 0.8125rem; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-gap { height: 28px; }
+.pp-about { margin-top: 16px; border-radius: 14px; overflow: hidden; background: #242424; cursor: pointer; }
+.pp-about-img { position: relative; aspect-ratio: 16 / 10; background: center / cover no-repeat #333; }
+.pp-about-img h2 { position: absolute; left: 16px; top: 14px; margin: 0; font-size: 1rem; text-shadow: 0 1px 8px #000a; }
+.pp-about-body { padding: 14px 16px 18px; }
+.pp-about-name { font-weight: 700; font-size: 1rem; }
+.pp-about-bio { margin: 12px 0 0; color: #ffffffb3; font-size: 0.875rem; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* Spotify's ⊕ / green ✓ save button (phones). */
+.save-circle { color: #ffffffb3; }
+.save-circle.on { color: var(--green); }
+.save-circle.on::after { display: none; }
+@media (max-width: 760px) {
+  .pb-mobile { gap: 4px; }
+  .pb-mobile .save-circle { padding: 8px; }
+  .pb-mobile .save-circle.on { color: var(--green); }
+}

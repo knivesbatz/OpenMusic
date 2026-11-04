@@ -7,10 +7,11 @@ import { translate, type Key } from "./i18n";
 import * as P from "./player/engine";
 import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
 import { useSettings } from "./store/settings";
-import { confirmDialog, formDialog, navigate, promptDialog, toast, useUi, type MenuItem } from "./store/ui";
+import { confirmDialog, formDialog, navigate, promptDialog, toast, useUi, type MenuHead, type MenuItem } from "./store/ui";
 import type { Album, Artist, Playlist, Podcast, Track, YtPrivacy } from "./types";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 import * as I from "./components/Icons";
+import { displayTrack } from "./store/songmeta";
 
 const t = (k: Key, v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
@@ -205,6 +206,12 @@ export interface TrackMenuOpts {
   queueUid?: string;
   selection?: Track[];
 }
+
+/** The top of a song's ••• sheet on phones: cover, title, artist. */
+export const trackHead = (track: Track): MenuHead => {
+  const d = displayTrack(track);
+  return { title: d.title, sub: d.artist, art: d.artwork };
+};
 
 export function trackMenu(track: Track, o: TrackMenuOpts = {}): MenuItem[] {
   const sel = o.selection && o.selection.length > 1 ? o.selection : [track];

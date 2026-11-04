@@ -19,7 +19,8 @@ const within = (ms, p, what) => Promise.race([p, new Promise((_, rej) => setTime
 /** Settings is in the profile picture's menu (Spotify's top bar). */
 async function openSettings(p) {
   await p.locator(".avatar-btn").first().click();
-  await p.click(".menu button:has-text('Settings')");
+  // Phones open the account drawer, desktop the menu under the picture.
+  await p.locator(".drawer .drawer-item:has-text('Settings'), .menu button:has-text('Settings')").first().click();
 }
 
 async function test(name, fn, { youtube = false, init, userAgent } = {}) {

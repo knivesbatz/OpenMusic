@@ -1,8 +1,34 @@
-# OpenMusic 1.4.1
+# OpenMusic 1.5.0
 
-Android updates install themselves.
+The phone app redone after today's Spotify app, and Android updates that install themselves.
 
-## New in 1.4.1
+## New in 1.5.0
+- **Phones look like Spotify's app now.** Every screen was compared with recent screenshots of
+  Spotify's Android and iPhone apps and redone to match:
+  - **Home:** your picture and the All / Music / Podcasts chips share the top row; the shortcut
+    grid follows right under it.
+  - **Search:** your picture and "Search" over a white search box ("What do you want to listen
+    to?"), then Browse all.
+  - **Your Library:** your picture, "Your Library", search and +; chips for Playlists, Podcasts,
+    Albums and Artists (tap one to filter, ✕ to clear); a sort row (Recents, Recently added,
+    Alphabetical, Creator) with a list/grid switch; and one list of everything, Liked Songs
+    first.
+  - **Your picture opens a side drawer** that slides in from the left: your name with View
+    profile, then What's New, Recents, Listening history, Switch profile, Transfer playlists,
+    Private session (with a switch), Settings and privacy, Account, Support and Log out.
+  - **••• menus open as a sheet from the bottom** with the song's (or album's, playlist's)
+    cover and name at the top and big rows; submenus open inside it with a back row. Swipe it
+    down or tap outside to close.
+  - **Saving songs works like Spotify's:** a ⊕ button that turns into a green ✓ once the song is
+    saved (tap the ✓ for "Saved in"), on the song screen and on the mini player.
+  - **Mini player:** ⊕/✓ and play/pause, a thin progress line, and swipe it left or right to
+    skip to the next or previous song.
+  - **Song screen:** the header shows what you're playing from; under the lyrics there's an
+    **About the artist** card (photo, followers, bio, Follow) that opens the artist page.
+- **Mac disk images:** the build now keeps working through to the disk image check (the Mac
+  build itself had worked; the check after it looked for a file the build had cleaned up).
+
+## Also in 1.4.1
 - **Android: updates install by themselves.** When the app starts and there's a new version, it
   downloads it and installs it itself: no browser, no files app, no tapping through the APK.
   - The first time, Android asks you to allow **Install unknown apps** for the app (the settings

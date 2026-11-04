@@ -325,3 +325,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   when needed, MY_PACKAGE_REPLACED notification). Needs the ANDROID_KEYSTORE secrets (stable key)
   and one reinstall; not run on a phone yet
 - ✅ Discord hint: Activity Privacy setting when friends can't see the presence
+
+## 1.5.0
+- ✅ Phone UI after Spotify mobile (spec from reference screenshots, scratch research): Home top
+  row avatar + chips, Search header + white field, Your Library header/chips/sort+grid/mixed list,
+  account drawer, ••• bottom sheet (MenuHead), ⊕/✓ save button, mini player save + swipe to skip,
+  song screen About the artist card. e2e 52/52 with the phone paths
+- 🟡 Still unlike Spotify: playlist action row (download/share icons), pinned compact header on
+  scroll, Create tab, smart shuffle, Jam
