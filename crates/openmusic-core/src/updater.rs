@@ -1,6 +1,8 @@
 //! Updates from the project's GitHub releases (the latest one). Windows: the matching
 //! `*_x64-setup.exe` is downloaded in the background and installed when the app closes, or right
-//! away with "Restart to update". Android: the APK link is offered (Android asks before installing).
+//! away with "Restart to update" (the UI does that by itself at startup when nothing is playing).
+//! macOS: the `*_universal.dmg` is downloaded the same way; installing copies the app out of it
+//! over the running app's bundle. Android: the APK link is offered (Android asks before installing).
 
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -63,7 +65,14 @@ pub async fn check(http: &reqwest::Client, product: &str) -> Result<UpdateInfo> 
         .await?;
     let tag = v.get("tag_name").and_then(|t| t.as_str()).unwrap_or_default();
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let suffix = if cfg!(target_os = "android") { "_android-arm64.apk" } else { "_x64-setup.exe" };
+    let suffix = if cfg!(target_os = "android") {
+        "_android-arm64.apk"
+    } else if cfg!(target_os = "macos") {
+        // One disk image for Apple silicon and Intel Macs.
+        "_universal.dmg"
+    } else {
+        "_x64-setup.exe"
+    };
     let url = v.get("assets").and_then(|a| a.as_array()).and_then(|assets| {
         assets.iter().find_map(|a| {
             let name = a.get("name")?.as_str()?;
@@ -81,17 +90,33 @@ pub async fn check(http: &reqwest::Client, product: &str) -> Result<UpdateInfo> 
     })
 }
 
-/// Windows: download the installer (from github.com release assets only) into `dir`.
+/// The file this platform installs updates from.
+const PACKAGE_SUFFIX: &str = if cfg!(target_os = "macos") { "_universal.dmg" } else { "_x64-setup.exe" };
+
+/// Whether `bytes` look like this platform's package, not an error page: a Windows executable
+/// ("MZ"), or a disk image (UDIF images end with a 512-byte "koly" trailer).
+pub fn looks_like_package(bytes: &[u8], dmg: bool) -> bool {
+    if bytes.len() < 1_000_000 {
+        return false;
+    }
+    if dmg {
+        bytes[bytes.len() - 512..].starts_with(b"koly")
+    } else {
+        bytes.starts_with(b"MZ")
+    }
+}
+
+/// Windows and macOS: download the installer or disk image (github.com release assets only) into
+/// `dir`; it installs on exit or with "Restart to update".
 pub async fn download(http: &reqwest::Client, url: &str, dir: &std::path::Path) -> Result<()> {
-    if !url.starts_with("https://github.com/knivesbatz/OpenMusic/releases/download/") || !url.ends_with("_x64-setup.exe") {
+    if !url.starts_with("https://github.com/knivesbatz/OpenMusic/releases/download/") || !url.ends_with(PACKAGE_SUFFIX) {
         return Err(Error::Invalid("unexpected update URL".into()));
     }
     let bytes = http.get(url).timeout(std::time::Duration::from_secs(600)).send().await?.error_for_status()?.bytes().await?;
-    // A Windows executable, not an error page.
-    if bytes.len() < 1_000_000 || !bytes.starts_with(b"MZ") {
+    if !looks_like_package(&bytes, cfg!(target_os = "macos")) {
         return Err(Error::Invalid("the downloaded update is not an installer".into()));
     }
-    let name = url.rsplit('/').next().unwrap_or("update-setup.exe");
+    let name = url.rsplit('/').next().unwrap_or("update");
     std::fs::create_dir_all(dir)?;
     let path = dir.join(name);
     tokio::fs::write(&path, &bytes).await?;
@@ -103,13 +128,113 @@ pub async fn download(http: &reqwest::Client, url: &str, dir: &std::path::Path) 
 /// ("Restart to update"); otherwise silently (the app is closing anyway).
 pub fn run_pending(now: bool) -> bool {
     let Some(path) = PENDING.lock().ok().and_then(|mut p| p.take()) else { return false };
-    let args: &[&str] = if now { &["/P", "/R"] } else { &["/S"] };
-    std::process::Command::new(path).args(args).spawn().is_ok()
+    #[cfg(target_os = "macos")]
+    {
+        match mac::install(&path) {
+            Ok(bundle) => {
+                if now {
+                    mac::relaunch(&bundle);
+                }
+                true
+            }
+            Err(e) => {
+                log::warn!("update install failed: {e}");
+                false
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let args: &[&str] = if now { &["/P", "/R"] } else { &["/S"] };
+        std::process::Command::new(path).args(args).spawn().is_ok()
+    }
+}
+
+/// macOS: swap the running app's bundle for the one in the downloaded disk image.
+#[cfg(target_os = "macos")]
+mod mac {
+    use std::io::{Error, ErrorKind, Result};
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    /// `/Applications/YTSpot.app` from `/Applications/YTSpot.app/Contents/MacOS/YTSpot`.
+    fn current_bundle() -> Result<PathBuf> {
+        let exe = std::env::current_exe()?.canonicalize()?;
+        exe.ancestors()
+            .find(|p| p.extension().is_some_and(|e| e == "app"))
+            .map(Path::to_path_buf)
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "not running from an .app bundle"))
+    }
+
+    fn run(cmd: &mut Command) -> Result<()> {
+        let out = cmd.output()?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(Error::other(String::from_utf8_lossy(&out.stderr).trim().to_string()))
+        }
+    }
+
+    /// Mount the image, copy its app next to the installed one, then swap them. Returns the
+    /// bundle path. Fails (leaving the installed app as it was) when its folder isn't writable.
+    pub fn install(dmg: &Path) -> Result<PathBuf> {
+        let bundle = current_bundle()?;
+        let parent = bundle.parent().ok_or_else(|| Error::other("no parent folder"))?;
+        let name = bundle.file_name().ok_or_else(|| Error::other("no bundle name"))?.to_string_lossy().to_string();
+        let mount = std::env::temp_dir().join(format!("openmusic-update-{}", std::process::id()));
+        std::fs::create_dir_all(&mount)?;
+        run(Command::new("hdiutil").args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint"]).arg(&mount).arg(dmg))?;
+        let staged = parent.join(format!(".{name}.update"));
+        let copied = (|| {
+            let app = std::fs::read_dir(&mount)?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .find(|p| p.extension().is_some_and(|e| e == "app"))
+                .ok_or_else(|| Error::new(ErrorKind::NotFound, "no app in the disk image"))?;
+            let _ = std::fs::remove_dir_all(&staged);
+            run(Command::new("ditto").arg(&app).arg(&staged))
+        })();
+        let _ = run(Command::new("hdiutil").args(["detach", "-force"]).arg(&mount));
+        let _ = std::fs::remove_dir(&mount);
+        copied?;
+        let old = parent.join(format!(".{name}.old"));
+        let _ = std::fs::remove_dir_all(&old);
+        std::fs::rename(&bundle, &old)?;
+        if let Err(e) = std::fs::rename(&staged, &bundle) {
+            let _ = std::fs::rename(&old, &bundle);
+            return Err(e);
+        }
+        let _ = std::fs::remove_dir_all(&old);
+        let _ = std::fs::remove_file(dmg);
+        Ok(bundle)
+    }
+
+    /// Open the new app once this one has quit (the single-instance check would hand a second
+    /// copy straight back to this one).
+    pub fn relaunch(bundle: &Path) {
+        let _ = Command::new("/bin/sh")
+            .arg("-c")
+            .arg("sleep 1.5; /usr/bin/open \"$0\"")
+            .arg(bundle)
+            .spawn();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recognizes_packages() {
+        let mut exe = vec![0u8; 1_200_000];
+        exe[..2].copy_from_slice(b"MZ");
+        assert!(looks_like_package(&exe, false));
+        assert!(!looks_like_package(&exe, true));
+        let mut dmg = vec![0u8; 1_200_000];
+        let n = dmg.len();
+        dmg[n - 512..n - 508].copy_from_slice(b"koly");
+        assert!(looks_like_package(&dmg, true));
+        assert!(!looks_like_package(b"<html>Not Found</html>", false));
+    }
 
     #[test]
     fn compares_versions() {

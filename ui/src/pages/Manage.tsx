@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { checkForUpdates } from "../store/update";
+import { checkForUpdates, updatesInBrowser } from "../store/update";
 
 const LASTFM_API = "https://www.last.fm/api/account/create";
 import { api, errorMessage, inTauri } from "../api";
@@ -548,7 +548,7 @@ export function SettingsPage() {
             {t("checkForUpdates")}
           </button>
         </div>
-        {!isMobileApp() && <Toggle k="autoUpdate" label={t("autoUpdate")} hint={t("autoUpdateHint")} />}
+        {!updatesInBrowser() && <Toggle k="autoUpdate" label={t("autoUpdate")} hint={t("autoUpdateHint")} />}
         {isMobileApp() && (
           <div className="setting">
             <div className="grow">

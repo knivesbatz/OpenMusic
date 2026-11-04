@@ -1630,7 +1630,7 @@ pub async fn pip_toggle(app: AppHandle, state: S<'_>) -> Result<bool> {
         let _ = w.close();
         return Ok(false);
     }
-    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", tauri::WebviewUrl::App("index.html#pip".into())), &state)
+    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", crate::ui_url(state.flavor, "index.html#pip")), &state)
         // Named after the app so it is easy to pick in Discord's and OBS's window lists.
         .title(format!("{} mini player", app.package_info().name))
         .inner_size(320.0, 420.0)
@@ -1971,6 +1971,25 @@ async fn artist_card(app: AppHandle, state: S<'_>, a: Artist) -> Artist {
     }
 }
 
+/// Delete one of your own playlists from your YouTube account (the UI asks first). The library is
+/// reloaded afterwards so it disappears everywhere.
+#[tauri::command]
+pub async fn yt_delete_playlist(app: AppHandle, state: S<'_>, id: String) -> Result<()> {
+    if state.flavor != Flavor::YouTube {
+        return Err(Error::Unsupported("deleting playlists".into()));
+    }
+    yt_call!(app, state, |y| y.delete_playlist(&id))?;
+    // Take it out of the cached library too, so the reload doesn't bring it back for 15 minutes.
+    let cached: Option<Library> = state.db().cache_get("yt.library", true)?;
+    if let Some(mut lib) = cached {
+        let gone = ytm::playlist_id_of(&id);
+        lib.playlists.retain(|p| ytm::playlist_id_of(&p.id) != gone);
+        state.db().cache_put("yt.library", &lib, 15 * 60)?;
+    }
+    let _ = app.emit("playlists-changed", ());
+    Ok(())
+}
+
 /// Channels the signed-in Google account can use: the personal one and brand accounts.
 #[tauri::command]
 pub async fn yt_accounts(app: AppHandle, state: S<'_>) -> Result<Vec<YtAccount>> {
@@ -2139,12 +2158,22 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
 ) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, M> {
     #[cfg(windows)]
     return b.additional_browser_args(&crate::safe_mode::browser_args(state.safe_mode.get().is_some(), crate::smtc::available()));
-    #[cfg(not(windows))]
+    // macOS: present as Safari. Google turns sign-in down in web views that don't name a browser
+    // ("This browser or app may not be secure"), and the sign-in window shares this setting.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = state;
+        return b.user_agent(MAC_USER_AGENT);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = state;
         b
     }
 }
+
+#[cfg(target_os = "macos")]
+const MAC_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15";
 
 /// Turn the webview's GPU acceleration on or off; takes effect after a restart.
 #[tauri::command(async)]
@@ -2303,7 +2332,8 @@ pub async fn update_check(app: AppHandle, state: S<'_>) -> Result<crate::updater
     crate::updater::check(&state.http, &product).await
 }
 
-/// Windows: fetch the new installer in the background; it installs when the app closes.
+/// Windows and macOS: fetch the new installer / disk image in the background; it installs when the
+/// app closes or on "Restart to update".
 #[tauri::command]
 pub async fn update_download(state: S<'_>, url: String) -> Result<()> {
     crate::updater::download(&state.http, &url, &state.dirs.data.join("updates")).await
@@ -2313,7 +2343,9 @@ pub async fn update_download(state: S<'_>, url: String) -> Result<()> {
 #[tauri::command]
 pub fn update_restart(app: AppHandle) -> Result<()> {
     if !crate::updater::run_pending(true) {
-        return Err(Error::Invalid("no update has been downloaded".into()));
+        return Err(Error::Invalid(
+            "The update couldn't be installed. Download the new version from the release page on GitHub.".into(),
+        ));
     }
     app.exit(0);
     Ok(())

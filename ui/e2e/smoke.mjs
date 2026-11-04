@@ -1011,6 +1011,71 @@ await test("Your Library: Spotify's Sort by and View as menu, remembered", async
   },
 });
 
+await test("Updates: a new version found at startup downloads and installs while nothing plays", async (p) => {
+  await p.waitForFunction(() => window.__CALLS__.includes("update_restart"), null, { timeout: 12000 });
+  const calls = await p.evaluate(() => window.__CALLS__);
+  assert.ok(calls.indexOf("update_check") < calls.indexOf("update_download") && calls.indexOf("update_download") < calls.indexOf("update_restart"), calls.join(","));
+  assert.ok((await p.locator(".toast").allTextContents()).some((x) => x.includes("Updating to 9.9.9")));
+  assert.deepEqual(await p.evaluate(() => window.__KV["update.autoInstall"]?.version), "9.9.9");
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    window.__KV = {};
+    d.kv_set = (a) => ((window.__KV[a.key] = a.value), null);
+    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_x64-setup.exe", ready: false };
+    d.update_download = null;
+    d.update_restart = null;
+  },
+});
+
+await test("Updates: a version already tried at a recent start isn't installed again", async (p) => {
+  await p.waitForFunction(() => window.__CALLS__.includes("update_download"), null, { timeout: 12000 });
+  await p.waitForTimeout(2500);
+  assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("update_restart"))));
+  // It waits for the app to close instead: the banner offers Restart to update.
+  await p.waitForSelector(".update-banner");
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.kv_get = (a) => (a.key === "update.autoInstall" ? { version: "9.9.9", at: Date.now() - 60_000 } : null);
+    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_x64-setup.exe", ready: false };
+    d.update_download = null;
+    d.update_restart = null;
+  },
+});
+
+await test("YTSpot: your own playlist can be deleted from YouTube, after a confirmation", async (p) => {
+  const lib = p.locator(".lib-list");
+  const row = lib.locator(".side-item", { hasText: "My mix" });
+  await row.waitFor();
+  await row.click({ button: "right" });
+  const items = (await p.locator(".menu > button").allTextContents()).map((x) => x.trim());
+  assert.ok(items.includes("Delete from YouTube"), items.join(", "));
+  assert.ok(!items.some((x) => x.includes("Open in YouTube")), items.join(", "));
+  await p.click('.menu button:has-text("Delete from YouTube")');
+  await p.waitForSelector(".dialog");
+  assert.ok((await p.locator(".dialog").textContent()).includes("can't be undone"));
+  await p.click('.dialog button:has-text("Delete")');
+  await p.waitForFunction(() => window.__DELETED?.length === 1);
+  assert.equal(await p.evaluate(() => window.__DELETED[0]), "yt:VLPLmine");
+  await p.waitForFunction(() => ![...document.querySelectorAll(".lib-list .side-item .name")].some((n) => n.textContent === "My mix"));
+  // Built-in lists (Liked Music, mixes) never offer it.
+  await lib.locator(".side-item", { hasText: "Supermix" }).click({ button: "right" });
+  assert.ok(!(await p.locator(".menu > button").allTextContents()).some((x) => x.includes("Delete from YouTube")));
+}, {
+  youtube: true,
+  init: () => {
+    const d = window.__MOCK__;
+    window.__DELETED = [];
+    const mine = { id: "yt:VLPLmine", title: "My mix", trackCount: 3, owner: "Me", local: false };
+    const mix = { id: "yt:VLRDTMAK5uy", title: "Supermix", local: false };
+    let pls = [mine, mix];
+    const base = d.library;
+    d.library = () => ({ ...(typeof base === "function" ? base() : base), playlists: pls });
+    d.yt_delete_playlist = (a) => (window.__DELETED.push(a.id), (pls = pls.filter((x) => x.id !== a.id)), null);
+  },
+});
+
 await browser.close();
 server.httpServer.close();
 const failed = results.filter((r) => !r.ok).length;

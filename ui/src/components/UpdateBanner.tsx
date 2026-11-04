@@ -1,6 +1,5 @@
 import { useT } from "../i18n";
-import { isMobileApp } from "../store/app";
-import { downloadUpdate, restartToUpdate, useUpdate } from "../store/update";
+import { downloadUpdate, restartToUpdate, updatesInBrowser, useUpdate } from "../store/update";
 
 /** A small card above the player when a new version is available or ready to install. */
 export function UpdateBanner() {
@@ -25,7 +24,7 @@ export function UpdateBanner() {
         )}
         {status === "available" && (
           <button className="pill primary small" onClick={downloadUpdate}>
-            {isMobileApp() ? t("downloadUpdate") : t("updateNow")}
+            {updatesInBrowser() ? t("downloadUpdate") : t("updateNow")}
           </button>
         )}
       </div>

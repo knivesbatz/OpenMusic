@@ -1,0 +1,93 @@
+name: macos
+
+# Mac disk images: one universal app (Apple silicon and Intel) per product. Ad-hoc signed and not
+# notarized (no Apple Developer account), so the first launch needs System Settings → Privacy &
+# Security → Open Anyway. Kept out of build.yml because macOS runners can queue for a long time:
+# Windows and Android releases never wait for them. build.yml's release job starts this workflow
+# with the release's tag, and the disk images are added to that release when they're built.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Add the disk images to this existing release (e.g. v1.4.0). Empty = artifacts only."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos-${{ github.ref }}-${{ inputs.release_tag }}
+  # A newer push to a pull request replaces the build of the older one.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [ytspot, plexspot]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: macos-${{ matrix.app }}
+      - name: Core tests on macOS
+        if: matrix.app == 'ytspot'
+        run: cargo test -p openmusic-core
+      - name: UI build
+        run: |
+          npm ci
+          npm run build
+        working-directory: ui
+      - name: Bundle ${{ matrix.app }} disk image
+        env:
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+          DISCORD_CLIENT_ID_YTSPOT: ${{ vars.DISCORD_CLIENT_ID_YTSPOT || secrets.DISCORD_CLIENT_ID_YTSPOT }}
+          DISCORD_CLIENT_ID_PLEXSPOT: ${{ vars.DISCORD_CLIENT_ID_PLEXSPOT || secrets.DISCORD_CLIENT_ID_PLEXSPOT }}
+        run: ../../../ui/node_modules/.bin/tauri build --target universal-apple-darwin --bundles dmg
+        working-directory: apps/${{ matrix.app }}/src-tauri
+      - name: Check the app bundle
+        run: |
+          app=$(ls -d target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
+          echo "$app"
+          lipo -archs "$app/Contents/MacOS/"*
+          codesign --verify --verbose=2 "$app"
+          ls -l target/universal-apple-darwin/release/bundle/dmg/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.app }}-macos
+          path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  upload:
+    needs: macos
+    # Also when only one of the two apps built: attach what there is.
+    if: always() && inputs.release_tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-macos"
+          path: dmg
+          merge-multiple: true
+      - name: Add the disk images to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          ls -l dmg
+          gh release upload "$TAG" dmg/*.dmg --repo "$GITHUB_REPOSITORY" --clobber

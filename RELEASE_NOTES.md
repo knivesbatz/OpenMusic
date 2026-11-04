@@ -1,8 +1,37 @@
-# OpenMusic 1.3.0
+# OpenMusic 1.4.0
 
-Your profile page, Spotify's new top bar and Browse all.
+YTSpot and PLEXSpot for Mac.
 
-## New in 1.3.0
+## New in 1.4.0
+- **Mac apps.** `YTSpot_1.4.0_universal.dmg` and `PLEXSpot_1.4.0_universal.dmg` run on Apple
+  silicon and Intel Macs with macOS 11 (Big Sur) or later. Open the disk image and drag the app
+  into Applications.
+  - **First launch:** the apps aren't notarized by Apple (that needs a paid developer account),
+    so macOS says it can't check them. Open **System Settings → Privacy & Security**, scroll down,
+    click **Open Anyway** next to the app's name and confirm. After that it opens normally.
+  - Your sign-in is kept in the macOS Keychain.
+  - The menu bar icon, the mini player, Discord Rich Presence, launch at login and Last.fm are
+    all there.
+  - **Updates itself**, like on Windows: see below.
+  - Windows-only parts stay on Windows: the custom title bar (Macs keep their own) and "Share
+    audio when streaming on Discord".
+- **YTSpot: delete your YouTube playlists from the app.** Right-click one of your own playlists
+  (or use its ••• menu) and choose **Delete from YouTube**. After you confirm, it's deleted from
+  your YouTube account, so it's gone from YouTube Music, YouTube and your other devices too; this
+  can't be undone. Only playlists you made can be deleted: the app checks with YouTube first, and
+  for playlists you saved from someone else (and Liked Music or mixes) there's still **Hide
+  playlist**, which only hides them in the app.
+- **Updates install when the app starts** (Windows and Mac). The app checks GitHub for a new
+  version as soon as it opens. If there is one, it downloads it and, while nothing is playing
+  yet, installs it and reopens itself, a few seconds after you open it. If you've already
+  started playing, it waits and installs when you close the app (or press "Restart to update").
+  Settings → "Install updates automatically" turns this off. If an install doesn't go through,
+  the app doesn't try the same version again at every start; it waits a few hours. On a Mac the
+  new version replaces the app where it is (usually Applications). If macOS doesn't let it write
+  there, the app says the update couldn't be installed; download the new disk image from the
+  release page instead.
+
+## Also in 1.3.0
 - **Profile page** (click your picture at the top right → Profile), laid out like Spotify's:
   - your picture and name, with how many **public playlists** you have and how many artists
     you're **following**

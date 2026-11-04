@@ -42,6 +42,11 @@ cd ui && npm run build && cd ../apps/ytspot/src-tauri && ../../../ui/node_module
   The `keyring` crate also builds there.
 - Windows installers come from CI (`.github/workflows/build.yml`). Push to `main` and download the
   `ytspot-windows` / `plexspot-windows` artifacts, or push a tag `vX.Y.Z` to publish a GitHub release.
+- Mac disk images (`*_universal.dmg`) come from `.github/workflows/macos.yml` (artifacts `ytspot-macos` /
+  `plexspot-macos`); it also runs the core tests on macOS. build.yml's release job starts it with the
+  release tag and it adds the disk images to that release, so a slow macOS runner never holds up a release. On macOS the UI is served from
+  `http://localhost:<port>` (`ui_url`, tauri-plugin-localhost, `capabilities/macos.json`); keep
+  window URLs going through `ui_url`.
 - Real provider accounts aren't available in CI. Never claim a provider flow is verified unless it
   ran against a real account. Parser tests use recorded JSON shapes.
 
@@ -56,8 +61,9 @@ cd ui && npm run build && cd ../apps/ytspot/src-tauri && ../../../ui/node_module
   these with `artUrl()`, and `art.rs` serves them from a disk cache. Never store tokens in metadata.
 - Secrets (Plex token/session, YouTube cookies, Last.fm keys/session) go in the OS
   credential store (`secrets.rs`), never in SQLite or settings.
-- App playlists are SQLite-only. PLEXSpot never writes Plex/Plexamp playlists, and YTSpot never deletes
-  remote playlists. "Hide playlist" is local and permanent.
+- App playlists are SQLite-only. PLEXSpot never writes Plex/Plexamp playlists. YTSpot deletes a remote
+  playlist only when the user picks "Delete from YouTube" on one they own (checked against the page's
+  editable header, after a confirmation). "Hide playlist" is local and permanent.
 - User-visible strings go through `ui/src/i18n.ts` (`en` + `ja`, typed so a missing `ja` key fails `tsc`).
 - Spotify playlist transfer is handed off to Soundiiz (Import page); there is no Spotify API code.
 - Don't add controls that do nothing. If a provider can't do something (YouTube downloads, YouTube
