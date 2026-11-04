@@ -130,7 +130,6 @@ p { margin: 0 0 8px; }
 .topbar-title .play-btn { width: 40px; height: 40px; background: var(--green); flex: none; }
 .topbar-title span { font-size: 1.25rem; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 32vw; }
 .round-btn { width: 32px; height: 32px; border-radius: 50%; background: #0009; display: grid; place-items: center; color: var(--text); }
-.round-btn:hover:not(:disabled) { transform: scale(1.04); }
 .round-btn.home { width: 44px; height: 44px; background: var(--surface-3); }
 .search-box { display: flex; align-items: center; gap: 8px; flex: 1; max-width: 480px; }
 .search-input { flex: 1; display: flex; align-items: center; gap: 10px; background: var(--surface-3); border-radius: 500px; padding: 0 14px; height: 44px; color: var(--muted); border: 2px solid transparent; transition: border-color 0.15s; }
@@ -149,7 +148,6 @@ p { margin: 0 0 8px; }
 .icon-btn.lg { padding: 8px; }
 .icon-btn .one { position: absolute; font-size: 8px; font-weight: 800; top: 9px; left: 0; right: 0; text-align: center; }
 .pill { border-radius: 500px; padding: 10px 24px; font-weight: 700; background: var(--text); color: #000; transition: transform 0.1s; }
-.pill:hover:not(:disabled) { transform: scale(1.04); }
 .pill.primary { background: var(--green); color: #000; }
 .pill.primary:hover:not(:disabled) { background: var(--green-hi); }
 .pill.ghost { background: transparent; color: var(--text); border: 1px solid #7c7c7c; }
@@ -167,7 +165,7 @@ p { margin: 0 0 8px; }
 .chip:hover { background: #2f2f2f; }
 .chip.on { background: var(--text); color: #000; }
 .fab { width: 48px; height: 48px; border-radius: 50%; background: var(--green); color: #000; display: grid; place-items: center; box-shadow: 0 8px 8px #0000004d; transition: transform 0.15s, opacity 0.2s, background 0.15s; }
-.fab:hover { transform: scale(1.04); background: var(--green-hi); }
+.fab:hover { background: var(--green-hi); }
 .fab.big { width: 56px; height: 56px; }
 .badge { display: inline-block; background: #ffffff99; color: #000; border-radius: 2px; font-size: 0.625rem; font-weight: 700; padding: 0 4px; margin-right: 6px; line-height: 16px; vertical-align: 1px; }
 .badge-pill { background: #0006; color: var(--text); border-radius: 500px; padding: 4px 12px; font-size: 0.8125rem; font-weight: 700; }
@@ -283,7 +281,6 @@ p { margin: 0 0 8px; }
 .pb-center { display: flex; flex-direction: column; align-items: center; gap: 4px; max-width: 722px; width: 100%; justify-self: center; }
 .transport { display: flex; align-items: center; gap: 12px; }
 .play-btn { width: 32px; height: 32px; border-radius: 50%; background: var(--text); color: #000; display: grid; place-items: center; transition: transform 0.1s; }
-.play-btn:hover { transform: scale(1.06); }
 .play-btn.big { width: 64px; height: 64px; }
 .play-btn.loading { animation: pulse 1s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.6; } }
@@ -356,8 +353,7 @@ p { margin: 0 0 8px; }
 .field input, .form input { background: #3e3e3e; border: 1px solid transparent; border-radius: 4px; padding: 10px 12px; color: var(--text); }
 .field input:focus, .form input:focus { border-color: #fff; outline: none; }
 .toasts { position: fixed; bottom: calc(var(--player-h) + 24px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 70; pointer-events: none; align-items: center; }
-.toast { background: #2e77d0; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; box-shadow: 0 8px 24px #0008; animation: rise 0.2s var(--ease); max-width: 60vw; }
-@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+.toast { background: #2e77d0; color: #fff; padding: 10px 16px; border-radius: 8px; font-weight: 600; box-shadow: 0 8px 24px #0008; max-width: 60vw; }
 
 /* ---- fullscreen --------------------------------------------------------------------------- */
 .fullscreen-host { position: fixed; inset: 0; z-index: 40; background: var(--black); }
@@ -615,26 +611,6 @@ p { margin: 0 0 8px; }
 .pq-buttons button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 6px; border-radius: 12px; background: #2a2a2a; font-weight: 700; font-size: 0.8125rem; color: var(--text); }
 .pq-buttons button.on { color: var(--green); }
 
-/* ---- motion: short, opacity/transform only (cheap on any GPU); off with reduced motion -------- */
-@keyframes om-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-@keyframes om-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes om-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
-@keyframes om-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
-@keyframes om-heart { 0% { transform: scale(1); } 40% { transform: scale(1.3); } 100% { transform: scale(1); } }
-.page { animation: om-fade-up 0.22s ease-out; }
-.art img { animation: om-fade 0.3s ease-out; }
-.fullscreen { animation: om-fade 0.2s ease-out; }
-.pp { animation: om-sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.pq-backdrop { animation: om-fade 0.2s ease-out; }
-.pq-sheet { animation: om-sheet-up 0.26s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.dialog { animation: om-pop-in 0.14s ease-out; transform-origin: top left; }
-.card .card-art .art, .shortcut { transition: transform 0.2s ease-out, background 0.2s; }
-.card:hover .card-art .art { transform: translateY(-3px); }
-.play-btn:active, .fab:active, .icon-btn:active, .pill:active, .chip:active, .tv-tab:active, .pq-buttons button:active { transform: scale(0.94); }
-.icon-btn, .pill, .chip { transition: transform 0.1s, color 0.15s, background 0.15s; }
-.like.on svg, .save-group .icon-btn.on svg { animation: om-heart 0.3s ease-out; }
-.tl-row { transition: background 0.12s; }
-
 /* ---- podcast pages (Spotify style) --------------------------------------------------------------- */
 .podcast-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 340px); gap: 40px; align-items: start; }
 .podcast-about { position: sticky; top: 80px; }
@@ -660,7 +636,7 @@ p { margin: 0 0 8px; }
   .grad-episodes.hero-art { width: 60vw; height: 60vw; max-width: 260px; max-height: 260px; align-self: center; }
 }
 
-.update-banner { position: fixed; right: 16px; bottom: calc(var(--player-h) + 16px); z-index: 65; display: flex; align-items: center; gap: 16px; max-width: min(520px, calc(100vw - 32px)); padding: 14px 16px; border-radius: 10px; background: #282828; box-shadow: 0 12px 32px #000a; animation: om-fade-up 0.25s ease-out; }
+.update-banner { position: fixed; right: 16px; bottom: calc(var(--player-h) + 16px); z-index: 65; display: flex; align-items: center; gap: 16px; max-width: min(520px, calc(100vw - 32px)); padding: 14px 16px; border-radius: 10px; background: #282828; box-shadow: 0 12px 32px #000a; }
 @media (max-width: 760px) { .update-banner { left: 12px; right: 12px; bottom: calc(var(--player-h) + 72px); flex-direction: column; align-items: stretch; } }
 
 /* ---- classic mobile library: Music / Podcasts, then Playlists / Artists / Albums ------------- */
@@ -687,7 +663,7 @@ p { margin: 0 0 8px; }
 .sort-btn:hover { color: var(--text); }
 
 /* ---- "Saved in" panel ------------------------------------------------------------------------- */
-.savedin { position: fixed; z-index: 60; width: 300px; max-height: min(480px, 80vh); display: flex; flex-direction: column; background: #282828; border-radius: 8px; box-shadow: 0 16px 32px #00000080; padding: 6px; animation: om-pop-in 0.14s ease-out; }
+.savedin { position: fixed; z-index: 60; width: 300px; max-height: min(480px, 80vh); display: flex; flex-direction: column; background: #282828; border-radius: 8px; box-shadow: 0 16px 32px #00000080; padding: 6px; }
 .si-head { padding: 10px 10px 6px; font-weight: 700; font-size: 0.875rem; }
 .si-new { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 4px; font-size: 0.875rem; color: var(--text); }
 .si-new:hover { background: #3e3e3e; }
@@ -722,7 +698,7 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 /* ---- Search: "Browse your library" tiles ------------------------------------------------------ */
 .browse-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-top: 8px; }
 .browse-tile { position: relative; aspect-ratio: 1.7; border-radius: 8px; overflow: hidden; padding: 14px 16px; display: flex; align-items: flex-start; text-align: left; color: #fff; font-weight: 800; font-size: 1.125rem; line-height: 1.2; transition: transform 0.15s ease-out, filter 0.15s; }
-.browse-tile:hover, .browse-tile:focus-visible { transform: scale(1.02); filter: brightness(1.08); }
+.browse-tile:hover, .browse-tile:focus-visible { filter: brightness(1.08); }
 .bt-icon { position: absolute; right: -4px; bottom: -6px; transform: rotate(22deg); opacity: 0.9; filter: drop-shadow(0 4px 10px #0006); }
 .bt-icon svg { width: 64px; height: 64px; }
 
@@ -900,76 +876,77 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 .menu button.danger .mi svg { color: inherit; }
 .menu button { transition: background 0.1s; }
 
-/* ---- motion, Spotify-like: quick ease-out, transform/opacity only; reduced motion turns it off -- */
-:root { --ease-out: cubic-bezier(0.3, 0, 0, 1); --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1); }
-@keyframes om-rise-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-@keyframes om-scale-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
-@keyframes om-slide-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
-@keyframes om-swap { from { opacity: 0; transform: scale(0.6) rotate(-30deg); } to { opacity: 1; transform: none; } }
-@keyframes om-eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
-.page { animation: om-rise-in 0.32s var(--ease-out); }
-/* Cards and shortcuts arrive one after another. */
-.shelf-row > *, .grid > *, .shortcuts > *, .browse-tiles > * { animation: om-rise-in 0.4s var(--ease-out) backwards; }
-.shelf-row > :nth-child(2), .grid > :nth-child(2), .shortcuts > :nth-child(2), .browse-tiles > :nth-child(2) { animation-delay: 30ms; }
-.shelf-row > :nth-child(3), .grid > :nth-child(3), .shortcuts > :nth-child(3), .browse-tiles > :nth-child(3) { animation-delay: 60ms; }
-.shelf-row > :nth-child(4), .grid > :nth-child(4), .shortcuts > :nth-child(4), .browse-tiles > :nth-child(4) { animation-delay: 90ms; }
-.shelf-row > :nth-child(5), .grid > :nth-child(5), .shortcuts > :nth-child(5), .browse-tiles > :nth-child(5) { animation-delay: 120ms; }
-.shelf-row > :nth-child(6), .grid > :nth-child(6), .shortcuts > :nth-child(6), .browse-tiles > :nth-child(6) { animation-delay: 150ms; }
-.shelf-row > :nth-child(7), .grid > :nth-child(7), .shortcuts > :nth-child(7), .browse-tiles > :nth-child(7) { animation-delay: 180ms; }
-.shelf-row > :nth-child(n + 8), .grid > :nth-child(n + 8), .shortcuts > :nth-child(n + 8), .browse-tiles > :nth-child(n + 8) { animation-delay: 210ms; }
-/* Album, playlist and artist headers: the cover grows in, the title follows. */
-.hero .hero-art, .hero .hero-art-btn { animation: om-scale-in 0.45s var(--ease-out) backwards; }
-.hero .hero-text { animation: om-rise-in 0.45s var(--ease-out) 60ms backwards; }
-.action-bar { animation: om-rise-in 0.4s var(--ease-out) 110ms backwards; }
-/* Hover and press: cards lift, buttons grow a little and give way when pressed. */
-.card { transition: background 0.25s var(--ease-out), transform 0.25s var(--ease-out); }
-.card:hover .card-art .art { transform: translateY(-4px); box-shadow: 0 14px 30px #0009; }
-.card .card-art .art { transition: transform 0.3s var(--ease-out), box-shadow 0.3s var(--ease-out); }
-.card-art .fab { transition: opacity 0.25s var(--ease-out), transform 0.3s var(--ease-spring), background 0.15s; }
-.card:active { transform: scale(0.98); }
-.shortcut { transition: background 0.25s var(--ease-out), transform 0.15s var(--ease-out); }
-.shortcut:active { transform: scale(0.98); }
-.shortcut .fab { transition: opacity 0.2s var(--ease-out), transform 0.3s var(--ease-spring); transform: scale(0.85); }
-.shortcut:hover .fab, .shortcut:focus-within .fab { transform: none; }
-.pill:hover:not(:disabled), .play-btn:hover:not(:disabled) { transform: scale(1.04); }
-.pill, .play-btn, .fab { transition: transform 0.18s var(--ease-out), background 0.15s, color 0.15s, box-shadow 0.2s; }
-.pill:active:not(:disabled), .play-btn:active, .fab:active { transform: scale(0.95); transition-duration: 0.06s; }
-.side-item, .nav-item, .side-cat, .lib-row, .q-row, .tl-row { transition: background 0.15s var(--ease-out), color 0.15s; }
-.icon-btn svg { transition: transform 0.18s var(--ease-out); }
-.icon-btn:hover:not(:disabled) svg { transform: scale(1.06); }
-.icon-btn:active:not(:disabled) svg { transform: scale(0.9); }
-/* Play/pause swaps its icon with a small spin; the like heart pops with a spring. */
-.play-btn .swap, .pb-mobile .swap { display: grid; place-items: center; animation: om-swap 0.22s var(--ease-out); }
-.like.on svg, .save-group .icon-btn.on svg { animation: om-heart 0.4s var(--ease-spring); }
-/* A new song slides into the player bar. */
-.pb-art { animation: om-scale-in 0.35s var(--ease-out); }
-.pb-meta { animation: om-rise-in 0.35s var(--ease-out); }
-/* Side panels and menus. */
-.queue-panel { animation: om-slide-in 0.3s var(--ease-out); }
-.dialog, .savedin { animation: om-scale-in 0.16s var(--ease-out); }
-/* Menus fade in with a 4 px drop, not a zoom: zooming moved the lower rows out from under the
-   pointer (into the row above) while the menu opened, and threw off its fit-on-screen measure. */
+/* ---- motion -----------------------------------------------------------------------------------
+   One quiet system: opacity and small moves only (cheap on any GPU), one easing curve, three
+   durations. Things fade in and settle; nothing spins, bounces, zooms or grows on hover. Pressing
+   gives a slight give. "Reduce motion" (or the system setting) turns all of it off. */
+:root {
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --t-fast: 120ms;
+  --t-med: 200ms;
+  --t-slow: 280ms;
+}
+@keyframes om-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes om-fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes om-fade-in-scale { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes om-slide-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes om-sheet-up { from { transform: translateY(100%); } to { transform: none; } }
 @keyframes om-menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-.menu { animation: om-menu-in 0.14s var(--ease-out); }
-.toast { animation: om-rise-in 0.3s var(--ease-spring); }
-/* The song that's playing shows bouncing bars in place of its number. */
+@keyframes om-heart { 50% { transform: scale(1.12); } }
+@keyframes om-eq { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(1); } }
+
+/* Pages, and what's on them: one soft fade-up, the first few cards a beat apart. */
+.page { animation: om-fade-up var(--t-med) var(--ease-out); }
+.shelf-row > *, .grid > *, .shortcuts > *, .browse-tiles > * { animation: om-fade var(--t-slow) var(--ease-out) backwards; }
+.shelf-row > :nth-child(2), .grid > :nth-child(2), .shortcuts > :nth-child(2), .browse-tiles > :nth-child(2) { animation-delay: 20ms; }
+.shelf-row > :nth-child(3), .grid > :nth-child(3), .shortcuts > :nth-child(3), .browse-tiles > :nth-child(3) { animation-delay: 40ms; }
+.shelf-row > :nth-child(4), .grid > :nth-child(4), .shortcuts > :nth-child(4), .browse-tiles > :nth-child(4) { animation-delay: 60ms; }
+.shelf-row > :nth-child(n + 5), .grid > :nth-child(n + 5), .shortcuts > :nth-child(n + 5), .browse-tiles > :nth-child(n + 5) { animation-delay: 80ms; }
+.hero .hero-art, .hero .hero-art-btn, .hero .hero-text, .action-bar { animation: om-fade var(--t-slow) var(--ease-out) backwards; }
+.art img { animation: om-fade var(--t-slow) var(--ease-out); }
+
+/* Hover changes colour and background only; covers lift a couple of pixels. */
+.card, .shortcut, .top-card, .browse-tile { transition: background var(--t-med) var(--ease-out), transform var(--t-fast) var(--ease-out); }
+.card .card-art .art { transition: transform var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out); }
+.card:hover .card-art .art { transform: translateY(-2px); box-shadow: 0 10px 24px #0008; }
+.card-art .fab, .shortcut .fab { transition: opacity var(--t-med) var(--ease-out), transform var(--t-med) var(--ease-out), background var(--t-fast); }
+.shortcut .fab { transform: translateY(4px); }
+.shortcut:hover .fab, .shortcut:focus-within .fab { transform: none; }
+.side-item, .nav-item, .side-cat, .lib-row, .q-row, .tl-row, .ep-row, .menu button { transition: background var(--t-fast) var(--ease-out), color var(--t-fast); }
+.icon-btn, .pill, .chip, .play-btn, .fab, .sort-btn { transition: transform var(--t-fast) var(--ease-out), color var(--t-fast), background var(--t-fast), opacity var(--t-med); }
+
+/* Pressing gives a little. */
+.card:active, .shortcut:active, .browse-tile:active { transform: scale(0.985); }
+.pill:active:not(:disabled), .play-btn:active, .fab:active, .icon-btn:active:not(:disabled), .chip:active, .tv-tab:active, .pq-buttons button:active { transform: scale(0.96); }
+
+/* Player: play/pause and a new song cross-fade; a liked heart gives one small beat. */
+.play-btn .swap, .pb-mobile .swap { display: grid; place-items: center; animation: om-fade var(--t-fast) var(--ease-out); }
+.pb-art, .pb-meta { animation: om-fade var(--t-med) var(--ease-out); }
+.like.on svg, .save-group .icon-btn.on svg { animation: om-heart var(--t-med) var(--ease-out); }
+
+/* Panels, sheets, menus, dialogs, toasts. */
+.queue-panel { animation: om-slide-in var(--t-med) var(--ease-out); }
+.menu { animation: om-menu-in var(--t-fast) var(--ease-out); }
+.dialog, .savedin { animation: om-fade-in-scale var(--t-fast) var(--ease-out); }
+.toast, .update-banner { animation: om-fade-up var(--t-med) var(--ease-out); }
+.fullscreen, .pq-backdrop { animation: om-fade var(--t-med) var(--ease-out); }
+.pp, .pq-sheet { animation: om-sheet-up var(--t-slow) var(--ease-out); }
+.fs-art { animation: om-fade-in-scale var(--t-slow) var(--ease-out); }
+
+/* The song that's playing shows moving bars in place of its number. */
 .tl-num .eq { display: inline-flex; align-items: flex-end; justify-content: flex-end; gap: 2px; height: 14px; width: 14px; }
 .tl-num .eq i { width: 3px; height: 100%; border-radius: 1px; background: var(--green); transform-origin: bottom; animation: om-eq 0.9s ease-in-out infinite; }
 .tl-num .eq i:nth-child(2) { animation-delay: -0.3s; animation-duration: 0.8s; }
 .tl-num .eq i:nth-child(3) { animation-delay: -0.6s; animation-duration: 1s; }
-/* Loading: the spinner only shows up if loading takes a moment, so quick pages don't flash. */
-.center[role="status"] { animation: om-fade 0.3s ease-out 0.2s backwards; }
-/* Song screen (phone) and fullscreen: the cover eases back a little while paused, like Spotify. */
-.pp-art { transition: transform 0.45s var(--ease-out), box-shadow 0.45s var(--ease-out); }
-.pp-art.paused { transform: scale(0.9); box-shadow: 0 8px 24px #0007; }
-.fs-art { animation: om-scale-in 0.5s var(--ease-out); }
-.lyrics .line { transition: color 0.3s, opacity 0.3s, transform 0.3s var(--ease-out); }
-/* Phone: tab icons give a little when tapped; the mini player's song change slides in. */
+/* Loading: the spinner only shows if loading takes a moment, so quick pages don't flash. */
+.center[role="status"] { animation: om-fade var(--t-med) ease-out 0.2s backwards; }
+/* Song screen (phone): the cover settles back a little while paused. */
+.pp-art { transition: transform var(--t-slow) var(--ease-out), box-shadow var(--t-slow) var(--ease-out); }
+.pp-art.paused { transform: scale(0.94); box-shadow: 0 8px 24px #0007; }
+.lyrics .line { transition: color var(--t-slow), opacity var(--t-slow); }
 @media (max-width: 760px) {
-  .mobile-tabs button:active svg { transform: scale(0.86); }
-  .pb-meta { animation-name: om-fade; }
+  .mobile-tabs button:active svg { transform: scale(0.92); }
 }
-.tb-name { display: none; }
 
 /* Page title with an action beside it (Recently played → Listening history, Clear history). */
 .page-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

@@ -35,8 +35,6 @@ export interface Album {
   year?: number | null;
   artwork?: string | null;
   kind?: string | null;
-  /** Release date where known ("YYYY-MM-DD", "YYYY-MM" or "YYYY"): Plex, MusicBrainz. */
-  released?: string | null;
 }
 
 export interface Artist {

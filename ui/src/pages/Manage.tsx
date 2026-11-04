@@ -13,7 +13,7 @@ import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
 import { isMobileApp, openProfilePicker, refreshLibrary, setLocalOnly, useApp } from "../store/app";
-import { useSettings, type NormalizeLevel, type Quality, type Theme } from "../store/settings";
+import { useSettings, type NormalizeLevel, type Quality } from "../store/settings";
 import { confirmDialog, toast } from "../store/ui";
 import { SyncPlaylists } from "../components/SyncPlaylists";
 import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
@@ -22,16 +22,20 @@ import { CardShelf } from "./Browse";
 
 const RELEASES_LATEST = "https://github.com/knivesbatz/OpenMusic/releases/latest";
 
-/** Phones: the newest release's APK for this app, opened in the browser (which downloads it). */
-async function openLatestApk() {
-  let url = RELEASES_LATEST;
+/**
+ * Phones: the newest release's page on GitHub (always the latest, with both apps' APKs), in the
+ * phone's browser app. The Android app opens it there directly, so the GitHub app or this app's
+ * own windows never take the link.
+ */
+async function openLatestRelease() {
+  const bridge = (window as unknown as { OpenMusicMedia?: { openInBrowser?: (url: string) => boolean } }).OpenMusicMedia;
   try {
-    url = (await api.updateCheck()).url || RELEASES_LATEST;
+    if (bridge?.openInBrowser?.(RELEASES_LATEST)) return;
   } catch {
-    /* offline or GitHub refused: the release page still lists the APKs */
+    /* an older app without the bridge: below */
   }
-  if (inTauri) await openUrl(url).catch((e) => toast(errorMessage(e)));
-  else window.open(url, "_blank");
+  if (inTauri) await openUrl(RELEASES_LATEST).catch((e) => toast(errorMessage(e)));
+  else window.open(RELEASES_LATEST, "_blank");
 }
 
 export function LocalPage() {
@@ -446,24 +450,6 @@ export function SettingsPage() {
         </section>
       )}
 
-      <section>
-        <h2>{t("appearance")}</h2>
-        <label className="setting">
-          <div className="grow">
-            <div>{t("theme")}</div>
-            <div className="muted small">{t("themeHint")}</div>
-          </div>
-          <Select<Theme>
-            label={t("theme")}
-            value={s.theme}
-            onChange={(v) => s.set({ theme: v })}
-            options={[
-              { value: "default", label: t("themeDefault") },
-              { value: "win95", label: t("themeWin95") },
-            ]}
-          />
-        </label>
-      </section>
 
       <section>
         <h2>{t("accessibility")}</h2>
@@ -576,7 +562,7 @@ export function SettingsPage() {
               <div>{t("latestApk")}</div>
               <div className="muted small">{t("latestApkHint")}</div>
             </div>
-            <button className="pill ghost small" onClick={openLatestApk}>
+            <button className="pill ghost small" onClick={openLatestRelease}>
               {t("openInBrowser")}
             </button>
           </div>

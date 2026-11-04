@@ -2,8 +2,10 @@ package app.openmusic.media
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -169,12 +171,49 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
       MediaBridge.apply(activity, args)
     }
 
+    /**
+     * Opens one of this project's GitHub pages (the latest release) in the phone's browser app:
+     * not in an app that claims github.com links (the GitHub app) and not inside this app. Other
+     * addresses are refused, since sign-in pages load in this webview too.
+     */
+    @JavascriptInterface
+    fun openInBrowser(url: String): Boolean {
+      if (!url.startsWith("https://github.com/knivesbatz/OpenMusic/")) return false
+      activity.runOnUiThread { openInBrowserApp(Uri.parse(url)) }
+      return true
+    }
+
     /** The widget that opened the app, if any (once); "" when none. */
     @JavascriptInterface
     fun takeLaunch(): String {
       val l = MediaBridge.pendingLaunch ?: return ""
       MediaBridge.pendingLaunch = null
       return l
+    }
+  }
+
+  private fun openInBrowserApp(uri: Uri) {
+    val view = Intent(Intent.ACTION_VIEW, uri)
+      .addCategory(Intent.CATEGORY_BROWSABLE)
+      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    // The default browser: whatever opens a web address that no app claims.
+    val probe = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com/")).addCategory(Intent.CATEGORY_BROWSABLE)
+    val browser = activity.packageManager
+      .resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)
+      ?.activityInfo?.packageName
+      ?.takeIf { it != "android" } // "android" is the chooser: no default browser set
+    val attempts = listOfNotNull(
+      browser?.let { Intent(view).setPackage(it) },
+      Intent(view).apply { selector = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER) },
+      view,
+    )
+    for (intent in attempts) {
+      try {
+        activity.startActivity(intent)
+        return
+      } catch (e: ActivityNotFoundException) {
+      } catch (e: SecurityException) {
+      }
     }
   }
 

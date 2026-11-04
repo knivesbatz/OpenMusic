@@ -1,8 +1,25 @@
-# OpenMusic 1.2.15
+# OpenMusic 1.2.16
 
-Get the newest Android version straight from Settings.
+Podcasts oldest first, calmer animations, and the Windows 95 theme is gone.
 
-## New in 1.2.15
+## New in 1.2.16
+- **Podcasts: oldest first.** A show's page has a **Newest first / Oldest first** button next to
+  All episodes. The order you pick is remembered for that show until you change it, and playing
+  from the page follows it, so a series plays from its first episode on. The app reads the episode
+  dates to tell which way the list runs, so "oldest first" is always the oldest episode.
+- **Cleaner animations.** One calm set of motion everywhere: pages and cards fade in softly and
+  quickly, menus, dialogs and panels ease in, and pressing a button gives a little. Gone: the spin
+  on play/pause, the springy heart, the bouncing toasts, the zoom-in covers and headers, and
+  buttons and tiles growing under the mouse. "Reduce motion" in Settings still turns it all off.
+- **The Windows 95 theme is removed**, with everything that came with it: the theme setting, the
+  pixel font, and the "28 years ago" filter on artist pages and What's New. If you were using it,
+  the app goes back to the normal look.
+- **Android: "Latest version for Android" opens the newest release page** (Settings → About,
+  **Open in browser**), always the latest one, in your phone's browser app. It no longer opens
+  in the GitHub app or inside OpenMusic, and it shows the page instead of starting a download.
+  Download this app's APK there and open it to install.
+
+## Also in 1.2.15
 - **Android: "Latest version for Android"** (Settings → About): **Open in browser** opens the
   newest release's APK for this app (YTSpot or PLEXSpot) from GitHub in your browser, which
   downloads it; open the download to install. If GitHub can't be reached, it opens the latest

@@ -221,13 +221,50 @@ await test(
     assert.equal(await p.locator(".ep-row").count(), 3);
     await p.click(".podcast-page .follow");
     await p.waitForFunction(() => document.querySelector(".podcast-page .follow")?.getAttribute("aria-pressed") === "true");
-    await p.locator(".ep-row").first().locator("button[aria-pressed]").click();
+    // Newest first by default: Pt. 3 (Oct 23) on top.
+    assert.match(await p.locator(".ep-row .ep-title").first().textContent(), /Pt\. 3/);
+    await p.locator(".ep-row", { hasText: "Pt. 1" }).locator("button[aria-pressed]").click();
     await p.click('.sidebar .side-cat:has-text("Your Episodes")');
     await p.waitForSelector(".podcast-page .ep-row");
     assert.equal(await p.locator(".ep-row").count(), 1);
     assert.match(await p.locator(".ep-row .ep-title").first().textContent(), /Lost Tomb Pt\. 1/);
   },
   { youtube: true },
+);
+
+await test(
+  "Podcast episodes can be sorted oldest first, and stay that way",
+  async (p) => {
+    await p.click('.sidebar .side-cat:has-text("Podcasts")');
+    await p.locator(".main .card", { hasText: "Conspiracy Theories" }).first().click();
+    await p.waitForSelector(".podcast-page .ep-row", { timeout: 5000 });
+    const titles = async () => (await p.locator(".ep-row .ep-title").allTextContents()).map((x) => x.trim());
+    // Saved as oldest first earlier: opens that way (Pt. 1 is from Oct 21, Pt. 3 from Oct 23).
+    assert.deepEqual(await titles(), ["The Lost Tomb Pt. 1", "The Lost Tomb Pt. 2", "The Lost Tomb Pt. 3"]);
+    const btn = p.locator(".podcast-page .sort-btn");
+    assert.ok((await btn.textContent()).includes("Oldest first"));
+    // Newest first, saved.
+    await btn.click();
+    await p.waitForFunction(() => document.querySelector(".ep-row .ep-title")?.textContent?.includes("Pt. 3"));
+    assert.deepEqual(await titles(), ["The Lost Tomb Pt. 3", "The Lost Tomb Pt. 2", "The Lost Tomb Pt. 1"]);
+    assert.ok((await btn.textContent()).includes("Newest first"));
+    assert.deepEqual(await p.evaluate(() => window.__KV.podcastOldestFirst), {});
+    // And back.
+    await btn.click();
+    await p.waitForFunction(() => document.querySelector(".ep-row .ep-title")?.textContent?.includes("Pt. 1"));
+    assert.deepEqual(await p.evaluate(() => window.__KV.podcastOldestFirst), { "yt:MPSPshow": true });
+  },
+  {
+    youtube: true,
+    init: () => {
+      const d = window.__MOCK__;
+      window.__KV = {};
+      const base = d.kv_get;
+      // The show was saved as oldest first.
+      d.kv_get = (a) => (a.key === "podcastOldestFirst" ? { "yt:MPSPshow": true } : typeof base === "function" ? base(a) : base);
+      d.kv_set = (a) => ((window.__KV[a.key] = a.value), null);
+    },
+  },
 );
 
 await test(
@@ -716,85 +753,21 @@ await test("Artist discography: albums newest first, compilations on their own t
   },
 });
 
-await test("Windows 95 theme: picked in Settings, applied to the whole app and saved", async (p) => {
-  await p.click('button[aria-label="Settings"]');
-  await p.waitForSelector(".page h1:has-text('Settings')");
-  assert.equal(await p.evaluate(() => document.documentElement.classList.contains("win95")), false);
-  await p.locator(".setting", { hasText: "Theme" }).locator("button").click();
-  await p.click('.menu button:has-text("Windows 95")');
-  await p.waitForFunction(() => document.documentElement.classList.contains("win95"));
-  // The teal desktop and grey windows.
-  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector(".layout")).backgroundColor), "rgb(0, 128, 128)");
-  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector(".main")).backgroundColor), "rgb(192, 192, 192)");
-  await p.waitForFunction(() => JSON.stringify(window.__MOCK__.__saved ?? {}).includes('"theme":"win95"'), null, { timeout: 5000 });
-}, {
-  init: () => {
-    const d = window.__MOCK__;
-    d.settings_set = (a) => ((d.__saved = a.settings), null);
-  },
-});
-
-await test("Windows 95 theme: artist pages and What's New stop 28 years ago today", async (p) => {
-  await p.click(".shelf .card >> nth=0");
-  await p.waitForSelector(".hero-meta .link");
-  await p.click(".hero-meta .link");
-  await p.waitForSelector(".artist-hero");
-  await p.click('.chips button:has-text("Albums")');
-  // Out by the cutoff: the old album, and the cutoff-year album MusicBrainz dates to 1 January.
-  await p.waitForFunction(() => document.querySelectorAll(".shelf .grid .card").length === 2);
-  const titles = (await p.locator(".shelf .grid .card .card-title").allTextContents()).map((x) => x.trim()).sort();
-  assert.deepEqual(titles, ["Autumn Tapes", "Night Drive"]);
-  // Dates are looked up for the releases whose year doesn't settle it, and for undated songs.
-  const asked = await p.evaluate(() => window.__DATES);
-  assert.equal(asked.name, "Aster Vale");
-  for (const title of ["Autumn Tapes", "Glass Garden", "Low Tide", "Paper Moons", "Neon Rain"]) assert.ok(asked.titles.includes(title), title);
-  // Popular keeps the songs from those two albums only.
-  const shown = (await p.locator(".tl-row .name").allTextContents()).map((x) => x.trim());
-  const expected = await p.evaluate(() => {
-    const a = window.__MOCK__.artist;
-    const ok = new Set([a.albums[0].id, a.albums[1].id]);
-    return { keep: a.topTracks.filter((t) => ok.has(t.albumId)).map((t) => t.title), hide: a.topTracks.filter((t) => !ok.has(t.albumId)).map((t) => t.title) };
-  });
-  assert.ok(shown.some((x) => expected.keep.includes(x)), JSON.stringify(shown));
-  assert.ok(!shown.some((x) => expected.hide.includes(x)), JSON.stringify(shown));
-  // What's New asks for the cutoff and says which day it is.
-  await p.locator('button[aria-label="What\'s New"]').first().click();
-  await p.waitForSelector(".page h1:has-text(\"What's New\")");
-  const before = await p.evaluate(() => window.__NEW_BEFORE);
-  assert.match(before, /^\d{4}-\d{2}-\d{2}$/);
-  assert.equal(Number(before.slice(0, 4)), new Date().getFullYear() - 28);
-  assert.ok((await p.locator(".page p.muted").first().textContent()).includes("28 years ago"));
-}, {
-  init: () => {
-    const d = window.__MOCK__;
-    d.settings_get = { theme: "win95" };
-    const cy = new Date().getFullYear() - 28;
-    const a = d.artist;
-    const years = [cy - 10, cy, cy, cy + 5, cy + 6];
-    a.albums = a.albums.map((al, i) => ({ ...al, year: years[i] }));
-    a.singles = a.singles.map((al) => ({ ...al, year: cy + 20 }));
-    a.appearsOn = a.appearsOn.map((al) => ({ ...al, year: cy + 20 }));
-    // Popular songs: no year of their own, so they follow their album.
-    a.topTracks = a.topTracks.map((t, i) => ({ ...t, albumId: a.albums[i % 5].id, album: null, year: null }));
-    d.release_dates = (q) => ((window.__DATES = q), { "Autumn Tapes": `${cy}-01-01`, "Glass Garden": `${cy}-12-31` });
-    d.new_releases = (q) => ((window.__NEW_BEFORE = q.before), []);
-  },
-});
-
-await test("Phones: Settings opens the newest APK in the browser", async (p) => {
+await test("Phones: Settings opens the newest release page in the phone's browser", async (p) => {
   await p.locator('button[aria-label="Settings"]').first().click();
   const row = p.locator(".setting", { hasText: "Latest version for Android" });
   await row.waitFor();
   await row.locator("button", { hasText: "Open in browser" }).click();
   await p.waitForFunction(() => window.__OPENED);
-  assert.equal(await p.evaluate(() => window.__OPENED), "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk");
+  // Always the latest release page, through the Android app's browser bridge (not the opener).
+  assert.equal(await p.evaluate(() => window.__OPENED), "https://github.com/knivesbatz/OpenMusic/releases/latest");
+  assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("plugin:opener|open_url"))));
 }, {
   userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36",
   init: () => {
     const d = window.__MOCK__;
     d.app_info = { ...d.app_info, platform: "android" };
-    d.update_check = { available: false, current: "9.9.9", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk", ready: false };
-    d["plugin:opener|open_url"] = (a) => ((window.__OPENED = a.url), null);
+    window.OpenMusicMedia = { openInBrowser: (url) => ((window.__OPENED = url), true), update: () => {}, takeLaunch: () => "" };
   },
 });
 
