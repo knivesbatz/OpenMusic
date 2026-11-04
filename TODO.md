@@ -285,3 +285,8 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - YouTube videos whose owners block embedding (errors 101/150) can't play; the engine skips them
   with a toast.
 - Rust tests need GTK/WebKit dev packages on Linux (see CLAUDE.md); CI runs them on Windows.
+
+## 1.2.17
+- 🟡 Podcast episodes use the show's cover (`Ytm::podcast` sets every episode's artwork to the
+  header thumbnail when there is one). Older saved episodes keep the art they were saved with;
+  episodes in search results still carry YouTube's thumbnail. Not checked against a live account

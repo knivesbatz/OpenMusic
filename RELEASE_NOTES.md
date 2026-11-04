@@ -1,8 +1,14 @@
-# OpenMusic 1.2.16
+# OpenMusic 1.2.17
 
-Podcasts oldest first, calmer animations, and the Windows 95 theme is gone.
+Podcast episodes show the show's cover.
 
-## New in 1.2.16
+## New in 1.2.17
+- **Podcast episodes use the podcast's official cover** (YTSpot) instead of YouTube's
+  per-episode thumbnails, on the show's page and wherever an episode from it plays: the player
+  bar, Now playing, the queue, Discord and the phone's media controls. Episodes you save from the
+  show's page keep the cover too. If a show has no cover, its episodes keep their own images.
+
+## Also in 1.2.16
 - **Podcasts: oldest first.** A show's page has a **Newest first / Oldest first** button next to
   All episodes. The order you pick is remembered for that show until you change it, and playing
   from the page follows it, so a series plays from its first episode on. The app reads the episode

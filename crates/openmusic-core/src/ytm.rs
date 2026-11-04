@@ -1155,7 +1155,9 @@ impl Ytm {
         let mut tracks = page_tracks(&v);
         for t in tracks.iter_mut() {
             t.episode = true;
-            if t.artwork.is_none() {
+            // Episodes show the show's own cover (YouTube's per-episode thumbnails are video
+            // frames); an episode keeps its thumbnail only when the page has no cover.
+            if artwork.is_some() {
                 t.artwork = artwork.clone();
             }
         }
