@@ -106,6 +106,7 @@ export const api = {
   plexHomeUsers: () => call<T.PlexUser[]>("plex_home_users"),
   plexSwitchUser: (uuid: string, pin: string | null) => call<void>("plex_switch_user", { uuid, pin }),
   ytAccounts: () => call<T.YtAccount[]>("yt_accounts"),
+  ytDeletePlaylist: (id: string) => call<void>("yt_delete_playlist", { id }),
   browseCategories: (refresh: boolean) => call<T.BrowseCategory[]>("browse_categories", { refresh }),
   browsePage: (id: string) => call<T.Shelf[]>("browse_page", { id }),
   browseArt: (id: string) => call<string | null>("browse_art", { id }),

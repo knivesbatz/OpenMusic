@@ -380,6 +380,7 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             commands::browse_art,
             commands::profile_info,
             commands::profile_artists,
+            commands::yt_delete_playlist,
             commands::yt_accounts,
             commands::plex_home_users,
             commands::plex_switch_user,

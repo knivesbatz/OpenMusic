@@ -1971,6 +1971,25 @@ async fn artist_card(app: AppHandle, state: S<'_>, a: Artist) -> Artist {
     }
 }
 
+/// Delete one of your own playlists from your YouTube account (the UI asks first). The library is
+/// reloaded afterwards so it disappears everywhere.
+#[tauri::command]
+pub async fn yt_delete_playlist(app: AppHandle, state: S<'_>, id: String) -> Result<()> {
+    if state.flavor != Flavor::YouTube {
+        return Err(Error::Unsupported("deleting playlists".into()));
+    }
+    yt_call!(app, state, |y| y.delete_playlist(&id))?;
+    // Take it out of the cached library too, so the reload doesn't bring it back for 15 minutes.
+    let cached: Option<Library> = state.db().cache_get("yt.library", true)?;
+    if let Some(mut lib) = cached {
+        let gone = ytm::playlist_id_of(&id);
+        lib.playlists.retain(|p| ytm::playlist_id_of(&p.id) != gone);
+        state.db().cache_put("yt.library", &lib, 15 * 60)?;
+    }
+    let _ = app.emit("playlists-changed", ());
+    Ok(())
+}
+
 /// Channels the signed-in Google account can use: the personal one and brand accounts.
 #[tauri::command]
 pub async fn yt_accounts(app: AppHandle, state: S<'_>) -> Result<Vec<YtAccount>> {

@@ -316,3 +316,5 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   sign-in; updater downloads `_universal.dmg` and swaps the bundle (hdiutil + ditto, relaunch).
   Startup: check at 2 s, auto-install + reopen when nothing plays (kv `update.autoInstall`
   guards loops). Built in CI only; not run on a Mac yet
+- 🟡 YTSpot "Delete from YouTube" for own playlists (`yt_delete_playlist`: PL ids only, page must
+  have the editable header, `playlist/delete`; cached library pruned). Not run against a real account

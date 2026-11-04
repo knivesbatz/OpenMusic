@@ -683,6 +683,19 @@ fn subscriber_count(header: &Value) -> Option<String> {
     n.chars().any(|c| c.is_ascii_digit()).then_some(n)
 }
 
+/// A user playlist's id ("PL…") from the app's `yt:VLPL…` / `yt:PL…`; `None` for Liked Music,
+/// podcasts, albums and the other built-in lists, which can't be deleted.
+pub fn playlist_id_of(id: &str) -> Option<String> {
+    let raw = id.trim_start_matches("yt:");
+    let pid = raw.strip_prefix("VL").unwrap_or(raw);
+    (pid.starts_with("PL") && pid.len() > 2).then(|| pid.to_string())
+}
+
+/// Whether a playlist page is the signed-in user's own (YouTube shows its edit header only then).
+pub fn page_editable(v: &Value) -> bool {
+    find_first(v, "musicEditablePlaylistDetailHeaderRenderer").is_some()
+}
+
 fn header_of(v: &Value) -> Option<&Value> {
     for k in [
         "musicResponsiveHeaderRenderer",
@@ -818,6 +831,17 @@ mod home_tests {
         let (pls, more) = channel_playlists(&page, "UCmaya123");
         assert_eq!(pls.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["yt:VLPLautumn", "yt:VLPLsummer"]);
         assert_eq!(more.as_deref(), Some("MORE"));
+    }
+
+    #[test]
+    fn only_own_playlists_can_be_deleted() {
+        assert_eq!(playlist_id_of("yt:VLPLabc").as_deref(), Some("PLabc"));
+        assert_eq!(playlist_id_of("yt:PLabc").as_deref(), Some("PLabc"));
+        for id in ["yt:VLLM", "yt:LM", "yt:MPSPshow", "yt:VLSE", "yt:VLRDCLAK5uy", "yt:PL", "plex:5"] {
+            assert_eq!(playlist_id_of(id), None, "{id}");
+        }
+        assert!(page_editable(&json!({ "header": { "musicEditablePlaylistDetailHeaderRenderer": { "header": {} } } })));
+        assert!(!page_editable(&json!({ "header": { "musicResponsiveHeaderRenderer": {} } })));
     }
 
     #[test]
@@ -1464,6 +1488,19 @@ impl Ytm {
             Some(s) if s != "STATUS_SUCCEEDED" => Err(Error::Invalid(format!("YouTube refused the playlist change ({s})"))),
             _ => Ok(()),
         }
+    }
+
+    /// Delete one of the user's own playlists from their YouTube account. Checked first: YouTube
+    /// only shows the editable header to the playlist's owner, so a saved playlist of someone
+    /// else's is refused here (it can still be hidden in the app).
+    pub async fn delete_playlist(&self, id: &str) -> Result<()> {
+        let pid = playlist_id_of(id).ok_or_else(|| Error::Invalid("Only playlists you made can be deleted.".into()))?;
+        let page = self.browse(&format!("VL{pid}")).await?;
+        if !page_editable(&page) {
+            return Err(Error::Invalid("This playlist isn't yours, so it can't be deleted from YouTube. You can hide it instead.".into()));
+        }
+        self.post("playlist/delete", json!({ "playlistId": pid }), "").await?;
+        Ok(())
     }
 
     /// Create a playlist on the user's account holding these songs, in order. `privacy` is

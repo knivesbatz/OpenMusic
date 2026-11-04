@@ -106,6 +106,10 @@ const en = {
   save: "Save",
   confirm: "Confirm",
   retry: "Retry",
+  deleteFromYt: "Delete from YouTube",
+  deleteFromYtTitle: "Delete from YouTube?",
+  deleteFromYtBody: "\"{name}\" will be deleted from your YouTube account: from YouTube Music, YouTube and every device. This can't be undone.",
+  deletedFromYt: "Deleted \"{name}\" from YouTube",
   hidePlaylist: "Hide playlist permanently",
   hideWarnTitle: "Hide this playlist forever?",
   hideWarnBody:
@@ -593,6 +597,10 @@ const ja: Record<Key, string> = {
   save: "保存",
   confirm: "確認",
   retry: "再試行",
+  deleteFromYt: "YouTubeから削除",
+  deleteFromYtTitle: "YouTubeから削除しますか？",
+  deleteFromYtBody: "「{name}」をYouTubeアカウントから削除します。YouTube Music、YouTube、すべてのデバイスから消え、元に戻せません。",
+  deletedFromYt: "「{name}」をYouTubeから削除しました",
   hidePlaylist: "プレイリストを完全に非表示",
   hideWarnTitle: "このプレイリストを完全に非表示にしますか？",
   hideWarnBody:

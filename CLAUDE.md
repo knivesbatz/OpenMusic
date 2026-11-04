@@ -60,8 +60,9 @@ cd ui && npm run build && cd ../apps/ytspot/src-tauri && ../../../ui/node_module
   these with `artUrl()`, and `art.rs` serves them from a disk cache. Never store tokens in metadata.
 - Secrets (Plex token/session, YouTube cookies, Last.fm keys/session) go in the OS
   credential store (`secrets.rs`), never in SQLite or settings.
-- App playlists are SQLite-only. PLEXSpot never writes Plex/Plexamp playlists, and YTSpot never deletes
-  remote playlists. "Hide playlist" is local and permanent.
+- App playlists are SQLite-only. PLEXSpot never writes Plex/Plexamp playlists. YTSpot deletes a remote
+  playlist only when the user picks "Delete from YouTube" on one they own (checked against the page's
+  editable header, after a confirmation). "Hide playlist" is local and permanent.
 - User-visible strings go through `ui/src/i18n.ts` (`en` + `ja`, typed so a missing `ja` key fails `tsc`).
 - Spotify playlist transfer is handed off to Soundiiz (Import page); there is no Spotify API code.
 - Don't add controls that do nothing. If a provider can't do something (YouTube downloads, YouTube

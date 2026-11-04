@@ -339,9 +339,13 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCo
   }
   if (pl.local && flavor === "youtube" && useApp.getState().auth?.signedIn)
     items.push({ label: t("copyToYt"), icon: I.ICloudUp, onClick: () => copyToYouTube(pl) });
+  const ytId = !pl.local && flavor === "youtube" ? ytPlaylistId(pl.id) : null;
   if (pl.local || flavor === "youtube") items.push({ label: "", separator: true });
   if (pl.local) items.push({ label: t("delete"), icon: I.ITrash, danger: true, onClick: () => deletePlaylist(pl) });
-  else if (flavor === "youtube") items.push({ label: t("hidePlaylist"), icon: I.IEyeOff, danger: true, onClick: () => hidePlaylist(pl) });
+  else if (flavor === "youtube") {
+    if (ytId && useApp.getState().auth?.signedIn) items.push({ label: t("deleteFromYt"), icon: I.ITrash, danger: true, onClick: () => deleteFromYouTube(pl) });
+    items.push({ label: t("hidePlaylist"), icon: I.IEyeOff, danger: true, onClick: () => hidePlaylist(pl) });
+  }
   return items;
 }
 
@@ -480,6 +484,26 @@ export async function deletePlaylist(pl: Playlist) {
     await api.plDelete(pl.id);
     await refreshPlaylists();
     navigate({ name: "home" }, true);
+  } catch (e) {
+    toast(errorMessage(e));
+  }
+}
+
+/** A user-made YouTube playlist's id ("PL…"); null for Liked Music, mixes and other built-in lists. */
+export function ytPlaylistId(id: string): string | null {
+  const m = /^yt:(?:VL)?(PL.+)$/.exec(id);
+  return m ? m[1] : null;
+}
+
+/** YTSpot: delete one of your own playlists from your YouTube account, after asking. */
+export async function deleteFromYouTube(pl: Playlist) {
+  if (!(await confirmDialog({ title: t("deleteFromYtTitle"), body: t("deleteFromYtBody", { name: pl.title }), confirm: t("delete"), danger: true }))) return;
+  try {
+    await api.ytDeletePlaylist(pl.id);
+    toast(t("deletedFromYt", { name: pl.title }));
+    const cur = useUi.getState().stack[useUi.getState().pos];
+    if (cur.name === "playlist" && cur.id === pl.id) navigate({ name: "home" }, true);
+    await refreshLibrary(false);
   } catch (e) {
     toast(errorMessage(e));
   }

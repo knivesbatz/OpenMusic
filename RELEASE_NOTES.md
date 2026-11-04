@@ -15,6 +15,12 @@ YTSpot and PLEXSpot for Mac.
   - **Updates itself**, like on Windows: see below.
   - Windows-only parts stay on Windows: the custom title bar (Macs keep their own) and "Share
     audio when streaming on Discord".
+- **YTSpot: delete your YouTube playlists from the app.** Right-click one of your own playlists
+  (or use its ••• menu) and choose **Delete from YouTube**. After you confirm, it's deleted from
+  your YouTube account, so it's gone from YouTube Music, YouTube and your other devices too; this
+  can't be undone. Only playlists you made can be deleted: the app checks with YouTube first, and
+  for playlists you saved from someone else (and Liked Music or mixes) there's still **Hide
+  playlist**, which only hides them in the app.
 - **Updates install when the app starts** (Windows and Mac). The app checks GitHub for a new
   version as soon as it opens. If there is one, it downloads it and, while nothing is playing
   yet, installs it and reopens itself, a few seconds after you open it. If you've already
