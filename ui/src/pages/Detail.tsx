@@ -10,8 +10,8 @@ import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
 import { newestFirst, splitCompilations } from "../store/discography";
-import { datesWanted, retroArtist, useRetroCutoff } from "../store/retro";
 import { setPlaylistSort, sortTracks, usePlaylistSort, type SortKey } from "../store/playlistSort";
+import { orderEpisodes, setOldestFirst, useOldestFirst } from "../store/podcastSort";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, toast } from "../store/ui";
 import type { Album, Artist, PlayContext, Track } from "../types";
@@ -223,19 +223,10 @@ type Disc = "popular" | "albums" | "singles" | "compilations" | "appears";
 
 export function ArtistPage({ id }: { id: string }) {
   const t = useT();
-  const { data: page, error, loading, reload } = useAsync(() => api.artist(id), [id]);
+  const { data, error, loading, reload } = useAsync(() => api.artist(id), [id]);
   // Compilations by name from MusicBrainz (YouTube Music doesn't mark them; Plex only when tagged).
-  const artistName = page?.artist?.name ?? "";
+  const artistName = data?.artist?.name ?? "";
   const { data: mbCompilations } = useAsync(() => (artistName ? api.artistCompilations(artistName) : Promise.resolve([])), [artistName]);
-  // Windows 95 theme: only what was out 28 years ago today, with exact dates from MusicBrainz
-  // where the provider only knows the year.
-  const cutoff = useRetroCutoff();
-  const wanted = useMemo(() => (page ? datesWanted(page, cutoff) : []), [page, cutoff]);
-  const { data: mbDates, loading: datesLoading } = useAsync(
-    () => (wanted.length && artistName ? api.releaseDates(artistName, wanted) : Promise.resolve({} as Record<string, string>)),
-    [artistName, wanted.join("\u001f")],
-  );
-  const data = useMemo(() => page && retroArtist(page, cutoff, mbDates ?? {}), [page, cutoff, mbDates]);
   usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }));
   const [more, setMore] = useState(false);
   const [disc, setDisc] = useState<Disc>("popular");
@@ -277,7 +268,6 @@ export function ArtistPage({ id }: { id: string }) {
         </div>
       </header>
       <ActionBar tracks={popular} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
-      {cutoff && datesLoading && wanted.length > 0 && <p className="muted small retro-dates">{t("retroDates")}</p>}
       {popular.length > 0 && (
         <section>
           <h2>{t("popular")}</h2>
@@ -493,11 +483,14 @@ const trackMenuFor = (ep: Track) => trackMenu(ep, {});
 export function PodcastPage({ id }: { id: string }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
-  usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }));
+  // Episodes newest first (the provider's order) or oldest first, remembered per show.
+  const oldestFirst = useOldestFirst(id);
+  usePageTitle(data?.playlist.title, () => data && P.playTracks(orderEpisodes(data.tracks, oldestFirst), 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }));
   const following = useApp((s) => s.saved.podcasts.some((p) => p.id === id));
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
-  const { playlist, tracks } = data;
+  const { playlist } = data;
+  const tracks = orderEpisodes(data.tracks, oldestFirst);
   const ctx: PlayContext = { kind: "playlist", id, title: playlist.title, artwork: playlist.artwork };
   const podcast = { id, title: playlist.title, author: playlist.owner ?? null, artwork: playlist.artwork ?? null };
   return (
@@ -512,7 +505,21 @@ export function PodcastPage({ id }: { id: string }) {
       </div>
       <div className="podcast-cols">
         <section className="podcast-eps">
-          <h2>{t("allEpisodes")}</h2>
+          <div className="row between">
+            <h2>{t("allEpisodes")}</h2>
+            {tracks.length > 1 && (
+              <button
+                className="sort-btn"
+                aria-pressed={oldestFirst}
+                title={t("sortMenu")}
+                onClick={() => setOldestFirst(id, !oldestFirst)}
+              >
+                <span>{t(oldestFirst ? "oldestFirst" : "newestFirst")}</span>
+                <span aria-hidden="true">{oldestFirst ? "↑" : "↓"}</span>
+                <I.IQueue size={18} />
+              </button>
+            )}
+          </div>
           {tracks.length ? tracks.map((ep, i) => <EpisodeRow key={ep.id} ep={ep} onPlay={() => P.playTracks(tracks, i, ctx)} />) : <p className="muted">{t("empty")}</p>}
         </section>
         {playlist.description && (

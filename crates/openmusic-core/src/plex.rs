@@ -138,7 +138,6 @@ pub fn to_album(v: &Value) -> Option<Album> {
         year: n(v, "year").map(|y| y as u32),
         artwork: art(s(v, "thumb")),
         kind: Some(kind.into()),
-        released: s(v, "originallyAvailableAt").filter(|d| d.len() >= 4),
     })
 }
 
@@ -463,13 +462,8 @@ impl Plex {
     }
 
     /// Newest releases in the library (by release date), for the What's New page.
-    /// Newest releases first; with `up_to_year`, only releases from that year or earlier.
-    pub async fn latest_releases(&self, sess: &Session, up_to_year: Option<u32>) -> Vec<Album> {
-        let q = match up_to_year {
-            Some(y) => format!("type=9&year%3C={y}&sort=originallyAvailableAt:desc&X-Plex-Container-Size=60"),
-            None => "type=9&sort=originallyAvailableAt:desc&X-Plex-Container-Size=30".to_string(),
-        };
-        self.per_section(sess, &q, to_album).await
+    pub async fn latest_releases(&self, sess: &Session) -> Vec<Album> {
+        self.per_section(sess, "type=9&sort=originallyAvailableAt:desc&X-Plex-Container-Size=30", to_album).await
     }
 
     /// Albums most recently added to the library.

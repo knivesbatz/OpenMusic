@@ -117,6 +117,17 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Settings/scroll crash: all commands touching SQLite/keyring/registry are `#[tauri::command(async)]`
   (they ran on the WebView's UI thread). `windows-ui` CI job drives the real app; confirm with user
 
+## 1.2.16
+- ✅ Windows 95 theme removed completely (theme-win95.css, W95FA font + licence + grid script, theme
+  setting (saved value dropped in `sanitize`), title-bar caption, retro cutoff: retro.rs/retro.ts,
+  `release_dates` and MusicBrainz date lookups, `new_releases(before)`, `Album.released`)
+- ✅ Podcast "Oldest first" per show (`store/podcastSort.ts`, kv `podcastOldestFirst`); direction
+  read from the episode dates (`publishedAt`; unit + e2e)
+- ✅ Motion: one set (one easing, 120/200/280 ms, fades and small moves); no spin/spring/hover-grow
+- 🟡 Android "Latest version": opens releases/latest in the default browser app via
+  `OpenMusicMedia.openInBrowser` (package of the default browser, else CATEGORY_APP_BROWSER
+  selector); only this project's GitHub URLs. e2e with a mocked bridge; not tried on a phone
+
 ## 1.2.15
 - ✅ Android Settings → About: "Open in browser" for the newest APK (`update_check` url, else the
   releases/latest page; e2e, desktop hidden)

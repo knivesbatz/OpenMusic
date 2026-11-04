@@ -382,7 +382,6 @@ fn item_from_browse(id: String, pt: Option<&str>, title: String, sub: &Sub, artw
                 _ => "album",
             }
             .into()),
-            released: None,
         }),
         "MUSIC_PAGE_TYPE_ARTIST" | "MUSIC_PAGE_TYPE_USER_CHANNEL" | "MUSIC_PAGE_TYPE_LIBRARY_ARTIST" => {
             // Library artist rows browse to "MPLA<channelId>"; the artist page itself is the channel.
@@ -1100,7 +1099,6 @@ impl Ytm {
                 _ => "album",
             }
             .into()),
-            released: None,
         };
         let mut tracks = page_tracks(&v);
         for (i, t) in tracks.iter_mut().enumerate() {
