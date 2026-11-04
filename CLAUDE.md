@@ -42,8 +42,9 @@ cd ui && npm run build && cd ../apps/ytspot/src-tauri && ../../../ui/node_module
   The `keyring` crate also builds there.
 - Windows installers come from CI (`.github/workflows/build.yml`). Push to `main` and download the
   `ytspot-windows` / `plexspot-windows` artifacts, or push a tag `vX.Y.Z` to publish a GitHub release.
-- Mac disk images (`*_universal.dmg`) come from the `macos` CI job (artifacts `ytspot-macos` /
-  `plexspot-macos`); it also runs the core tests on macOS. On macOS the UI is served from
+- Mac disk images (`*_universal.dmg`) come from `.github/workflows/macos.yml` (artifacts `ytspot-macos` /
+  `plexspot-macos`); it also runs the core tests on macOS. build.yml's release job starts it with the
+  release tag and it adds the disk images to that release, so a slow macOS runner never holds up a release. On macOS the UI is served from
   `http://localhost:<port>` (`ui_url`, tauri-plugin-localhost, `capabilities/macos.json`); keep
   window URLs going through `ui_url`.
 - Real provider accounts aren't available in CI. Never claim a provider flow is verified unless it

@@ -309,7 +309,7 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Rounder corners and a few more fades (menu rows, dialog contents, library entries, tile covers)
 
 ## 1.4.0
-- 🟡 macOS: `macos` CI job (universal dmg per app, ad-hoc signed, not notarized; core tests on
+- 🟡 macOS: `macos.yml` workflow (started by build.yml's release job; universal dmg per app, ad-hoc signed, not notarized; core tests on
   macOS), release attaches `*.dmg`; keyring `apple-native` (it fell back to an in-memory store);
   UI served from `http://localhost:47321/47322` via tauri-plugin-localhost so YouTube's embed and
   http Plex servers work (`ui_url`, `capabilities/macos.json`); Safari user agent for Google
