@@ -67,6 +67,20 @@ export type MediaItem =
   | ({ type: "playlist" } & Playlist)
   | ({ type: "podcast" } & Podcast);
 
+export interface BrowseCategory {
+  id: string;
+  title: string;
+  color?: string | null;
+}
+
+export interface ProfileInfo {
+  name: string;
+  photo?: string | null;
+  url?: string | null;
+  /** null: the provider can't say which playlists are public (the page lists yours). */
+  publicPlaylists?: Playlist[] | null;
+}
+
 export interface Shelf {
   title: string;
   subtitle?: string | null;

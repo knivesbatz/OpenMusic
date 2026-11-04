@@ -13,8 +13,9 @@ import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
 import { isMobileApp, openProfilePicker, refreshLibrary, setLocalOnly, useApp } from "../store/app";
+import { signOut } from "../store/profile";
 import { useSettings, type NormalizeLevel, type Quality } from "../store/settings";
-import { confirmDialog, toast } from "../store/ui";
+import { toast } from "../store/ui";
 import { SyncPlaylists } from "../components/SyncPlaylists";
 import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
 import { cls, fmtBytes } from "../util";
@@ -294,14 +295,6 @@ export function SettingsPage() {
       <input type="checkbox" role="switch" className="switch" checked={!disabled && s[k]} disabled={disabled} onChange={(e) => s.set({ [k]: e.target.checked })} />
     </label>
   );
-
-  async function signOut() {
-    if (!(await confirmDialog({ title: t("signOut"), body: t("signOutBody"), confirm: t("signOut") }))) return;
-    await api.signOut().catch(() => {});
-    await api.kvSet(yt ? "yt.profileChosen" : "plex.profileChosen", false).catch(() => {});
-    await setLocalOnly(false);
-    useApp.setState({ auth: await api.authStatus(), library: null });
-  }
 
   return (
     <div className="page settings">

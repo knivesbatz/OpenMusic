@@ -197,6 +197,24 @@ pub fn parse_home_users(v: &Value) -> Vec<PlexUser> {
         .unwrap_or_default()
 }
 
+/// Genres from `/library/sections/<id>/genre` (a list of `Directory` entries).
+pub fn parse_genres(v: &Value, section: &str) -> Vec<BrowseCategory> {
+    v.get("MediaContainer")
+        .and_then(|m| m.get("Directory"))
+        .and_then(|d| d.as_array())
+        .map(|ds| {
+            ds.iter()
+                .filter_map(|d| {
+                    let key = s(d, "key")?;
+                    // Older servers give a path ("/library/sections/1/genre/12"); keep the id.
+                    let key = key.rsplit('/').next().unwrap_or(&key).to_string();
+                    Some(BrowseCategory { id: format!("plex-genre:{section}:{key}"), title: s(d, "title")?, color: None })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 impl Plex {
     pub fn new(http: reqwest::Client, client_id: String) -> Self {
         Plex { http, client_id }
@@ -254,6 +272,20 @@ impl Plex {
             .json()
             .await?;
         Ok(s(&v, "username").or_else(|| s(&v, "title")).unwrap_or_default())
+    }
+
+    /// Name and photo of the account that owns `token`.
+    pub async fn account_profile(&self, token: &str) -> Result<(String, Option<String>)> {
+        let v: Value = self
+            .headers(self.http.get(format!("{PLEX_TV}/api/v2/user")))
+            .header("X-Plex-Token", token)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        let name = s(&v, "title").or_else(|| s(&v, "username")).unwrap_or_default();
+        Ok((name, s(&v, "thumb").map(|t| format!("art://url/{}", urlencoding::encode(&t)))))
     }
 
     /// Plex Home users of the account that owns `token` (just the account itself when it isn't
@@ -496,6 +528,35 @@ impl Plex {
         shelves.push(mk("liked", liked.into_iter().map(MediaItem::Track).collect()));
         shelves.retain(|s| !s.items.is_empty());
         Ok(shelves)
+    }
+
+    /// "Browse all" for Plex: the music libraries' genres (`plex-genre:<section>:<genre>`).
+    pub async fn genres(&self, sess: &Session) -> Result<Vec<BrowseCategory>> {
+        let mut out = Vec::new();
+        for sid in &sess.sections {
+            let v = self.get(sess, &format!("/library/sections/{sid}/genre?type=9")).await?;
+            out.extend(parse_genres(&v, sid));
+        }
+        Ok(out)
+    }
+
+    /// Albums and artists of one genre.
+    pub async fn genre_page(&self, sess: &Session, id: &str) -> Result<Vec<Shelf>> {
+        let mut parts = id.trim_start_matches("plex-genre:").splitn(2, ':');
+        let (Some(sid), Some(genre)) = (parts.next(), parts.next()) else { return Err(Error::NotFound(id.into())) };
+        let genre = urlencoding::encode(genre);
+        let albums = self
+            .list(sess, &format!("/library/sections/{sid}/all?type=9&genre={genre}&sort=viewCount:desc&X-Plex-Container-Size=60"))
+            .await?;
+        let artists = self
+            .list(sess, &format!("/library/sections/{sid}/all?type=8&genre={genre}&sort=viewCount:desc&X-Plex-Container-Size=30"))
+            .await
+            .unwrap_or_default();
+        let shelves = vec![
+            Shelf { title: "albums".into(), subtitle: None, items: albums.iter().filter_map(to_album).map(MediaItem::Album).collect() },
+            Shelf { title: "artists".into(), subtitle: None, items: artists.iter().filter_map(to_artist).map(MediaItem::Artist).collect() },
+        ];
+        Ok(shelves.into_iter().filter(|s| !s.items.is_empty()).collect())
     }
 
     pub async fn search(&self, sess: &Session, q: &str) -> Result<SearchResults> {

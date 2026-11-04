@@ -571,6 +571,86 @@ pub fn parse_shelves(v: &Value) -> Vec<Shelf> {
     out
 }
 
+/// "Browse all" tiles: the `musicNavigationButtonRenderer`s of Explore and Moods & genres.
+/// The id keeps the browse params ("yt:<browseId>|<params>") so `browse_page` can open it.
+pub fn parse_nav_buttons(v: &Value) -> Vec<BrowseCategory> {
+    let mut found = Vec::new();
+    find_all(v, "musicNavigationButtonRenderer", &mut found);
+    found
+        .into_iter()
+        .filter_map(|b| {
+            let title = text(b.get("buttonText"));
+            let ep = b.get("clickCommand")?.get("browseEndpoint")?;
+            let bid = ep.get("browseId")?.as_str()?;
+            let id = match ep.get("params").and_then(|p| p.as_str()) {
+                Some(p) => format!("yt:{bid}|{p}"),
+                None => format!("yt:{bid}"),
+            };
+            let color = b
+                .get("solid")
+                .and_then(|s| s.get("leftStripeColor"))
+                .and_then(|c| c.as_u64().or_else(|| c.as_str().and_then(|s| s.parse().ok())))
+                .map(|c| format!("#{:06x}", c & 0xff_ffff));
+            (!title.is_empty()).then_some(BrowseCategory { id, title, color })
+        })
+        .collect()
+}
+
+/// A browse page opened from a "Browse all" tile: its carousels and grids, in that order.
+pub fn parse_browse_page(v: &Value) -> Vec<Shelf> {
+    let mut out = parse_shelves(v);
+    let mut grids = Vec::new();
+    find_all(v, "gridRenderer", &mut grids);
+    for g in grids {
+        let items = g.get("items").map(all_items).unwrap_or_default();
+        if !items.is_empty() {
+            let title = g.get("header").and_then(|h| find_first(h, "title")).map(|t| text(Some(t))).unwrap_or_default();
+            out.push(Shelf { title, subtitle: None, items });
+        }
+    }
+    if out.is_empty() {
+        let items = all_items(v);
+        if !items.is_empty() {
+            out.push(Shelf { title: String::new(), subtitle: None, items });
+        }
+    }
+    out
+}
+
+/// The signed-in channel's id ("UC…") from `account/account_menu` ("Your channel").
+pub fn menu_channel_id(v: &Value) -> Option<String> {
+    let mut eps = Vec::new();
+    find_all(v, "browseEndpoint", &mut eps);
+    eps.iter().filter_map(|e| e.get("browseId")?.as_str()).find(|id| id.starts_with("UC")).map(String::from)
+}
+
+/// The playlists shelf of a user channel page (only public playlists are shown there), and the
+/// params of its "More" page when it has one.
+pub fn channel_playlists(v: &Value, channel_id: &str) -> (Vec<Playlist>, Option<String>) {
+    let mut shelves = Vec::new();
+    find_all(v, "musicCarouselShelfRenderer", &mut shelves);
+    for shelf in shelves {
+        let pls: Vec<Playlist> = shelf
+            .get("contents")
+            .map(all_items)
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|it| if let MediaItem::Playlist(p) = it { Some(p) } else { None })
+            .collect();
+        if pls.is_empty() {
+            continue;
+        }
+        let more = shelf
+            .get("header")
+            .and_then(|h| find_first(h, "moreContentButton"))
+            .and_then(|b| find_first(b, "browseEndpoint"))
+            .filter(|e| e.get("browseId").and_then(|b| b.as_str()) == Some(channel_id))
+            .and_then(|e| e.get("params")?.as_str().map(String::from));
+        return (pls, more);
+    }
+    (Vec::new(), None)
+}
+
 fn split_by_kind(items: Vec<MediaItem>, out: &mut SearchResults) {
     for it in items {
         match it {
@@ -685,6 +765,60 @@ fn drop_videos(shelf: Shelf) -> Option<Shelf> {
 #[cfg(test)]
 mod home_tests {
     use super::*;
+
+    #[test]
+    fn browse_all_tiles_keep_params_and_colour() {
+        let v = json!({ "items": [
+            { "musicNavigationButtonRenderer": { "buttonText": { "runs": [{ "text": "New releases" }] },
+              "clickCommand": { "browseEndpoint": { "browseId": "FEmusic_new_releases" } } } },
+            { "musicNavigationButtonRenderer": { "buttonText": { "runs": [{ "text": "Chill" }] },
+              "solid": { "leftStripeColor": 4280923903u64 },
+              "clickCommand": { "browseEndpoint": { "browseId": "FEmusic_moods_and_genres_category", "params": "ggMPOg1" } } } }
+        ] });
+        let tiles = parse_nav_buttons(&v);
+        assert_eq!(tiles[0], BrowseCategory { id: "yt:FEmusic_new_releases".into(), title: "New releases".into(), color: None });
+        assert_eq!(tiles[1].id, "yt:FEmusic_moods_and_genres_category|ggMPOg1");
+        assert_eq!(tiles[1].color.as_deref(), Some("#29b6ff"));
+    }
+
+    #[test]
+    fn browse_page_reads_grids_too() {
+        let item = |id: &str| json!({ "musicTwoRowItemRenderer": {
+            "title": { "runs": [{ "text": id }] },
+            "subtitle": { "runs": [{ "text": "Playlist" }] },
+            "navigationEndpoint": { "browseEndpoint": { "browseId": format!("VL{id}"),
+                "browseEndpointContextSupportedConfigs": { "browseEndpointContextMusicConfig": { "pageType": "MUSIC_PAGE_TYPE_PLAYLIST" } } } } } });
+        let v = json!({ "contents": [
+            { "musicCarouselShelfRenderer": { "header": { "musicCarouselShelfBasicHeaderRenderer": { "title": { "runs": [{ "text": "Featured" }] } } }, "contents": [item("PL1")] } },
+            { "gridRenderer": { "header": { "gridHeaderRenderer": { "title": { "runs": [{ "text": "Community playlists" }] } } }, "items": [item("PL2"), item("PL3")] } }
+        ] });
+        let shelves = parse_browse_page(&v);
+        assert_eq!(shelves.iter().map(|s| (s.title.as_str(), s.items.len())).collect::<Vec<_>>(), [("Featured", 1), ("Community playlists", 2)]);
+    }
+
+    #[test]
+    fn profile_channel_and_its_public_playlists() {
+        let menu = json!({ "actions": [{ "openPopupAction": { "popup": { "multiPageMenuRenderer": {
+            "header": { "activeAccountHeaderRenderer": { "accountName": { "runs": [{ "text": "maya" }] } } },
+            "sections": [{ "multiPageMenuSectionRenderer": { "items": [
+                { "compactLinkRenderer": { "title": { "runs": [{ "text": "Your channel" }] },
+                  "navigationEndpoint": { "browseEndpoint": { "browseId": "UCmaya123" } } } }
+            ] } }] } } } }] });
+        assert_eq!(menu_channel_id(&menu).as_deref(), Some("UCmaya123"));
+        let pl = |id: &str| json!({ "musicTwoRowItemRenderer": {
+            "title": { "runs": [{ "text": id }] },
+            "subtitle": { "runs": [{ "text": "Playlist" }, { "text": " • " }, { "text": "maya" }] },
+            "navigationEndpoint": { "browseEndpoint": { "browseId": format!("VL{id}"),
+                "browseEndpointContextSupportedConfigs": { "browseEndpointContextMusicConfig": { "pageType": "MUSIC_PAGE_TYPE_PLAYLIST" } } } } } });
+        let page = json!({ "contents": [{ "musicCarouselShelfRenderer": {
+            "header": { "musicCarouselShelfBasicHeaderRenderer": {
+                "title": { "runs": [{ "text": "Playlists" }] },
+                "moreContentButton": { "buttonRenderer": { "navigationEndpoint": { "browseEndpoint": { "browseId": "UCmaya123", "params": "MORE" } } } } } },
+            "contents": [pl("PLautumn"), pl("PLsummer")] } }] });
+        let (pls, more) = channel_playlists(&page, "UCmaya123");
+        assert_eq!(pls.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["yt:VLPLautumn", "yt:VLPLsummer"]);
+        assert_eq!(more.as_deref(), Some("MORE"));
+    }
 
     #[test]
     fn save_to_playlist_options() {
@@ -869,6 +1003,71 @@ impl Ytm {
             }
         }
         Ok(pages)
+    }
+
+    async fn browse_params(&self, browse_id: &str, params: Option<&str>) -> Result<Value> {
+        let mut body = json!({ "browseId": browse_id });
+        if let Some(p) = params {
+            body["params"] = json!(p);
+        }
+        self.post("browse", body, "").await
+    }
+
+    /// "Browse all": Explore's sections (New releases, Charts, Podcasts, …) and every mood and
+    /// genre. Moods & genres is opened into its tiles; when it can't be read it is left out.
+    pub async fn categories(&self) -> Result<Vec<BrowseCategory>> {
+        let explore = self.browse("FEmusic_explore").await?;
+        let mut out = parse_nav_buttons(&explore);
+        out.retain(|c| !c.id.starts_with("yt:FEmusic_moods_and_genres"));
+        if let Ok(moods) = self.browse("FEmusic_moods_and_genres").await {
+            out.extend(parse_nav_buttons(&moods));
+        }
+        dedupe(&mut out, |c| c.title.to_lowercase());
+        Ok(out)
+    }
+
+    /// The page behind a "Browse all" tile (`yt:<browseId>` or `yt:<browseId>|<params>`).
+    pub async fn browse_page(&self, id: &str) -> Result<Vec<Shelf>> {
+        let raw = id.trim_start_matches("yt:");
+        let (bid, params) = match raw.split_once('|') {
+            Some((b, p)) => (b, Some(p)),
+            None => (raw, None),
+        };
+        let v = self.browse_params(bid, params).await?;
+        Ok(parse_browse_page(&v))
+    }
+
+    /// Name, photo, channel link and public playlists of the signed-in channel.
+    pub async fn profile(&self) -> Result<ProfileInfo> {
+        let menu = self.post("account/account_menu", json!({}), "").await?;
+        let accounts = self.accounts().await.unwrap_or_default();
+        // The identity in use here (see `yt_accounts`), not the browser session's.
+        let me = accounts.iter().find(|a| a.page_id == self.page_id);
+        let name = me
+            .map(|a| a.name.clone())
+            .or_else(|| find_first(&menu, "accountName").map(|a| text(Some(a))))
+            .unwrap_or_default();
+        let photo = me.and_then(|a| a.photo.clone()).or_else(|| find_first(&menu, "accountPhoto").and_then(thumbnail));
+        let mut info = ProfileInfo { name, photo, ..Default::default() };
+        let Some(channel) = menu_channel_id(&menu) else { return Ok(info) };
+        info.url = Some(format!("https://music.youtube.com/channel/{channel}"));
+        if let Ok(page) = self.browse(&channel).await {
+            let (mut pls, more) = channel_playlists(&page, &channel);
+            if let Some(params) = more {
+                if let Ok(all) = self.browse_params(&channel, Some(&params)).await {
+                    let full: Vec<Playlist> = all_items(&all)
+                        .into_iter()
+                        .filter_map(|it| if let MediaItem::Playlist(p) = it { Some(p) } else { None })
+                        .collect();
+                    if full.len() > pls.len() {
+                        pls = full;
+                    }
+                }
+            }
+            dedupe(&mut pls, |p| p.id.clone());
+            info.public_playlists = Some(pls);
+        }
+        Ok(info)
     }
 
     pub async fn account_name(&self) -> Result<String> {

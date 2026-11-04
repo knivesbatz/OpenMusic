@@ -8,6 +8,7 @@ import { initGestures } from "./gestures";
 import { initUpdates } from "./store/update";
 import { loadPlaylistSorts } from "./store/playlistSort";
 import { loadPodcastSorts } from "./store/podcastSort";
+import { loadCustomProfile } from "./store/profile";
 import { isTouch } from "./util";
 import { startBroadcast } from "./player/bridge";
 import { initAudioShare } from "./player/audioShare";
@@ -78,6 +79,7 @@ async function start() {
   initUpdates();
   loadPlaylistSorts();
   loadPodcastSorts();
+  loadCustomProfile();
   if (isTouch() || /Android/i.test(navigator.userAgent)) initGestures();
   if (useApp.getState().info?.selfTest) import("./selftest").then((m) => m.runSelfTest());
   startBroadcast();

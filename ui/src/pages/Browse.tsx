@@ -12,7 +12,7 @@ import { sortAlbums, sortArtists } from "../store/librarySort";
 import { useSettings } from "../store/settings";
 import { confirmDialog, navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
 import { useDisplayTrack } from "../store/songmeta";
-import type { HistoryEntry, HomeData, MediaItem, PlayContext, SearchResults, Track } from "../types";
+import type { BrowseCategory, HistoryEntry, HomeData, MediaItem, PlayContext, SearchResults, Track } from "../types";
 import { cls } from "../util";
 
 /** Play any card: tracks play directly, collections are fetched first. */
@@ -400,11 +400,30 @@ export function WhatsNewPage() {
   );
 }
 
-/** Search with nothing typed: Spotify's colourful "Browse all" tiles, here for your library. */
+// Spotify's tile colours, for tiles the provider gives no colour.
+const TILE_COLORS = ["#dc148c", "#006450", "#8400e7", "#1e3264", "#e8115b", "#477d95", "#ba5d07", "#8d67ab", "#e91429", "#27856a", "#503750", "#148a08", "#509bf5", "#af2896", "#e13300", "#7358ff", "#0d73ec", "#bc5900"];
+const tileColor = (title: string) => TILE_COLORS[[...title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % TILE_COLORS.length];
+
+const categoryCache: { list: BrowseCategory[] | null } = { list: null };
+const tileArt = new Map<string, string | null>();
+
+/** Search with nothing typed: Spotify's "Browse all": the provider's genres, moods and sections
+ * as colourful tiles with a cover, then shortcuts into your library. */
 function BrowseEmpty() {
   const t = useT();
   const caps = useApp((s) => s.info?.capabilities);
   const pls = useApp((s) => s.library?.playlists);
+  const signedIn = useApp((s) => !!s.auth?.signedIn);
+  const [cats, setCats] = useState<BrowseCategory[] | null>(categoryCache.list);
+  const [error, setError] = useState<string | null>(null);
+  usePageTitle(t("browseAll"));
+  useEffect(() => {
+    if (!inTauri || !signedIn || categoryCache.list) return;
+    api.browseCategories(false).then(
+      (l) => setCats((categoryCache.list = l)),
+      (e) => setError(errorMessage(e)),
+    );
+  }, [signedIn]);
   const liked = pls?.find((p) => /^yt:(VL)?LM$/.test(p.id));
   const tiles: { label: string; color: string; go: () => void; icon: React.ReactNode }[] = [
     ...(liked ? [{ label: t("likedSongs"), color: "#5038a0", go: () => navigate({ name: "playlist", id: liked.id }), icon: <I.IHeartFill size={36} /> }] : []),
@@ -425,9 +444,22 @@ function BrowseEmpty() {
   ];
   return (
     <div className="page">
-      <h1>{t("search")}</h1>
-      <p className="muted">{t("searchHint")}</p>
-      <h2>{t("browseAll")}</h2>
+      <h1>{t("browseAll")}</h1>
+      {signedIn &&
+        (cats ? (
+          cats.length > 0 && (
+            <div className="browse-tiles">
+              {cats.map((c) => (
+                <CategoryTile key={c.id} cat={c} />
+              ))}
+            </div>
+          )
+        ) : error ? (
+          <ErrorBox message={error} onRetry={() => (setError(null), api.browseCategories(true).then((l) => setCats((categoryCache.list = l)), (e) => setError(errorMessage(e))))} />
+        ) : (
+          <Loading />
+        ))}
+      <h2>{t("yourLibrary")}</h2>
       <div className="browse-tiles">
         {tiles.map((x) => (
           <button key={x.label} className="browse-tile" style={{ background: x.color }} onClick={x.go}>
@@ -438,6 +470,58 @@ function BrowseEmpty() {
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** One genre/mood tile: its cover (the first picture on its page) is fetched once it scrolls into view. */
+function CategoryTile({ cat }: { cat: BrowseCategory }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [art, setArt] = useState<string | null | undefined>(tileArt.get(cat.id));
+  useEffect(() => {
+    if (art !== undefined || !inTauri) return;
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      api.browseArt(cat.id).then(
+        (a) => (tileArt.set(cat.id, a), setArt(a)),
+        () => setArt(null),
+      );
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [cat.id, art]);
+  const url = artUrl(art, 200);
+  return (
+    <button ref={ref} className="browse-tile" style={{ background: cat.color || tileColor(cat.title) }} onClick={() => navigate({ name: "browse", id: cat.id, title: cat.title })}>
+      <span>{cat.title}</span>
+      {url && <img className="bt-art" src={url} alt="" loading="lazy" draggable={false} />}
+    </button>
+  );
+}
+
+/** The page behind a "Browse all" tile: the provider's shelves for that genre, mood or section. */
+export function BrowseCategoryPage({ id, title }: { id: string; title: string }) {
+  const t = useT();
+  const lang = useSettings((s) => s.language);
+  const { data, error, loading, reload } = useAsync(() => api.browsePage(id), [id]);
+  usePageTitle(title);
+  return (
+    <div className="page">
+      <h1>{title}</h1>
+      {loading && !data ? (
+        <Loading />
+      ) : error ? (
+        <ErrorBox message={error} onRetry={reload} />
+      ) : data && data.some((s) => s.items.length) ? (
+        data.map((s, i) =>
+          data.length === 1 ? <Grid key={i} items={s.items} /> : <CardShelf key={s.title + i} title={shelfTitle(lang, s.title)} items={s.items} />,
+        )
+      ) : (
+        <p className="muted">{t("empty")}</p>
+      )}
     </div>
   );
 }

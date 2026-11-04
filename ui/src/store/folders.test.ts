@@ -51,6 +51,24 @@ describe("playlist folders", () => {
       folders: [{ id: "x", name: "A", items: ["p1"], open: false }],
       order: ["p1"],
       sort: "custom",
+      view: "list",
+      added: {},
     });
+    expect(sanitizeOrg({ sort: "creator", view: "grid", added: { p1: 5, p2: "x" as unknown as number } })).toMatchObject({ sort: "creator", view: "grid", added: { p1: 5 } });
+    expect(sanitizeOrg({ sort: "nope" as never, view: "huge" as never })).toMatchObject({ sort: "recent", view: "list" });
+  });
+
+  it("recently added: newest first, ties keep the recents order", () => {
+    const o: LibraryOrg = { ...emptyOrg, sort: "added", added: { p1: 1, p2: 1, p3: 9 } };
+    expect(arrange(o, pls)).toEqual(["p3", "p1", "p2"]);
+  });
+
+  it("creator: by owner, then by name; folders and your own playlists first", () => {
+    const owned = [
+      { id: "p1", title: "Rainy", owner: "Zed" },
+      { id: "p2", title: "Autumn", owner: "Ann" },
+      { id: "p3", title: "Chill", owner: null },
+    ];
+    expect(arrange({ ...withFolder, sort: "creator" }, owned)).toEqual(["p3", folderKey("f"), "p2", "p1"]);
   });
 });

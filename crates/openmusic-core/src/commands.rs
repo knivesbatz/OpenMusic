@@ -1853,6 +1853,124 @@ pub async fn translate_texts(state: S<'_>, texts: Vec<String>, locale: String) -
 
 // ---- YouTube profiles (brand accounts) ------------------------------------------------------
 
+// ---- Browse all and the profile page --------------------------------------------------------
+
+/// "Browse all" tiles: YouTube Music's sections, moods and genres; Plex's genres. Cached a day.
+#[tauri::command]
+pub async fn browse_categories(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Vec<BrowseCategory>> {
+    let key = "browseCategories";
+    let cached = state.db().cache_get::<Vec<BrowseCategory>>(key, false)?;
+    if let (false, Some(c)) = (refresh, cached) {
+        return Ok(c);
+    }
+    let fresh = match state.flavor {
+        Flavor::Plex => {
+            let sess = state.plex_session().await?;
+            state.plex.genres(&sess).await
+        }
+        Flavor::YouTube => yt_call!(app, state, |y| y.categories()),
+    };
+    match fresh {
+        Ok(list) => {
+            state.db().cache_put(key, &list, 86400)?;
+            Ok(list)
+        }
+        Err(e) => {
+            let stale = state.db().cache_get::<Vec<BrowseCategory>>(key, true)?;
+            stale.ok_or(e)
+        }
+    }
+}
+
+/// The page behind a "Browse all" tile. Cached for an hour.
+#[tauri::command]
+pub async fn browse_page(app: AppHandle, state: S<'_>, id: String) -> Result<Vec<Shelf>> {
+    let key = format!("browsePage:{id}");
+    let cached = state.db().cache_get::<Vec<Shelf>>(&key, false)?;
+    if let Some(c) = cached {
+        return Ok(c);
+    }
+    let shelves = match state.flavor {
+        Flavor::Plex => {
+            let sess = state.plex_session().await?;
+            state.plex.genre_page(&sess, &id).await?
+        }
+        Flavor::YouTube => yt_call!(app, state, |y| y.browse_page(&id))?,
+    };
+    state.db().cache_put(&key, &shelves, 3600)?;
+    Ok(shelves)
+}
+
+/// A cover for a "Browse all" tile: the first artwork on its page. Kept a week (a miss a day).
+#[tauri::command]
+pub async fn browse_art(app: AppHandle, state: S<'_>, id: String) -> Result<Option<String>> {
+    let key = format!("browseArt:{id}");
+    let cached = state.db().cache_get::<Option<String>>(&key, false)?;
+    if let Some(c) = cached {
+        return Ok(c);
+    }
+    let shelves = browse_page(app, state.clone(), id).await?;
+    let art = shelves.iter().flat_map(|s| s.items.iter()).find_map(|it| match it {
+        MediaItem::Track(t) => t.artwork.clone(),
+        MediaItem::Album(a) => a.artwork.clone(),
+        MediaItem::Artist(a) => a.artwork.clone(),
+        MediaItem::Playlist(p) => p.artwork.clone(),
+        MediaItem::Podcast(p) => p.artwork.clone(),
+    });
+    state.db().cache_put(&key, &art, if art.is_some() { 7 * 86400 } else { 86400 })?;
+    Ok(art)
+}
+
+/// Who is signed in, for the Profile page: name, photo, public page and public playlists.
+#[tauri::command]
+pub async fn profile_info(app: AppHandle, state: S<'_>) -> Result<ProfileInfo> {
+    match state.flavor {
+        Flavor::YouTube => yt_call!(app, state, |y| y.profile()),
+        Flavor::Plex => {
+            let token = state.secrets.get("plex.token")?.ok_or(Error::NotSignedIn)?;
+            let users = plex_home_users(state.clone()).await.unwrap_or_default();
+            let me = users.into_iter().find(|u| u.selected);
+            let (name, photo) = match me {
+                Some(u) => (u.title, u.thumb),
+                None => state.plex.account_profile(&token).await?,
+            };
+            // Plex playlists are private to the server: there's no "public" to count.
+            Ok(ProfileInfo { name, photo, url: None, public_playlists: None })
+        }
+    }
+}
+
+/// Artists from your listening history: `top` (most played in the last 4 weeks) or `recent`
+/// (most recently played). Pictures and names come from the artist pages, kept for a month.
+#[tauri::command]
+pub async fn profile_artists(app: AppHandle, state: S<'_>, kind: String, limit: usize) -> Result<Vec<Artist>> {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let top = kind == "top";
+    let list = state.db().history_artists(if top { now - 28 * 86400 } else { 0 }, top, limit.min(50))?;
+    let mut out = Vec::new();
+    for chunk in list.chunks(5) {
+        let got = futures_util::future::join_all(chunk.iter().map(|a| artist_card(app.clone(), state.clone(), a.clone()))).await;
+        out.extend(got);
+    }
+    Ok(out)
+}
+
+async fn artist_card(app: AppHandle, state: S<'_>, a: Artist) -> Artist {
+    let key = format!("artistCard:{}", a.id);
+    let cached = state.db().cache_get::<Artist>(&key, false).ok().flatten();
+    if let Some(c) = cached {
+        return c;
+    }
+    match artist(app, state.clone(), a.id.clone()).await.ok().and_then(|p| p.artist) {
+        Some(page) => {
+            let card = Artist { id: a.id, name: if page.name.is_empty() { a.name } else { page.name }, artwork: page.artwork };
+            let _ = state.db().cache_put(&key, &card, 30 * 86400);
+            card
+        }
+        None => a,
+    }
+}
+
 /// Channels the signed-in Google account can use: the personal one and brand accounts.
 #[tauri::command]
 pub async fn yt_accounts(app: AppHandle, state: S<'_>) -> Result<Vec<YtAccount>> {

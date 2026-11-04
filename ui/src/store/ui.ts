@@ -20,7 +20,9 @@ export type Route =
   | { name: "local" }
   | { name: "downloads" }
   | { name: "import" }
-  | { name: "settings" };
+  | { name: "settings" }
+  | { name: "profile"; section?: "top" | "recent" | "playlists" }
+  | { name: "browse"; id: string; title: string };
 
 interface Toast {
   id: number;
@@ -42,6 +44,10 @@ export interface MenuItem {
   checked?: boolean;
   /** Text on the right, e.g. a sort direction arrow. */
   hint?: string;
+  /** Opens a web page outside the app: an arrow-out-of-box mark on the right. */
+  external?: boolean;
+  /** A row of icon buttons in place of a label (Spotify's "View as"). */
+  icons?: { label: string; icon: ComponentType<{ size?: number }>; on: boolean; onClick: () => void }[];
 }
 
 interface Dialog {
@@ -66,6 +72,8 @@ interface UiState {
   toasts: Toast[];
   menu: { x: number; y: number; items: MenuItem[] } | null;
   dialog: Dialog | null;
+  /** The Profile page's "Profile details" dialog is open. */
+  profileEdit: boolean;
   /** Tracks for the "View credits" style info dialog. */
   info: Track | null;
   /** The page's own name and play action, shown in the top bar once the page has scrolled. */
@@ -86,6 +94,7 @@ export const useUi = create<UiState>(() => ({
   toasts: [],
   menu: null,
   dialog: null,
+  profileEdit: false,
   info: null,
   pageTitle: null,
   savedIn: null,

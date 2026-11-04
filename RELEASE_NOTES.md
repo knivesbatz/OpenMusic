@@ -1,8 +1,44 @@
-# OpenMusic 1.2.17
+# OpenMusic 1.3.0
 
-Podcast episodes show the show's cover.
+Your profile page, Spotify's new top bar and Browse all.
 
-## New in 1.2.17
+## New in 1.3.0
+- **Profile page** (click your picture at the top right → Profile), laid out like Spotify's:
+  - your picture and name, with how many **public playlists** you have and how many artists
+    you're **following**
+  - **Choose photo**: click your picture (or your name) to pick a photo and change the name the
+    app shows. They change in the app only; your YouTube or Plex account keeps its own.
+  - **Top artists this month** (only visible to you) and **Recently played artists**, from what
+    you've played in the app, with Show all for the full lists
+  - **Public playlists**: in YTSpot the playlists anyone can see on your YouTube channel. Plex
+    has no public playlists, so PLEXSpot lists your playlists instead.
+  - the settings button and a ••• menu (Edit profile, Copy link to profile, Switch profile)
+- **New top bar**, like Spotify's: the bell (What's New) and your profile picture. The picture
+  opens a menu with Account (your Google or Plex account page, in the browser), Profile,
+  Switch profile, Recents, Transfer playlists, Support (in the browser), Private session,
+  Settings and Log out. On phones, your picture at the top of Home and Your Library opens the
+  same menu.
+- **Browse all**: the search box has a browse button at its right end. It opens colourful tiles
+  with a cover on each, like Spotify's:
+  - YTSpot: YouTube Music's New releases, Charts, Podcasts and every mood and genre
+  - PLEXSpot: the genres in your music library
+  Each tile opens its page: playlists, albums and artists for that genre, mood or chart. The
+  shortcuts into your library (Liked Songs, Recently played, Local files…) are underneath.
+- **Your Library: Sort by and View as**, like Spotify. Click the sort name above your playlists:
+  - Sort by **Recents**, **Recently added**, **Alphabetical**, **Creator** or **Custom order**
+    (drag to arrange). Recently added counts from when the app first saw each playlist, so
+    everything that was already there on the update keeps its Recents order.
+  - View as **Compact** (names only), **List**, **Compact grid** (covers only) or **Grid**
+    (covers with names).
+  Both are remembered.
+- **Fixed: songs showing above a playlist's column header** while scrolling. The header stuck a
+  little below the top bar (on Windows a 12-pixel gap), so rows slid through between them. It
+  now sits right under the top bar, whatever its height.
+- **A little rounder and livelier**: rounder corners on covers, cards, rows, menus, dialogs and
+  tiles; menu rows, dialog contents and the library list fade in; Browse all covers ease in and
+  turn slightly when you point at them. "Reduce motion" still turns it all off.
+
+## Also in 1.2.17
 - **Podcast episodes use the podcast's official cover** (YTSpot) instead of YouTube's
   per-episode thumbnails, on the show's page and wherever an episode from it plays: the player
   bar, Now playing, the queue, Discord and the phone's media controls. Episodes you save from the

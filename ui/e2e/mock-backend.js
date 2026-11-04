@@ -53,6 +53,11 @@
       { title: "fromArtistsYouFollow", items: albums.slice(5).map((a) => ({ type: "album", ...a })) },
       { title: "latestReleases", items: albums.slice(0, 5).map((a) => ({ type: "album", ...a })) },
     ],
+    profile_info: { name: "maya", photo: art(4, "M"), url: null, publicPlaylists: null },
+    profile_artists: (a) => (a.kind === "top" ? artists.slice(0, 6) : artists.slice(2, 8)),
+    browse_categories: ["Music", "Podcasts", "New releases", "Pop", "Country", "Latin", "Chill", "Charts", "Hip-Hop", "Jazz"].map((t, i) => ({ id: "plex-genre:1:" + i, title: t, color: null })),
+    browse_art: (a) => albums[Number(a.id.split(":").pop()) % albums.length].artwork,
+    browse_page: (a) => [{ title: "albums", items: albums.slice(0, 6).map((x) => ({ type: "album", ...x })) }, { title: "artists", items: artists.slice(0, 4).map((x) => ({ type: "artist", ...x })) }],
     saved_in: { appPlaylists: ["app:1"], remote: [] },
     localized_artist_names: {},
     // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.

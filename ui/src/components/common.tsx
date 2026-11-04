@@ -18,12 +18,15 @@ export const Art = memo(function Art({
   round,
   className,
   alt = "",
+  placeholder,
 }: {
   src?: string | null;
   size?: number;
   round?: boolean;
   className?: string;
   alt?: string;
+  /** Shown when there's no picture (default: a note). */
+  placeholder?: ReactNode;
 }) {
   const [failed, setFailed] = useState(false);
   const url = artUrl(src, size);
@@ -33,7 +36,7 @@ export const Art = memo(function Art({
       {url && !failed ? (
         <img src={url} alt={alt} loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} />
       ) : (
-        <IMusic size={28} />
+        placeholder ?? <IMusic size={28} />
       )}
     </div>
   );
@@ -120,7 +123,20 @@ export const Card = memo(function Card({
   );
 });
 
-export function Shelf({ title, subtitle, children, onShowAll }: { title: string; subtitle?: string | null; children: ReactNode; onShowAll?: () => void }) {
+export function Shelf({
+  title,
+  subtitle,
+  note,
+  children,
+  onShowAll,
+}: {
+  title: string;
+  subtitle?: string | null;
+  /** A small line under the title ("Only visible to you"). */
+  note?: string;
+  children: ReactNode;
+  onShowAll?: () => void;
+}) {
   const t = useT();
   return (
     <section className="shelf">
@@ -128,6 +144,7 @@ export function Shelf({ title, subtitle, children, onShowAll }: { title: string;
         <div>
           {subtitle && <div className="shelf-sub">{subtitle}</div>}
           <h2>{title}</h2>
+          {note && <div className="shelf-note">{note}</div>}
         </div>
         {onShowAll && (
           <button className="link" onClick={onShowAll}>

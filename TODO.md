@@ -290,3 +290,20 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Podcast episodes use the show's cover (`Ytm::podcast` sets every episode's artwork to the
   header thumbnail when there is one). Older saved episodes keep the art they were saved with;
   episodes in search results still carry YouTube's thumbnail. Not checked against a live account
+
+## 1.3.0
+- 🟡 Profile page (`pages/Profile.tsx`, route `profile`): `profile_info` (YT: account_menu → channel
+  id → channel page "Playlists" shelf + More; Plex: Home user / plex.tv user), `profile_artists`
+  (history → `Db::history_artists`, pictures from artist pages cached a month), photo/name in kv
+  `profile` (app-only). Parsers tested on recorded shapes; the account menu's channel link and
+  the channel's More page aren't checked against a signed-in account
+- ✅ Top bar: bell + avatar menu (Account ↗, Profile, Switch profile, Recents, Transfer playlists,
+  Support ↗, Private session, Settings, Log out); Settings/transfer buttons and the account name
+  link removed from the bar (self-test and e2e go through the menu)
+- 🟡 Browse all: search box browse button; `browse_categories` (YT Explore + Moods & genres, Plex
+  genres), `browse_page`, `browse_art` (first cover, cached a week). Moods & genres returns 404
+  without sign-in, so only Explore's tiles were checked live
+- ✅ Library Sort by (Recents, Recently added via kv `libraryOrg.added` first-seen times,
+  Alphabetical, Creator, Custom) and View as (compact, list, compact grid, grid) menu (unit + e2e)
+- ✅ Track-list sticky header uses the measured `--topbar-h` (gap on Windows' 56px bar)
+- ✅ Rounder corners and a few more fades (menu rows, dialog contents, library entries, tile covers)

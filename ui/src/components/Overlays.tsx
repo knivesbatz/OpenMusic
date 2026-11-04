@@ -3,6 +3,7 @@ import { useT } from "../i18n";
 import { closeMenu, useUi, type MenuItem } from "../store/ui";
 import { cls, fmtMs } from "../util";
 import { Art } from "./common";
+import * as I from "./Icons";
 
 export function ContextMenu() {
   const menu = useUi((s) => s.menu);
@@ -58,6 +59,24 @@ function MenuList({ items, x, y, root }: { items: MenuItem[]; x: number; y: numb
         {items.map((m, i) =>
           m.separator ? (
             <hr key={i} />
+          ) : m.icons ? (
+            <div key={i} className="menu-icons" role="group" aria-label={m.label}>
+              {m.icons.map((b) => (
+                <button
+                  key={b.label}
+                  className={cls(b.on && "on")}
+                  aria-label={b.label}
+                  title={b.label}
+                  aria-pressed={b.on}
+                  onClick={() => {
+                    closeMenu();
+                    b.onClick();
+                  }}
+                >
+                  <b.icon size={18} />
+                </button>
+              ))}
+            </div>
           ) : m.heading ? (
             <div key={i} className="menu-head">
               {m.label}
@@ -100,6 +119,7 @@ function MenuList({ items, x, y, root }: { items: MenuItem[]; x: number; y: numb
               </span>
               {m.submenu && <span aria-hidden="true">▸</span>}
               {!m.submenu && (m.hint || m.checked) && <span aria-hidden="true">{m.hint ?? "✓"}</span>}
+              {m.external && <I.IOpen size={16} />}
             </button>
           ),
         )}
