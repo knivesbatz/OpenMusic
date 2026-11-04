@@ -1076,6 +1076,20 @@ await test("YTSpot: your own playlist can be deleted from YouTube, after a confi
   },
 });
 
+await test("Android: a new version found at startup is downloaded and installed by the app", async (p) => {
+  await p.waitForFunction(() => window.__INSTALL?.length === 1, null, { timeout: 12000 });
+  assert.equal(await p.evaluate(() => window.__INSTALL[0]), "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk");
+  assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("plugin:opener|open_url"))));
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.app_info = { ...d.app_info, platform: "android" };
+    window.__INSTALL = [];
+    window.OpenMusicMedia = { update() {}, installUpdate: (url) => (window.__INSTALL.push(url), true) };
+    d.update_check = { available: true, current: "1.4.1", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk", ready: false };
+  },
+});
+
 await browser.close();
 server.httpServer.close();
 const failed = results.filter((r) => !r.ok).length;

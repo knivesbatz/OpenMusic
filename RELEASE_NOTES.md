@@ -1,8 +1,25 @@
-# OpenMusic 1.4.0
+# OpenMusic 1.4.1
 
-YTSpot and PLEXSpot for Mac.
+Android updates install themselves.
 
-## New in 1.4.0
+## New in 1.4.1
+- **Android: updates install by themselves.** When the app starts and there's a new version, it
+  downloads it and installs it itself: no browser, no files app, no tapping through the APK.
+  - The first time, Android asks you to allow **Install unknown apps** for the app (the settings
+    page opens; turn it on and go back). That's needed once.
+  - On Android 12 and later the update then installs without a prompt; older Android versions
+    show one "Update" button to tap. The app closes when the update lands, and a notification
+    opens it again.
+  - It only happens while nothing is playing, and "Install updates automatically" in Settings
+    turns it off.
+  - **One last reinstall:** Android only installs an update over the app when both are signed
+    with the same key. Builds so far were each signed with a new key, so once the project's
+    signing key is set up, uninstall the app one last time and install this version; from then
+    on updates install over it and keep your sign-in, downloads and settings.
+- **Discord:** Settings explains what to change in Discord when friends can't see what you're
+  listening to (Activity Privacy → "Share your detected activities with others").
+
+## Also in 1.4.0
 - **Mac apps.** `YTSpot_1.4.0_universal.dmg` and `PLEXSpot_1.4.0_universal.dmg` run on Apple
   silicon and Intel Macs with macOS 11 (Big Sur) or later. Open the disk image and drag the app
   into Applications.

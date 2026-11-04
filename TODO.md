@@ -318,3 +318,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   guards loops). Built in CI only; not run on a Mac yet
 - 🟡 YTSpot "Delete from YouTube" for own playlists (`yt_delete_playlist`: PL ids only, page must
   have the editable header, `playlist/delete`; cached library pruned). Not run against a real account
+
+## 1.4.1
+- 🟡 Android self-update (`SelfUpdate.kt`: download from GitHub releases only, PackageInstaller
+  session with USER_ACTION_NOT_REQUIRED on API 31+, status receiver shows Android's confirm screen
+  when needed, MY_PACKAGE_REPLACED notification). Needs the ANDROID_KEYSTORE secrets (stable key)
+  and one reinstall; not run on a phone yet
+- ✅ Discord hint: Activity Privacy setting when friends can't see the presence
