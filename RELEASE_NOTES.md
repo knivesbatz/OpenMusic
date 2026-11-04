@@ -42,8 +42,8 @@ The phone app redone after today's Spotify app, and Android updates that install
     with the same key. Builds so far were each signed with a new key, so once the project's
     signing key is set up, uninstall the app one last time and install this version; from then
     on updates install over it and keep your sign-in, downloads and settings.
-- **Discord:** Settings explains what to change in Discord when friends can't see what you're
-  listening to (Activity Privacy → "Share your detected activities with others").
+- **Discord:** Settings explains what to change in Discord when only you can see what you're
+  listening to (Activity Privacy → "Share my activity", and the server's Activity Status).
 
 ## Also in 1.4.0
 - **Mac apps.** `YTSpot_1.4.0_universal.dmg` and `PLEXSpot_1.4.0_universal.dmg` run on Apple
