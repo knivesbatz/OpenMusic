@@ -125,6 +125,34 @@ pub enum MediaItem {
     Podcast(Podcast),
 }
 
+/// A "Browse all" tile: a genre, mood or section of the provider (YouTube Music's Explore and
+/// Moods & genres, Plex genres). `id` is what `browse_page` opens.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowseCategory {
+    pub id: String,
+    pub title: String,
+    /// "#rrggbb" when the provider gives the tile a colour.
+    #[serde(default)]
+    pub color: Option<String>,
+}
+
+/// The signed-in profile, for the Profile page.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfileInfo {
+    pub name: String,
+    #[serde(default)]
+    pub photo: Option<String>,
+    /// Public web page of the profile (YouTube channel), when known.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Playlists other people can see (YouTube: the channel's playlists). `None` when the
+    /// provider has no such idea or it couldn't be read; the page then lists your playlists.
+    #[serde(default)]
+    pub public_playlists: Option<Vec<Playlist>>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Shelf {

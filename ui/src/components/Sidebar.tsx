@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPlaylist, folderMenu, newFolder, playlistMenu } from "../actions";
 import { api } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { useApp } from "../store/app";
-import { arrange, folderKey, moveEntry, putInFolder, setSort, toggleFolder, useFolders, type Folder } from "../store/folders";
+import { arrange, folderKey, markSeen, moveEntry, putInFolder, setSort, setView, toggleFolder, useFolders, type Folder, type SortMode } from "../store/folders";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi, type Route } from "../store/ui";
 import type { Playlist } from "../types";
@@ -38,6 +38,7 @@ export function Sidebar() {
   const playlists = useMemo(() => allPlaylists.filter((p) => !isLikedPlaylist(p)), [allPlaylists]);
   /** Top-level keys (playlists and folders) in display order. */
   const topKeys = useMemo(() => arrange(org, playlists), [org, playlists]);
+  useEffect(() => markSeen(playlists.map((p) => p.id)), [playlists, org.loaded]);
 
   const entries = useMemo(() => {
     const out: Entry[] = [];
@@ -102,8 +103,34 @@ export function Sidebar() {
     moveEntry(dragged, before, topKeys);
   }
 
-  const sortLabel = org.sort === "alpha" ? t("sortAlpha") : org.sort === "custom" ? t("sortCustom") : t("sortRecent");
-  const nextSort = org.sort === "recent" ? "alpha" : org.sort === "alpha" ? "custom" : "recent";
+  const sortNames: Record<SortMode, string> = {
+    recent: t("sortRecent"),
+    added: t("recentlyAdded"),
+    alpha: t("sortAlpha"),
+    creator: t("sortCreator"),
+    custom: t("sortCustom"),
+  };
+  // Spotify's library menu: Sort by, then View as (four layouts).
+  const sortMenu = (e: React.MouseEvent) =>
+    openMenu(e, [
+      { label: t("sortMenu"), heading: true },
+      ...(Object.keys(sortNames) as SortMode[]).map((k) => ({ label: sortNames[k], checked: org.sort === k, onClick: () => setSort(k) })),
+      { label: "", separator: true },
+      { label: t("viewAs"), heading: true },
+      {
+        label: t("viewAs"),
+        icons: [
+          { label: t("viewCompact"), icon: I.IViewCompact, on: org.view === "compact", onClick: () => setView("compact") },
+          { label: t("viewList"), icon: I.IViewList, on: org.view === "list", onClick: () => setView("list") },
+          { label: t("viewCompactGrid"), icon: I.IViewCompactGrid, on: org.view === "compactGrid", onClick: () => setView("compactGrid") },
+          { label: t("viewGrid"), icon: I.IViewGrid, on: org.view === "grid", onClick: () => setView("grid") },
+        ],
+      },
+    ]);
+  const viewIcon = { compact: I.IViewCompact, list: I.IViewList, compactGrid: I.IViewCompactGrid, grid: I.IViewGrid }[org.view];
+  const ViewIcon = viewIcon;
+  const view = collapsed ? "list" : org.view;
+  const gridView = view === "grid" || view === "compactGrid";
 
   const is = (r: Route) => JSON.stringify(r) === JSON.stringify(cur);
 
@@ -187,14 +214,16 @@ export function Sidebar() {
           <div className="side-section">
             {!collapsed && <span>{t("playlists")}</span>}
             {!collapsed && (
-              <button className="link small" title={t("sortBy")} onClick={() => setSort(nextSort)}>
-                {sortLabel}
+              <button className="link small side-sort" title={t("sortBy")} aria-haspopup="menu" onClick={sortMenu}>
+                <span>{sortNames[org.sort]}</span>
+                <ViewIcon size={14} />
               </button>
             )}
             <button className="icon-btn" aria-label={t("createPlaylist")} title={t("createPlaylist")} onClick={newMenu}>
               <I.IPlus size={16} />
             </button>
           </div>
+          <div className={cls("lib-entries", "view-" + view)}>
           {entries.map((e) =>
             e.k === "folder" ? (
               <SideItem
@@ -203,7 +232,8 @@ export function Sidebar() {
                 collapsed={collapsed}
                 title={e.v.name}
                 sub={t("folderCount", { n: e.v.items.length })}
-                icon={<div className="art sm folder-art">{e.v.open ? <I.IFolderOpen size={20} /> : <I.IFolder size={20} />}</div>}
+                view={view}
+                icon={<div className="art sm folder-art">{e.v.open ? <I.IFolderOpen size={gridView ? 32 : 20} /> : <I.IFolder size={gridView ? 32 : 20} />}</div>}
                 expanded={e.v.open}
                 onClick={() => toggleFolder(e.v.id)}
                 onContext={(ev) => openMenu(ev, folderMenu(e.v))}
@@ -218,7 +248,8 @@ export function Sidebar() {
                 collapsed={collapsed}
                 title={e.v.title}
                 sub={sub(e.v, t)}
-                icon={<Art src={e.v.artwork} size={96} className="sm" />}
+                view={view}
+                icon={<Art src={e.v.artwork} size={gridView ? 240 : 96} className="sm" />}
                 onClick={() => navigate({ name: "playlist", id: e.v.id })}
                 onContext={(ev) => openMenu(ev, playlistMenu(e.v, async () => (await api.playlist(e.v.id)).tracks))}
                 onPlay={async () => {
@@ -228,6 +259,7 @@ export function Sidebar() {
               />
             ),
           )}
+          </div>
         </div>
       </div>
     </nav>
@@ -240,6 +272,7 @@ function sub(p: Playlist, t: ReturnType<typeof useT>): string {
 }
 
 function SideItem(p: {
+  view?: "compact" | "list" | "compactGrid" | "grid";
   active: boolean;
   collapsed: boolean;
   title: string;
@@ -260,10 +293,10 @@ function SideItem(p: {
   return (
     <div
       className={cls("side-item", p.active && "active", !!p.depth && !p.collapsed && "nested", p.dropMode && "drop-" + p.dropMode)}
+      title={p.collapsed || p.view === "compactGrid" ? p.title : undefined}
       role="button"
       tabIndex={0}
       aria-expanded={p.expanded}
-      title={p.collapsed ? p.title : undefined}
       onClick={p.onClick}
       onDoubleClick={isTouch() ? undefined : p.onPlay}
       onKeyDown={(e) => e.key === "Enter" && p.onClick()}
@@ -274,11 +307,12 @@ function SideItem(p: {
       onDragEnd={p.onDragEnd}
       onDrop={p.onDrop}
     >
-      {p.icon}
-      {!p.collapsed && (
-        <div className="side-text">
+      {p.view !== "compact" && p.icon}
+      {!p.collapsed && p.view !== "compactGrid" && (
+        <div className={cls("side-text", p.view === "compact" && "inline")}>
           <span className="name">{p.title}</span>
-          <span className="sub">{p.sub}</span>
+          {/* Compact (Spotify): "Road trip • Playlist" on one line. */}
+          <span className="sub">{p.view === "compact" ? `• ${p.sub.split(" • ")[0]}` : p.sub}</span>
         </div>
       )}
     </div>

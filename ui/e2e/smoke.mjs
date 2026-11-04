@@ -16,6 +16,12 @@ const results = [];
 /** Rejects after `ms`: a crashed renderer can leave a Playwright call waiting forever. */
 const within = (ms, p, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} timed out after ${ms} ms`)), ms))]);
 
+/** Settings is in the profile picture's menu (Spotify's top bar). */
+async function openSettings(p) {
+  await p.locator(".avatar-btn").first().click();
+  await p.click(".menu button:has-text('Settings')");
+}
+
 async function test(name, fn, { youtube = false, init, userAgent } = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, userAgent });
   page.setDefaultTimeout(15000);
@@ -145,7 +151,7 @@ await test("YouTube: reopening lyrics on a music video stays responsive", async 
 }, { youtube: true });
 
 await test("YouTube: settings toggles and Japanese text modes", async (p) => {
-  await p.click('button[aria-label="Settings"]');
+  await openSettings(p);
   for (const mode of ["Romaji", "Both", "Japanese script"]) {
     await p.click('button[aria-label="Japanese text"]');
     await p.click(`.menu button:has-text("${mode}")`);
@@ -179,8 +185,9 @@ await test("playlist folders and custom order in the sidebar", async (p) => {
   await lib.locator(".side-item", { hasText: "Moods" }).click();
   assert.equal(await lib.locator(".side-item.nested").count(), 1);
   // Custom order: drag "End" above "Moods".
-  for (let i = 0; i < 2; i++) await p.click(".side-section .link");
-  assert.equal((await p.locator(".side-section .link").textContent()).trim(), "Custom order");
+  await p.click(".side-section .side-sort");
+  await p.click('.menu button:has-text("Custom order")');
+  assert.equal((await p.locator(".side-section .side-sort").textContent()).trim(), "Custom order");
   const names = async () => await lib.locator(".side-item .name").allTextContents();
   await lib.locator(".side-item", { hasText: /^End/ }).dragTo(lib.locator(".side-item", { hasText: "Moods" }), { targetPosition: { x: 40, y: 2 } });
   const order = await names();
@@ -188,7 +195,7 @@ await test("playlist folders and custom order in the sidebar", async (p) => {
 });
 
 await test("language switch to Japanese", async (p) => {
-  await p.click('button[aria-label="Settings"]');
+  await openSettings(p);
   await p.click('button[aria-label="Language"]');
   await p.click('.menu button:has-text("日本語")');
   await p.waitForSelector("text=ホーム");
@@ -451,7 +458,7 @@ await test("Listening history lists every play by day; plays can be removed and 
 } });
 
 await test("Sync playlists: receive shows an address and code; send posts to the typed address", async (p) => {
-  await p.click('button[aria-label="Settings"]');
+  await openSettings(p);
   await p.waitForSelector("h2:has-text('Sync playlists between devices')");
   await p.click('.sync .setting button:has-text("Receive")');
   await p.waitForSelector('.sync-code strong:has-text("192.168.1.23:47380")');
@@ -492,7 +499,7 @@ await test("Space only plays/pauses: it never presses a clicked or keyboard-focu
   await p.waitForFunction((b) => document.querySelector(".playerbar .play-btn")?.getAttribute("aria-label") === b, before);
   assert.equal(await name(), song);
   // A clicked switch in Settings doesn't flip either.
-  await p.click('button[aria-label="Settings"]');
+  await openSettings(p);
   const sw = p.locator('label.setting:has-text("Gapless") input');
   const on = await sw.isChecked();
   await sw.click();
@@ -559,7 +566,7 @@ await test("A submenu reached while its menu is still opening stays open", async
 
 await test("Private session: nothing played is recorded until it's turned off", async (p) => {
   const recorded = () => p.evaluate(() => window.__CALLS__.filter((c) => ["record_play", "lastfm_now_playing", "presence_update"].includes(c)));
-  await p.click('button[aria-label="Settings"]');
+  await openSettings(p);
   await p.locator('label.setting:has-text("Private session") input').click();
   await p.waitForSelector('.toast:has-text("Private session on")');
   await p.waitForSelector(".playerbar .private-badge");
@@ -677,7 +684,7 @@ await test("Android widgets: a tapped playlist opens in the app, and the recent 
 });
 
 await test("Normalize volume: the switch reveals the level, and both are saved", async (p) => {
-  await p.click('button[aria-label="Settings"]');
+  await openSettings(p);
   await p.waitForSelector(".page h1:has-text('Settings')");
   const row = p.locator(".setting", { hasText: "Normalize volume" });
   assert.equal(await p.locator(".setting", { hasText: "Volume level" }).count(), 0);
@@ -754,7 +761,7 @@ await test("Artist discography: albums newest first, compilations on their own t
 });
 
 await test("Phones: Settings opens the newest release page in the phone's browser", async (p) => {
-  await p.locator('button[aria-label="Settings"]').first().click();
+  await openSettings(p);
   const row = p.locator(".setting", { hasText: "Latest version for Android" });
   await row.waitFor();
   await row.locator("button", { hasText: "Open in browser" }).click();
@@ -772,7 +779,7 @@ await test("Phones: Settings opens the newest release page in the phone's browse
 });
 
 await test("Desktop Settings has no Android download link", async (p) => {
-  await p.click('button[aria-label="Settings"]');
+  await openSettings(p);
   await p.waitForSelector(".page h1:has-text('Settings')");
   await p.locator(".setting", { hasText: "Check for updates" }).first().waitFor();
   assert.equal(await p.locator(".setting", { hasText: "Latest version for Android" }).count(), 0);
@@ -883,6 +890,126 @@ await test(
     },
   },
 );
+
+await test(
+  "Top bar: the profile picture opens Spotify's account menu",
+  async (p) => {
+    await p.waitForSelector(".topbar .avatar-btn img");
+    await p.click(".topbar .avatar-btn");
+    const items = (await p.locator(".menu > button").allTextContents()).map((x) => x.trim());
+    for (const want of ["Account", "Profile", "Recents", "Support", "Private session", "Settings", "Log out"]) assert.ok(items.includes(want), `menu has ${want}: ${items}`);
+    // Account opens the provider's account page outside the app.
+    await p.click(".menu button:has-text('Account')");
+    await p.waitForFunction(() => window.__OPENED.length > 0);
+    assert.equal(await p.evaluate(() => window.__OPENED[0]), "https://app.plex.tv/desktop/#!/settings/account");
+    // Recents is the recently played list.
+    await p.click(".topbar .avatar-btn");
+    await p.click(".menu button:has-text('Recents')");
+    await p.waitForFunction(() => document.querySelector(".page h1")?.textContent?.includes("Recently played"));
+    // The old account name link, transfer and settings buttons are gone from the bar.
+    assert.equal(await p.locator(".topbar .account, .topbar .import-btn").count(), 0);
+  },
+  {
+    init: () => {
+      window.__OPENED = [];
+      window.__MOCK__["plugin:opener|open_url"] = (a) => (window.__OPENED.push(a.url), null);
+    },
+  },
+);
+
+await test(
+  "Profile page: photo, counts, top and recent artists; a new photo and name are kept in the app",
+  async (p) => {
+    await p.click(".topbar .avatar-btn");
+    await p.click(".menu button:has-text('Profile')");
+    await p.waitForSelector(".profile-page .hero h1");
+    assert.equal((await p.locator(".profile-page .hero h1").textContent()).trim(), "maya");
+    const meta = await p.locator(".profile-counts").textContent();
+    assert.ok(/\d+ Playlists/.test(meta) && /\d+ Following/.test(meta), meta);
+    const heads = (await p.locator(".profile-page .shelf h2").allTextContents()).map((x) => x.trim());
+    assert.deepEqual(heads, ["Top artists this month", "Playlists", "Recently played artists"]);
+    assert.ok((await p.locator(".shelf-note").textContent()).includes("Only visible to you"));
+    // Show all opens the full list.
+    await p.locator(".shelf", { hasText: "Top artists this month" }).locator("button.link").click();
+    await p.waitForFunction(() => document.querySelector(".page h1")?.textContent === "Top artists this month");
+    assert.ok((await p.locator(".grid .card").count()) >= 6);
+    await p.click(".topbar .avatar-btn");
+    await p.click(".menu button:has-text('Profile')");
+    await p.waitForSelector(".profile-page .hero-art-btn");
+    // Choose photo → Profile details: pick an image, rename, save.
+    await p.click(".profile-page .hero-art-btn");
+    await p.waitForSelector(".dialog.profile-edit");
+    const [chooser] = await Promise.all([p.waitForEvent("filechooser"), p.click(".dialog.profile-edit .hero-art-btn")]);
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8z8DAwMDAxMDAwMDAAAANHQEDasKb6QAAAABJRU5ErkJggg==", "base64");
+    await chooser.setFiles({ name: "me.png", mimeType: "image/png", buffer: png });
+    await p.waitForSelector(".dialog.profile-edit .pe-art img[src^='data:image/jpeg']");
+    await p.fill(".dialog.profile-edit input", "Maya K");
+    await p.click(".dialog.profile-edit button:has-text('Save')");
+    await p.waitForFunction(() => document.querySelector(".profile-page .hero h1")?.textContent === "Maya K");
+    const saved = await p.evaluate(() => window.__KV.profile);
+    assert.equal(saved.name, "Maya K");
+    assert.ok(saved.photo.startsWith("data:image/jpeg"));
+    // The top bar shows the new photo too.
+    assert.ok((await p.getAttribute(".topbar .avatar-btn img", "src")).startsWith("data:image/jpeg"));
+  },
+  {
+    init: () => {
+      window.__KV = {};
+      window.__MOCK__.kv_set = (a) => ((window.__KV[a.key] = a.value), null);
+    },
+  },
+);
+
+await test(
+  "Browse all: the search box's browse button shows genre tiles that open their page",
+  async (p) => {
+    await p.click(".browse-btn");
+    await p.waitForFunction(() => document.querySelector(".page h1")?.textContent === "Browse all");
+    await p.waitForSelector(".browse-tile:has-text('Pop')");
+    // Covers load for tiles on screen.
+    await p.waitForSelector(".browse-tile .bt-art");
+    // Your library shortcuts are still there.
+    assert.ok(await p.locator("h2", { hasText: "Your library" }).count());
+    await p.click(".browse-tile:has-text('Pop')");
+    await p.waitForFunction(() => document.querySelector(".page h1")?.textContent === "Pop");
+    const heads = (await p.locator(".shelf h2").allTextContents()).map((x) => x.trim());
+    assert.deepEqual(heads, ["Albums", "Artists"]);
+  },
+);
+
+await test("Your Library: Spotify's Sort by and View as menu, remembered", async (p) => {
+  const lib = p.locator(".lib-list");
+  await lib.locator(".side-item", { hasText: "Road trip" }).waitFor();
+  await p.click(".side-section .side-sort");
+  const items = (await p.locator(".menu > button").allTextContents()).map((x) => x.trim().replace("✓", ""));
+  assert.deepEqual(items.slice(0, 5), ["Recents", "Recently added", "Alphabetical", "Creator", "Custom order"]);
+  assert.equal(await p.locator(".menu-icons button").count(), 4);
+  // Alphabetical.
+  await p.click('.menu button:has-text("Alphabetical")');
+  const names = (await lib.locator(".side-item .name").allTextContents()).map((x) => x.trim());
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)));
+  // Grid: covers with names; compact grid: covers only; compact: no covers.
+  await p.click(".side-section .side-sort");
+  await p.click('.menu-icons button[aria-label="Grid"]');
+  await p.waitForSelector(".lib-entries.view-grid .side-item .art");
+  await p.click(".side-section .side-sort");
+  await p.click('.menu-icons button[aria-label="Compact grid"]');
+  await p.waitForSelector(".lib-entries.view-compactGrid");
+  assert.equal(await lib.locator(".side-item .name").count(), 0);
+  await p.click(".side-section .side-sort");
+  await p.click('.menu-icons button[aria-label="Compact"]');
+  await p.waitForSelector(".lib-entries.view-compact");
+  assert.equal(await lib.locator(".side-item .art").count(), 0);
+  assert.ok((await lib.locator(".side-item", { hasText: "Road trip" }).textContent()).includes("• Playlist"));
+  // Saved for next time.
+  await p.waitForFunction(() => window.__KV.libraryOrg?.view === "compact");
+  assert.equal(await p.evaluate(() => window.__KV.libraryOrg.sort), "alpha");
+}, {
+  init: () => {
+    window.__KV = {};
+    window.__MOCK__.kv_set = (a) => ((window.__KV[a.key] = a.value), null);
+  },
+});
 
 await browser.close();
 server.httpServer.close();

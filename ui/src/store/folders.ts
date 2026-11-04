@@ -11,16 +11,23 @@ export interface Folder {
   open: boolean;
 }
 
-export type SortMode = "recent" | "alpha" | "custom";
+export type SortMode = "recent" | "added" | "alpha" | "creator" | "custom";
+/** Spotify's "View as": compact list, list, compact grid, grid. */
+export type ViewMode = "compact" | "list" | "compactGrid" | "grid";
+export const SORT_MODES: SortMode[] = ["recent", "added", "alpha", "creator", "custom"];
+export const VIEW_MODES: ViewMode[] = ["compact", "list", "compactGrid", "grid"];
 
 export interface LibraryOrg {
   folders: Folder[];
   /** Top-level custom order: playlist ids and `folder:<id>`. Unknown entries go last. */
   order: string[];
   sort: SortMode;
+  view: ViewMode;
+  /** When the app first listed each playlist or folder (ms), for "Recently added". */
+  added: Record<string, number>;
 }
 
-export const emptyOrg: LibraryOrg = { folders: [], order: [], sort: "recent" };
+export const emptyOrg: LibraryOrg = { folders: [], order: [], sort: "recent", view: "list", added: {} };
 export const folderKey = (id: string) => `folder:${id}`;
 
 export const useFolders = create<LibraryOrg & { loaded: boolean }>(() => ({ ...emptyOrg, loaded: false }));
@@ -29,8 +36,8 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const { folders, order, sort } = useFolders.getState();
-    if (inTauri) api.kvSet("libraryOrg", { folders, order, sort }).catch(() => {});
+    const { folders, order, sort, view, added } = useFolders.getState();
+    if (inTauri) api.kvSet("libraryOrg", { folders, order, sort, view, added }).catch(() => {});
   }, 300);
 }
 
@@ -49,13 +56,16 @@ export function sanitizeOrg(raw: Partial<LibraryOrg> | null | undefined): Librar
     ? raw!.folders.filter((f) => f && typeof f.id === "string").map((f) => ({ id: f.id, name: String(f.name ?? ""), items: Array.isArray(f.items) ? f.items.filter((x) => typeof x === "string") : [], open: f.open !== false }))
     : [];
   const order = Array.isArray(raw?.order) ? raw!.order.filter((x) => typeof x === "string") : [];
-  const sort: SortMode = raw?.sort === "alpha" || raw?.sort === "custom" ? raw.sort : "recent";
-  return { folders, order, sort };
+  const sort: SortMode = SORT_MODES.includes(raw?.sort as SortMode) ? (raw!.sort as SortMode) : "recent";
+  const view: ViewMode = VIEW_MODES.includes(raw?.view as ViewMode) ? (raw!.view as ViewMode) : "list";
+  const added: Record<string, number> = {};
+  if (raw?.added && typeof raw.added === "object") for (const [k, v] of Object.entries(raw.added)) if (typeof v === "number") added[k] = v;
+  return { folders, order, sort, view, added };
 }
 
 function update(fn: (o: LibraryOrg) => LibraryOrg) {
   const s = useFolders.getState();
-  useFolders.setState(fn({ folders: s.folders, order: s.order, sort: s.sort }));
+  useFolders.setState(fn({ folders: s.folders, order: s.order, sort: s.sort, view: s.view, added: s.added }));
   persist();
 }
 
@@ -94,13 +104,21 @@ export function moveTopLevel(o: LibraryOrg, key: string, beforeKey: string | nul
 }
 
 /** Top-level keys in display order for the given sort mode. */
-export function arrange(o: LibraryOrg, playlists: { id: string; title: string }[]): string[] {
+export function arrange(o: LibraryOrg, playlists: { id: string; title: string; owner?: string | null }[]): string[] {
   const inFolder = new Set(o.folders.flatMap((f) => f.items));
   const top = playlists.filter((p) => !inFolder.has(p.id)).map((p) => p.id);
   const keys = [...o.folders.map((f) => folderKey(f.id)), ...top];
-  if (o.sort === "alpha") {
-    const name = (k: string) => (k.startsWith("folder:") ? o.folders.find((f) => folderKey(f.id) === k)?.name : playlists.find((p) => p.id === k)?.title) ?? "";
-    return keys.sort((a, b) => name(a).localeCompare(name(b)));
+  const name = (k: string) => (k.startsWith("folder:") ? o.folders.find((f) => folderKey(f.id) === k)?.name : playlists.find((p) => p.id === k)?.title) ?? "";
+  if (o.sort === "alpha") return keys.sort((a, b) => name(a).localeCompare(name(b)));
+  if (o.sort === "added") {
+    // Newest first; equal times (everything the app found on its first run) keep Recents order.
+    const at = (k: string) => o.added[k] ?? 0;
+    return keys.map((k, i) => ({ k, i })).sort((a, b) => at(b.k) - at(a.k) || a.i - b.i).map((x) => x.k);
+  }
+  if (o.sort === "creator") {
+    // By who made it, then by name; folders (yours) and playlists without an owner first.
+    const owner = (k: string) => (k.startsWith("folder:") ? "" : playlists.find((p) => p.id === k)?.owner ?? "");
+    return keys.sort((a, b) => owner(a).localeCompare(owner(b)) || name(a).localeCompare(name(b)));
   }
   if (o.sort === "custom") {
     const pos = new Map(o.order.map((k, i) => [k, i]));
@@ -117,7 +135,7 @@ export function arrange(o: LibraryOrg, playlists: { id: string; title: string }[
 
 export function createFolder(name: string): string {
   const id = Math.random().toString(36).slice(2, 10);
-  update((o) => ({ ...o, folders: [...o.folders, { id, name, items: [], open: true }] }));
+  update((o) => ({ ...o, folders: [...o.folders, { id, name, items: [], open: true }], added: { ...o.added, [folderKey(id)]: Date.now() } }));
   return id;
 }
 export const renameFolder = (id: string, name: string) => update((o) => ({ ...o, folders: o.folders.map((f) => (f.id === id ? { ...f, name } : f)) }));
@@ -129,4 +147,14 @@ export const putInFolder = (playlistId: string, folderId: string, beforeId?: str
 export const takeOutOfFolder = (playlistId: string) => update((o) => detach(o, playlistId));
 export const moveEntry = (key: string, beforeKey: string | null, current: string[]) => update((o) => moveTopLevel(o, key, beforeKey, current));
 export const setSort = (sort: SortMode) => update((o) => ({ ...o, sort }));
+export const setView = (view: ViewMode) => update((o) => ({ ...o, view }));
+/** Note when playlists first show up, for "Recently added". Saves only when something is new. */
+export function markSeen(ids: string[]) {
+  const s = useFolders.getState();
+  if (!s.loaded) return;
+  const fresh = ids.filter((id) => s.added[id] == null);
+  if (!fresh.length) return;
+  const now = Date.now();
+  update((o) => ({ ...o, added: { ...o.added, ...Object.fromEntries(fresh.map((id) => [id, now])) } }));
+}
 export const folderOf = (playlistId: string) => useFolders.getState().folders.find((f) => f.items.includes(playlistId));

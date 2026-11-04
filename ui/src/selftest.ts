@@ -11,6 +11,14 @@ const click = (css: string) => {
   if (!el) throw new Error(`not found: ${css}`);
   el.click();
 };
+/** An item of the profile picture's menu (Settings, Transfer playlists, ...). */
+async function accountMenu(item: string) {
+  click(".avatar-btn");
+  await sleep(300);
+  const b = $$(".menu button").find((x) => x.textContent?.trim() === item);
+  if (!b) throw new Error(`menu item not found: ${item}`);
+  b.click();
+}
 const log = (line: string) => api.selfTestLog(line).catch(() => {});
 
 async function step(name: string, fn: () => void | Promise<void>) {
@@ -39,7 +47,7 @@ export async function runSelfTest() {
   await sleep(4000);
   await step("continue with local files only", () => $$("button").find((b) => b.textContent?.includes("Continue with local files only"))?.click());
   await sleep(1000);
-  await step("open settings", () => click('button[aria-label="Settings"]'));
+  await step("open settings", () => accountMenu("Settings"));
   await sleep(1500);
 
   const switches = $$('input[role="switch"]').length;
@@ -115,7 +123,7 @@ export async function runSelfTest() {
     await sleep(800);
     escape();
   });
-  await step("transfer page", () => click('button[aria-label="Transfer playlists"]'));
+  await step("transfer page", () => accountMenu("Transfer playlists"));
   await log("done");
   await sleep(500);
   await api.selfTestExit();

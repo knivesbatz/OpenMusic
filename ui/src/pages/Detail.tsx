@@ -18,7 +18,28 @@ import type { Album, Artist, PlayContext, Track } from "../types";
 import { cls, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
 
-function Hero({ art, kind, title, meta, round, onArt }: { art?: string | null; kind: string; title: string; meta: React.ReactNode; round?: boolean; onArt?: () => void }) {
+export function Hero({
+  art,
+  kind,
+  title,
+  meta,
+  round,
+  onArt,
+  artLabel,
+  onTitle,
+  placeholder,
+}: {
+  art?: string | null;
+  kind: string;
+  title: string;
+  meta: React.ReactNode;
+  round?: boolean;
+  onArt?: () => void;
+  /** Text under the pencil on hover ("Choose photo"). */
+  artLabel?: string;
+  onTitle?: () => void;
+  placeholder?: React.ReactNode;
+}) {
   // A color wash from the cover behind the header (Spotify style): the cover blown up so far
   // that only its colors show; no blur filter, which some GPUs choke on.
   const wash = artUrl(art, 60);
@@ -26,10 +47,13 @@ function Hero({ art, kind, title, meta, round, onArt }: { art?: string | null; k
     <header className="hero">
       {wash && <div className="hero-wash" aria-hidden="true" style={{ backgroundImage: `url("${wash}")` }} />}
       {onArt ? (
-        <button className="hero-art-btn" onClick={onArt} aria-label={kind}>
-          <Art src={art} size={480} round={round} className="hero-art" />
+        <button className={cls("hero-art-btn", round && "round")} onClick={onArt} aria-label={artLabel ?? kind}>
+          <Art src={art} size={480} round={round} className="hero-art" placeholder={placeholder} />
           <span className="hero-art-edit">
-            <I.IEdit size={36} />
+            <span>
+              <I.IEdit size={36} />
+              {artLabel && <span className="hero-art-label">{artLabel}</span>}
+            </span>
           </span>
         </button>
       ) : (
@@ -37,7 +61,7 @@ function Hero({ art, kind, title, meta, round, onArt }: { art?: string | null; k
       )}
       <div className="hero-text">
         <span className="small">{kind}</span>
-        <h1 className={cls(title.length > 28 && "long")}>
+        <h1 className={cls(title.length > 28 && "long", onTitle && "clickable")} onClick={onTitle}>
           <TitleText text={title} />
         </h1>
         <div className="hero-meta">{meta}</div>

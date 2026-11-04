@@ -248,7 +248,7 @@ p { margin: 0 0 8px; }
 .tracklist { margin-bottom: 16px; }
 .tl-row { display: grid; grid-template-columns: 40px minmax(200px, 4fr) minmax(120px, 3fr) 90px; align-items: center; gap: 16px; padding: 0 16px; height: 56px; border-radius: 4px; position: absolute; left: 0; right: 0; top: 0; color: var(--muted); }
 .tl-row.no-album { grid-template-columns: 40px 1fr 90px; }
-.tl-head { position: sticky; top: 68px; z-index: 2; height: 36px; border-bottom: 1px solid #ffffff1a; border-radius: 0; margin-bottom: 8px; background: var(--surface); font-size: 0.8125rem; }
+.tl-head { position: sticky; top: var(--topbar-h, 68px); z-index: 2; height: 36px; border-bottom: 1px solid #ffffff1a; border-radius: 0; margin-bottom: 8px; background: var(--surface); font-size: 0.8125rem; }
 .tl-row:not(.tl-head):hover { background: var(--hover); }
 .tl-row.selected { background: #ffffff33; }
 .tl-row.selected:hover { background: #ffffff40; }
@@ -613,7 +613,7 @@ p { margin: 0 0 8px; }
 
 /* ---- podcast pages (Spotify style) --------------------------------------------------------------- */
 .podcast-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 340px); gap: 40px; align-items: start; }
-.podcast-about { position: sticky; top: 80px; }
+.podcast-about { position: sticky; top: calc(var(--topbar-h, 68px) + 12px); }
 .podcast-about p { line-height: 1.5; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 12; -webkit-box-orient: vertical; overflow: hidden; }
 .ep-row { display: flex; gap: 16px; padding: 16px 12px; border-top: 1px solid #ffffff14; border-radius: 6px; transition: background 0.15s; }
 .ep-row:hover { background: var(--hover); }
@@ -968,3 +968,113 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 /* Private session badge in the player bar (a click ends the session). */
 .private-badge { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; padding: 3px 9px; border-radius: 999px; background: #1e3264; color: #fff; font-size: 0.6875rem; font-weight: 600; white-space: nowrap; }
 .private-badge:hover { background: #2a4583; }
+
+/* ---- 1.3.0: account button, browse button, Browse all covers, Profile ---------------------------- */
+.avatar-btn { flex: none; display: grid; place-items: center; border-radius: 50%; color: #000; font-weight: 800; padding: 0; }
+.avatar-btn .art { width: 100%; height: 100%; background: transparent; }
+.avatar-btn.desk { width: 48px; height: 48px; background: #1f1f1f; border: 8px solid #1f1f1f; }
+.avatar-btn.desk:not(:has(.art)) { background: #f573a0; font-size: 0.9375rem; }
+.avatar-btn.desk:hover { filter: brightness(1.15); }
+.avatar-btn.desk:has(.art) { background: #1f1f1f; }
+.avatar-btn:not(.desk) .art { border-radius: 50%; overflow: hidden; }
+.tb-icon { width: 32px; height: 32px; }
+.titlebar .avatar-btn.desk { width: 40px; height: 40px; border-width: 4px; }
+.search-sep { width: 1px; height: 24px; background: #7c7c7c; flex: none; }
+.browse-btn { color: var(--muted); padding: 4px; }
+.browse-btn.on { color: var(--text); }
+.browse-btn.on::after { display: none; }
+
+.browse-tile .bt-art { position: absolute; right: -6%; bottom: -4%; width: 44%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; transform: rotate(25deg) translate(18%, -2%); box-shadow: 0 2px 4px #0003; pointer-events: none; }
+.browse-tile > span:first-child { position: relative; z-index: 1; max-width: 72%; overflow-wrap: anywhere; }
+.browse-tiles + h2 { margin-top: 32px; }
+
+.hero-art-btn.round { border-radius: 50%; }
+.hero-art-btn.round .hero-art { border-radius: 50%; overflow: hidden; }
+.hero-art-edit > span { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.hero-art-label { font-size: 1rem; font-weight: 700; color: #fff; }
+.hero-text h1.clickable { cursor: pointer; }
+.profile-page .hero-art { box-shadow: 0 4px 60px #00000080; }
+.profile-page .hero-art .art-ph, .profile-page .hero-art > svg, .pe-art > svg { color: var(--muted); }
+.profile-counts span + span::before { content: " • "; }
+.profile-actions { display: flex; align-items: center; gap: 16px; padding: 16px 0 8px; }
+.shelf-note { color: var(--muted); font-size: 0.875rem; margin-top: 2px; }
+
+.dialog.profile-edit { width: min(524px, 94vw); }
+.pe-body { display: flex; gap: 16px; align-items: flex-start; margin-top: 16px; }
+.pe-photo { display: flex; flex-direction: column; align-items: center; gap: 8px; flex: none; }
+.pe-art { width: 180px; height: 180px; box-shadow: 0 4px 60px #00000080; }
+.pe-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; align-items: flex-end; }
+.pe-fields .field { width: 100%; }
+.dialog.profile-edit > p { margin-top: 16px; }
+@media (max-width: 560px) {
+  .pe-body { flex-direction: column; align-items: center; }
+  .pe-fields { width: 100%; }
+}
+@media (max-width: 760px) {
+  .avatar-btn:not(.desk):has(.art) { background: transparent; }
+}
+
+/* ---- Your Library: Sort by / View as (Spotify's library menu) ------------------------------------ */
+.side-sort { display: inline-flex; align-items: center; gap: 6px; }
+.menu-icons { display: flex; gap: 4px; padding: 4px 6px 6px; }
+.menu-icons button { flex: 1; justify-content: center; padding: 10px 0; border-radius: 8px; color: var(--muted); }
+.menu-icons button.on { color: var(--green); background: #ffffff14; }
+.menu-icons button:hover { color: var(--text); }
+/* Compact: one line per playlist, no covers. */
+.view-compact .side-item { padding: 6px 8px; gap: 0; }
+.view-compact .side-item.nested { padding-left: 24px; }
+/* Grids: covers in columns; the compact grid shows covers only (names on hover). */
+.view-grid, .view-compactGrid { display: grid; gap: 4px; padding: 4px 0; }
+.view-grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+.view-compactGrid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+.view-grid .side-item, .view-compactGrid .side-item { flex-direction: column; align-items: stretch; gap: 8px; padding: 8px; }
+.view-compactGrid .side-item { padding: 4px; }
+.view-grid .side-item .art.sm, .view-compactGrid .side-item .art.sm { width: 100%; height: auto; }
+.view-grid .side-item.nested, .view-compactGrid .side-item.nested { padding-left: 8px; box-shadow: inset 2px 0 0 #ffffff26; }
+.view-grid .side-text .name { font-size: 0.875rem; }
+.view-grid .side-item .art, .view-compactGrid .side-item .art { transition: transform var(--t-med) var(--ease-out), box-shadow var(--t-med) var(--ease-out); }
+.view-grid .side-item:hover .art, .view-compactGrid .side-item:hover .art { transform: translateY(-2px); box-shadow: 0 8px 18px #0007; }
+.lib-entries > * { animation: om-fade var(--t-med) var(--ease-out) backwards; }
+
+/* ---- 1.3.0: a little rounder ----------------------------------------------------------------------- */
+:root { --radius: 12px; }
+.art { border-radius: 6px; }
+.art.sm { border-radius: 6px; }
+.card { border-radius: 12px; }
+.card-art .art { border-radius: 10px; }
+.shortcut { border-radius: 10px; }
+.shortcut .art { border-radius: 0; }
+.side-item, .side-cat, .nav-item { border-radius: 10px; }
+.tl-row { border-radius: 10px; }
+.tl-row.tl-head { border-radius: 0; }
+.menu { border-radius: 12px; }
+.menu button { border-radius: 8px; }
+.dialog { border-radius: 18px; }
+.browse-tile { border-radius: 12px; }
+.hero-art:not(.round) { border-radius: 10px; }
+.toast { border-radius: 12px; }
+.chip { border-radius: 500px; }
+.field input, .field select { border-radius: 8px; }
+
+/* ---- 1.3.0: a few more (quiet) animations ---------------------------------------------------------- */
+@keyframes om-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+/* Menu rows arrive a beat after the menu. */
+.menu > button, .menu > .menu-icons { animation: om-fade var(--t-med) var(--ease-out) backwards; animation-delay: 30ms; }
+/* Covers on Browse all ease in and turn a touch when you point at a tile. */
+.browse-tile .bt-art { transition: transform var(--t-slow) var(--ease-out); animation: om-pop var(--t-slow) var(--ease-out) backwards; }
+.browse-tile:hover .bt-art { transform: rotate(22deg) translate(14%, -6%) scale(1.04); }
+/* Track rows and side items: the hover background fades rather than snapping. */
+.tl-row, .side-item { transition: background var(--t-med) var(--ease-out), color var(--t-fast); }
+/* The avatar menu button, the bell and the browse button ease their colour. */
+.avatar-btn, .tb-icon, .browse-btn { transition: filter var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease-out); }
+.avatar-btn:active { transform: scale(0.95); }
+/* Shelves and Show all. */
+.shelf-head .link { transition: color var(--t-fast), opacity var(--t-fast); }
+.shelf-head { animation: om-fade var(--t-med) var(--ease-out) backwards; }
+/* Dialog contents settle in after the panel. */
+.dialog > * { animation: om-fade var(--t-med) var(--ease-out) 40ms backwards; }
+/* Profile photo and big headers fade up. */
+.profile-page .hero-art-btn { animation: om-pop var(--t-slow) var(--ease-out) backwards; }
+.hero-art-edit { transition: opacity var(--t-med) var(--ease-out); }
+.side-text.inline { flex-direction: row; align-items: baseline; gap: 6px; }
+.side-text.inline .sub { flex: none; font-size: 0.8125rem; }

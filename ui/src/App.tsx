@@ -20,7 +20,8 @@ import * as P from "./player/engine";
 import { isMobileApp, useApp } from "./store/app";
 import { PANEL_W, SIDEBAR_W, useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
-import { HistoryPage, Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
+import { BrowseCategoryPage, HistoryPage, Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
+import { ProfileEditDialog, ProfilePage } from "./pages/Profile";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
 import { Login } from "./pages/Login";
 import { cls, spaceTogglesPlayback } from "./util";
@@ -64,6 +65,10 @@ function Page() {
       return <ImportPage />;
     case "settings":
       return <SettingsPage />;
+    case "profile":
+      return <ProfilePage key={r.section ?? ""} section={r.section} />;
+    case "browse":
+      return <BrowseCategoryPage key={r.id} id={r.id} title={r.title} />;
     default:
       return <Home />;
   }
@@ -221,6 +226,7 @@ export function App() {
         </div>
       )}
       {profilePicker && <ProfilePicker />}
+      <ProfileEditDialog />
       <ContextMenu />
       <SavedInPanel />
       <DialogHost />

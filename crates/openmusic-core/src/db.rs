@@ -9,7 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::error::Result;
-use crate::model::{Playlist, Track};
+use crate::model::{Artist, Playlist, Track};
 
 const MIGRATIONS: &[&str] = &[
     // v1
@@ -537,6 +537,32 @@ impl Db {
             .collect())
     }
 
+    /// Artists you played since `since` (unix seconds), most played first (`by_count`) or most
+    /// recently played first. Episodes and tracks without an artist id are left out; the name is
+    /// the track's artist text until the caller looks the artist up.
+    pub fn history_artists(&self, since: i64, by_count: bool, limit: usize) -> Result<Vec<Artist>> {
+        let mut st = self.conn.prepare("SELECT track_json FROM history WHERE played_at > ?1 ORDER BY id DESC LIMIT 5000")?;
+        let rows = st.query_map([since], |r| r.get::<_, String>(0))?;
+        let mut order: Vec<(Artist, usize)> = Vec::new();
+        let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for json in rows.filter_map(|r| r.ok()) {
+            let Ok(t) = serde_json::from_str::<Track>(&json) else { continue };
+            let Some(id) = t.artist_id.filter(|id| !id.is_empty() && !t.episode) else { continue };
+            match index.get(&id) {
+                Some(&i) => order[i].1 += 1,
+                None => {
+                    index.insert(id.clone(), order.len());
+                    order.push((Artist { id, name: t.artist, artwork: None }, 1));
+                }
+            }
+        }
+        if by_count {
+            // Stable: equal counts keep the most recently played first.
+            order.sort_by(|a, b| b.1.cmp(&a.1));
+        }
+        Ok(order.into_iter().take(limit).map(|(a, _)| a).collect())
+    }
+
     // ---- scrobble queue ---------------------------------------------------------------------
 
     /// Returns false when the identical scrobble is already queued (dedupe on artist/track/ts).
@@ -697,6 +723,25 @@ mod tests {
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].title, "Mix 2");
         assert_eq!(db.playlist_tracks("app:x").unwrap().iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["yt:c"]);
+    }
+
+    #[test]
+    fn history_artists_by_plays_and_recency() {
+        let db = Db::open_in_memory().unwrap();
+        let tr = |id: &str, artist: &str, aid: Option<&str>| {
+            let mut t = track(id);
+            t.artist = artist.into();
+            t.artist_id = aid.map(String::from);
+            t
+        };
+        for t in [tr("1", "A", Some("yt:A")), tr("2", "A", Some("yt:A")), tr("3", "B", Some("yt:B")), tr("4", "C", None)] {
+            db.record_play(&t, None).unwrap();
+        }
+        let top = db.history_artists(0, true, 10).unwrap();
+        assert_eq!(top.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["yt:A", "yt:B"]);
+        let recent = db.history_artists(0, false, 10).unwrap();
+        assert_eq!(recent.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), ["yt:B", "yt:A"]);
+        assert!(db.history_artists(now() + 10, true, 10).unwrap().is_empty());
     }
 
     #[test]
