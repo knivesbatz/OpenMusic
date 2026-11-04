@@ -124,6 +124,29 @@ fn with_watchdog(
     }
 }
 
+/// macOS: the app's pages are served from `http://localhost:<port>` (tauri-plugin-localhost)
+/// instead of `tauri://localhost`. YouTube's embedded player refuses to play on a page without an
+/// http(s) origin, and Plex servers reached over plain http would be mixed content there. Windows
+/// and Android already use `http://tauri.localhost`. The port is fixed per app so the origin, and
+/// with it the page's local storage, stays the same from launch to launch.
+#[cfg(target_os = "macos")]
+pub fn ui_port(flavor: Flavor) -> u16 {
+    match flavor {
+        Flavor::YouTube => 47321,
+        Flavor::Plex => 47322,
+    }
+}
+
+/// Where a page of the app lives: `index.html#pip` and the like.
+pub fn ui_url(flavor: Flavor, path: &str) -> tauri::WebviewUrl {
+    #[cfg(target_os = "macos")]
+    if let Ok(url) = format!("http://localhost:{}/{path}", ui_port(flavor)).parse() {
+        return tauri::WebviewUrl::External(url);
+    }
+    let _ = flavor;
+    tauri::WebviewUrl::App(path.into())
+}
+
 pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
     let state_slot: Arc<Mutex<Option<Arc<AppState>>>> = Arc::new(Mutex::new(None));
     let slot_for_protocol = state_slot.clone();
@@ -136,6 +159,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![commands::HTPC_ARG]),
         ));
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_plugin_localhost::Builder::new(ui_port(flavor)).build());
     builder
         // Android: media notification and background playback; button presses go to the UI.
         .plugin(tauri_plugin_openmusic_media::init(|app, action| {
@@ -164,6 +189,8 @@ pub fn run(flavor: Flavor, context: tauri::Context<tauri::Wry>) {
             // The main window is created here (not from config) so safe mode can switch the
             // webview's GPU acceleration off before it starts.
             let main_cfg = app.config().app.windows.iter().find(|w| w.label == "main").cloned().ok_or("no main window in config")?;
+            #[cfg(target_os = "macos")]
+            let main_cfg = tauri::utils::config::WindowConfig { url: ui_url(flavor, ""), ..main_cfg };
             let main = commands::with_browser_args(tauri::WebviewWindowBuilder::from_config(&handle, &main_cfg)?, &state);
             // Android: Google refuses sign-in in anything that identifies as a WebView ("; wv"),
             // and YouTube sign-in happens in this window there. Present as mobile Chrome.

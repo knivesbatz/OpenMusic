@@ -1,11 +1,11 @@
 // Updates from the latest GitHub release: checked at startup and every 6 hours. Windows downloads
 // the installer in the background (Settings → Install updates automatically) and installs it when
-// the app closes or on "Restart to update"; Android offers the new APK.
+// the app closes or on "Restart to update"; Android offers the new APK and macOS the new disk image.
 import { create } from "zustand";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorMessage, inTauri } from "../api";
 import { translate } from "../i18n";
-import { isMobileApp } from "./app";
+import { isMobileApp, useApp } from "./app";
 import { useSettings } from "./settings";
 import { toast } from "./ui";
 
@@ -21,6 +21,10 @@ export interface UpdateState {
 export const useUpdate = create<UpdateState>(() => ({ version: null, url: null, notes: null, status: "idle", dismissed: false }));
 const tr = (k: Parameters<typeof translate>[1], v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
+/** Phones and Macs download the new version in the browser (an APK, a disk image) and the user
+ * installs it; Windows downloads the installer itself and installs it on close. */
+export const updatesInBrowser = () => isMobileApp() || useApp.getState().info?.platform === "macos";
+
 export async function checkForUpdates(manual = false) {
   if (!inTauri) return;
   const s = useUpdate.getState();
@@ -34,7 +38,7 @@ export async function checkForUpdates(manual = false) {
       return;
     }
     useUpdate.setState({ version: info.version, url: info.url, notes: info.notes ?? null, status: info.ready ? "ready" : "available", dismissed: false });
-    if (!info.ready && !isMobileApp() && useSettings.getState().autoUpdate) await downloadUpdate();
+    if (!info.ready && !updatesInBrowser() && useSettings.getState().autoUpdate) await downloadUpdate();
   } catch (e) {
     useUpdate.setState({ status: "idle" });
     if (manual) toast(errorMessage(e));
@@ -44,7 +48,7 @@ export async function checkForUpdates(manual = false) {
 export async function downloadUpdate() {
   const { url } = useUpdate.getState();
   if (!url) return;
-  if (isMobileApp()) return void openUrl(url);
+  if (updatesInBrowser()) return void openUrl(url);
   useUpdate.setState({ status: "downloading" });
   try {
     await api.updateDownload(url);

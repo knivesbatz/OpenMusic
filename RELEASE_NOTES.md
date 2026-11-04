@@ -1,8 +1,22 @@
-# OpenMusic 1.3.0
+# OpenMusic 1.4.0
 
-Your profile page, Spotify's new top bar and Browse all.
+YTSpot and PLEXSpot for Mac.
 
-## New in 1.3.0
+## New in 1.4.0
+- **Mac apps.** `YTSpot_1.4.0_universal.dmg` and `PLEXSpot_1.4.0_universal.dmg` run on Apple
+  silicon and Intel Macs with macOS 11 (Big Sur) or later. Open the disk image and drag the app
+  into Applications.
+  - **First launch:** the apps aren't notarized by Apple (that needs a paid developer account),
+    so macOS says it can't check them. Open **System Settings → Privacy & Security**, scroll down,
+    click **Open Anyway** next to the app's name and confirm. After that it opens normally.
+  - Your sign-in is kept in the macOS Keychain.
+  - The menu bar icon, the mini player, Discord Rich Presence, launch at login and Last.fm are
+    all there.
+  - Windows-only parts stay on Windows: the custom title bar (Macs keep their own), "Share
+    audio when streaming on Discord", and installing updates by itself. When there's a new
+    version, the Mac app says so and **Download** opens the new disk image in your browser.
+
+## Also in 1.3.0
 - **Profile page** (click your picture at the top right → Profile), laid out like Spotify's:
   - your picture and name, with how many **public playlists** you have and how many artists
     you're **following**

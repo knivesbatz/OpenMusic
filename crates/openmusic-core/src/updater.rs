@@ -63,7 +63,14 @@ pub async fn check(http: &reqwest::Client, product: &str) -> Result<UpdateInfo> 
         .await?;
     let tag = v.get("tag_name").and_then(|t| t.as_str()).unwrap_or_default();
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let suffix = if cfg!(target_os = "android") { "_android-arm64.apk" } else { "_x64-setup.exe" };
+    let suffix = if cfg!(target_os = "android") {
+        "_android-arm64.apk"
+    } else if cfg!(target_os = "macos") {
+        // One disk image for Apple silicon and Intel Macs.
+        "_universal.dmg"
+    } else {
+        "_x64-setup.exe"
+    };
     let url = v.get("assets").and_then(|a| a.as_array()).and_then(|assets| {
         assets.iter().find_map(|a| {
             let name = a.get("name")?.as_str()?;

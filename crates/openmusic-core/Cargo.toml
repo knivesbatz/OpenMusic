@@ -35,7 +35,14 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
-keyring = { version = "3", features = ["windows-native"] }
+# Windows Credential Manager and the macOS Keychain. Without "apple-native" keyring falls back
+# to an in-memory store, and a Mac would forget the sign-in at every restart.
+keyring = { version = "3", features = ["windows-native", "apple-native"] }
+
+# macOS: the UI is served from http://localhost (see lib.rs): YouTube's embedded player refuses
+# pages on the tauri:// scheme, and the Plex player needs a plain http origin for http servers.
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-localhost = "2"
 
 # Windows: "Share audio with Discord" (audio_share.rs) relays WebView2's audio through this process.
 [target.'cfg(windows)'.dependencies]

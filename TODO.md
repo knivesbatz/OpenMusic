@@ -307,3 +307,10 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   Alphabetical, Creator, Custom) and View as (compact, list, compact grid, grid) menu (unit + e2e)
 - ✅ Track-list sticky header uses the measured `--topbar-h` (gap on Windows' 56px bar)
 - ✅ Rounder corners and a few more fades (menu rows, dialog contents, library entries, tile covers)
+
+## 1.4.0
+- 🟡 macOS: `macos` CI job (universal dmg per app, ad-hoc signed, not notarized; core tests on
+  macOS), release attaches `*.dmg`; keyring `apple-native` (it fell back to an in-memory store);
+  UI served from `http://localhost:47321/47322` via tauri-plugin-localhost so YouTube's embed and
+  http Plex servers work (`ui_url`, `capabilities/macos.json`); Safari user agent for Google
+  sign-in; updater offers `_universal.dmg` in the browser. Built in CI only; not run on a Mac yet

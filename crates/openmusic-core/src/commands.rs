@@ -1630,7 +1630,7 @@ pub async fn pip_toggle(app: AppHandle, state: S<'_>) -> Result<bool> {
         let _ = w.close();
         return Ok(false);
     }
-    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", tauri::WebviewUrl::App("index.html#pip".into())), &state)
+    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", crate::ui_url(state.flavor, "index.html#pip")), &state)
         // Named after the app so it is easy to pick in Discord's and OBS's window lists.
         .title(format!("{} mini player", app.package_info().name))
         .inner_size(320.0, 420.0)
@@ -2139,12 +2139,22 @@ pub fn with_browser_args<'a, M: Manager<tauri::Wry>>(
 ) -> tauri::WebviewWindowBuilder<'a, tauri::Wry, M> {
     #[cfg(windows)]
     return b.additional_browser_args(&crate::safe_mode::browser_args(state.safe_mode.get().is_some(), crate::smtc::available()));
-    #[cfg(not(windows))]
+    // macOS: present as Safari. Google turns sign-in down in web views that don't name a browser
+    // ("This browser or app may not be secure"), and the sign-in window shares this setting.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = state;
+        return b.user_agent(MAC_USER_AGENT);
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         let _ = state;
         b
     }
 }
+
+#[cfg(target_os = "macos")]
+const MAC_USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15";
 
 /// Turn the webview's GPU acceleration on or off; takes effect after a restart.
 #[tauri::command(async)]
