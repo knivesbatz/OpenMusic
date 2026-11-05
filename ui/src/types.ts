@@ -95,6 +95,8 @@ export interface SearchResults {
   playlists: Playlist[];
   podcasts: Podcast[];
   episodes: Track[];
+  /** Providers whose part failed (set on results merged from several providers). */
+  errors?: ProviderError[];
 }
 
 export interface ArtistPage {
@@ -129,6 +131,8 @@ export interface Library {
   podcasts: Podcast[];
   /** "Your Episodes" (saved in the app). */
   episodes?: Track[];
+  /** Merged library: providers whose part failed (their part is the last one cached, if any). */
+  errors?: ProviderError[];
 }
 
 export type Stream =
@@ -219,7 +223,15 @@ export interface HomeData {
   contexts: PlayContext[];
   topTracks: Track[];
   stale: boolean;
-  error?: ApiError | null;
+  /** Providers whose part failed or timed out (their shelves are missing or from the cache). */
+  errors?: ProviderError[];
+}
+
+/** The combined Liked Songs page (`liked_tracks`): YouTube's liked songs, then Plex's rated tracks. */
+export interface LikedTracks {
+  tracks: Track[];
+  stale: boolean;
+  errors?: ProviderError[];
 }
 
 /** Sign-in state of every provider (`auth_status`). */
@@ -243,6 +255,8 @@ export interface PlexServer {
 export interface ApiError {
   code: string;
   message: string;
+  /** Which provider refused (authExpired, disabled); absent for errors of no provider. */
+  provider?: Provider;
 }
 
 export interface Lyrics {

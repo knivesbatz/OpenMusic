@@ -10,6 +10,9 @@ import { navigate, toast } from "../store/ui";
 import * as Q from "./queue";
 import { setYouTubePrivate, YouTubeOutput } from "./youtube";
 import { displayTrack } from "../store/songmeta";
+import { translate } from "../i18n";
+import { registerCacheReset, useApp } from "../store/app";
+import { playable, sourceOf, ytOn } from "../store/providers";
 
 export interface PlayerState {
   queue: Q.QueueState;
@@ -43,6 +46,10 @@ const initial: PlayerState = {
 export const usePlayer = create<PlayerState>(() => initial);
 const get = usePlayer.getState;
 const set = usePlayer.setState;
+
+/** Tracks of a service that is switched off are skipped (Plex downloads still play). */
+const canPlay: Q.Playable = (t) => playable(t);
+const tr = (k: Parameters<typeof translate>[1]) => translate(useSettings.getState().language, k);
 
 // ---- audio outputs ---------------------------------------------------------------------------
 
@@ -90,6 +97,19 @@ function ytDeck(i = ytActive): YouTubeOutput {
 function stopYouTube() {
   for (const d of ytDecks) d.stop();
   ytPreloaded = null;
+}
+
+const isYouTube = (t: Track) => (sourceOf(t.id) ?? t.source) === "youtube";
+
+/**
+ * Get the YouTube player ready (load the IFrame API and build the player) while the app is on
+ * screen, whenever the queue has YouTube songs. Otherwise the first YouTube song after Plex or
+ * local songs would build it at the end of a song, with no user gesture and maybe in the background.
+ */
+function warmYouTube() {
+  if (!inTauri || !ytOn() || typeof document === "undefined" || document.visibilityState !== "visible") return;
+  if (!get().queue.items.some((i) => isYouTube(i.track))) return;
+  void ytDeck().warm();
 }
 let scrobble: { uid: string; startedAt: number; done: boolean; playedMs: number; lastTick: number } | null = null;
 
@@ -227,6 +247,20 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
     set({ playing: false, position: 0, duration: 0, output: null });
     return;
   }
+  // Its service was switched off (a restored queue, Add to queue): on to the next that can play.
+  if (!canPlay(item.track)) {
+    const s = get();
+    const i = Q.nextIndex(s.queue, s.repeat, true, canPlay);
+    if (i < 0) {
+      wantPlay = false;
+      stopAll();
+      set({ playing: false, loading: false, position: 0, output: null });
+      toast(tr("nothingPlayable"));
+      return;
+    }
+    set({ queue: Q.advance(s.queue, i) });
+    return loadCurrent(autoplay, 0);
+  }
   set({ loading: true, position: startAt, duration: (item.track.durationMs ?? 0) / 1000 });
   try {
     ensureDecks();
@@ -335,7 +369,7 @@ function onTime(t: number, d: number) {
   if (!s.output || !s.playing) return;
   const remaining = dur - t;
   const settings = useSettings.getState();
-  const nextI = Q.nextIndex(s.queue, s.repeat, false);
+  const nextI = Q.nextIndex(s.queue, s.repeat, false, canPlay);
   const nextItem = nextI >= 0 && nextI !== s.queue.index ? s.queue.items[nextI] : undefined;
   if (!nextItem) {
     // Last song: fetch Autoplay songs early so gapless and crossfade work into them too.
@@ -344,7 +378,11 @@ function onTime(t: number, d: number) {
   }
   // Blending needs both tracks on the same kind of output (two audio decks or two players).
   const yt = s.output === "youtube";
-  if (yt !== (nextItem.track.source === "youtube")) return;
+  if (yt !== isYouTube(nextItem.track)) {
+    // A Plex or local song followed by a YouTube one: have the player ready before the switch.
+    if (!yt && remaining < 20) warmYouTube();
+    return;
+  }
   const cur = Q.current(s.queue)!;
   const fade = crossfadeSeconds(cur.track, nextItem.track);
   const ahead = remaining < Math.max(20, fade + 8);
@@ -475,7 +513,7 @@ function crossfadeTo(nextI: number, seconds: number) {
 
 function onEnded() {
   const s = get();
-  const i = Q.nextIndex(s.queue, s.repeat, false);
+  const i = Q.nextIndex(s.queue, s.repeat, false, canPlay);
   if (i < 0) {
     autoplayRadio();
     return;
@@ -501,17 +539,20 @@ let autoplayFetch: Promise<boolean> = Promise.resolve(false);
  */
 function fetchAutoplay(): Promise<boolean> {
   const s = get();
-  const last = s.queue.items[s.queue.items.length - 1];
-  if (!inTauri || !useSettings.getState().autoplaySimilar || !last || s.repeat !== "off") return Promise.resolve(false);
-  if (autoplaySeed === last.uid) return autoplayFetch;
-  autoplaySeed = last.uid;
+  const tail = s.queue.items[s.queue.items.length - 1];
+  if (!inTauri || !useSettings.getState().autoplaySimilar || !tail || s.repeat !== "off") return Promise.resolve(false);
+  if (autoplaySeed === tail.uid) return autoplayFetch;
+  autoplaySeed = tail.uid;
+  // Similar to the last song that can play (one of a service that is off can't seed it).
+  const seed = [...s.queue.items].reverse().find((i) => canPlay(i.track));
+  if (!seed) return (autoplayFetch = Promise.resolve(false));
   const exclude = s.queue.items.slice(-200).map((i) => i.track.id);
   autoplayFetch = api
-    .autoplayTracks(last.track, exclude)
+    .autoplayTracks(seed.track, exclude)
     .then((tracks) => {
       const q = get().queue;
       // The queue changed while fetching: leave it alone.
-      if (!tracks?.length || q.items[q.items.length - 1]?.uid !== last.uid) return false;
+      if (!tracks?.length || q.items[q.items.length - 1]?.uid !== tail.uid) return false;
       set({ queue: Q.extend(q, tracks) });
       return true;
     })
@@ -524,7 +565,7 @@ async function autoplayRadio() {
   set({ loading: true });
   const added = await fetchAutoplay();
   const s = get();
-  const i = added ? Q.nextIndex(s.queue, s.repeat, true) : -1;
+  const i = added ? Q.nextIndex(s.queue, s.repeat, true, canPlay) : -1;
   if (i < 0 || i === s.queue.index) {
     wantPlay = false;
     set({ playing: false, loading: false });
@@ -597,7 +638,15 @@ export async function restore() {
 
 usePlayer.subscribe((s, prev) => {
   if (s.queue !== prev.queue || s.shuffle !== prev.shuffle || s.repeat !== prev.repeat) persistSoon();
+  if (s.queue.items !== prev.queue.items) warmYouTube();
 });
+
+// Stream URLs resolved under the old set of services are dropped when a switch changes.
+registerCacheReset(() => streamCache.clear());
+
+// YouTube turned on with YouTube songs queued, or the app back on screen: warm the player up.
+useApp.subscribe((s, prev) => s.services.youtube && !prev.services.youtube && warmYouTube());
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", warmYouTube);
 
 // Volume follows settings.
 useSettings.subscribe((s, prev) => {
@@ -623,15 +672,20 @@ useSettings.subscribe((s, prev) => {
 
 export function playTracks(tracks: Track[], start = 0, context: PlayContext | null = null) {
   if (!tracks.length) return;
+  const queue = Q.load(tracks, start, get().shuffle, canPlay);
+  if (queue.index < 0) {
+    toast(tr("nothingPlayable"));
+    return;
+  }
   errorStreak = 0;
-  set({ queue: Q.load(tracks, start, get().shuffle), context });
+  set({ queue, context });
   loadCurrent(true);
 }
 
 export function playUid(uid: string) {
   const q = get().queue;
   const i = q.items.findIndex((x) => x.uid === uid);
-  if (i < 0) return;
+  if (i < 0 || !canPlay(q.items[i].track)) return;
   set({ queue: Q.advance(q, i) });
   loadCurrent(true);
 }
@@ -681,7 +735,7 @@ export function toggle() {
 
 export function next(userSkip = true) {
   const s = get();
-  const i = Q.nextIndex(s.queue, s.repeat, userSkip);
+  const i = Q.nextIndex(s.queue, s.repeat, userSkip, canPlay);
   if (i < 0) {
     autoplayRadio();
     return;
@@ -694,7 +748,7 @@ export function previous() {
   const s = get();
   // Like Spotify: restart the track if more than 3 s in.
   if (s.position > 3) return seek(0);
-  const i = Q.prevIndex(s.queue, s.repeat);
+  const i = Q.prevIndex(s.queue, s.repeat, canPlay);
   if (i === s.queue.index) return seek(0);
   set({ queue: Q.advance(s.queue, i) });
   loadCurrent(true);

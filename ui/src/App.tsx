@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, type ComponentType } from "react";
 import { PlayerBar } from "./components/PlayerBar";
 import { MobileTabs } from "./components/MobileTabs";
 import { QueuePanel } from "./components/QueuePanel";
@@ -17,13 +17,14 @@ import { Loading, usePhoneLayout } from "./components/common";
 import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
 import * as P from "./player/engine";
-import { isMobileApp, useApp } from "./store/app";
+import { isMobileApp, needsConnect, useApp } from "./store/app";
+import { useConnectFlowActive } from "./store/signin";
 import { PANEL_W, SIDEBAR_W, useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
 import { BrowseCategoryPage, HistoryPage, Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
 import { ProfileEditDialog, ProfilePage } from "./pages/Profile";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
-import { Login } from "./pages/Login";
+import { Connect } from "./pages/Login";
 import { cls, spaceTogglesPlayback } from "./util";
 
 // Rarely used pages load on demand to keep startup light.
@@ -35,6 +36,8 @@ const SettingsPage = lazy(() => Manage().then((m) => ({ default: m.SettingsPage 
 const Fullscreen = lazy(() => import("./components/Fullscreen").then((m) => ({ default: m.Fullscreen })));
 const PhonePlayer = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhonePlayer })));
 const PhoneQueue = lazy(() => import("./components/PhonePlayer").then((m) => ({ default: m.PhoneQueue })));
+/** Liked Songs of every service that is on (`liked_tracks`), from pages/Detail.tsx. */
+const LikedPage = lazy(() => import("./pages/Detail").then((m) => ({ default: (m as unknown as { LikedPage: ComponentType }).LikedPage })));
 
 function Page() {
   const r = useUi((s) => s.stack[s.pos]);
@@ -51,6 +54,8 @@ function Page() {
       return <AlbumPage id={r.id} />;
     case "playlist":
       return r.id.startsWith("yt:MPSP") ? <PodcastPage id={r.id} /> : <PlaylistPage id={r.id} />;
+    case "liked":
+      return <LikedPage />;
     case "new":
       return <WhatsNewPage />;
     case "history":
@@ -87,8 +92,11 @@ function isTyping(e: KeyboardEvent) {
 export function App() {
   const t = useT();
   const info = useApp((s) => s.info);
-  const auth = useApp((s) => s.auth);
-  const localOnly = useApp((s) => s.localOnly);
+  const ready = useApp((s) => s.ready);
+  const noService = useApp(needsConnect);
+  const connectFlow = useConnectFlowActive();
+  const servicesEpoch = useApp((s) => s.servicesEpoch);
+  const routeName = useUi((s) => s.stack[s.pos].name);
   const lyricsPanel = useUi((s) => s.lyricsPanel);
   const sideW = useSettings((s) => s.sidebarWidth);
   const panelW = useSettings((s) => s.panelWidth);
@@ -182,8 +190,10 @@ export function App() {
     };
   }, []);
 
-  if (!info) return <Loading />;
-  const needsLogin = !localOnly && (!auth?.signedIn || auth.needsServer);
+  if (!info || !ready) return <Loading />;
+  // "Connect your music": nothing set up yet, or a sign-in started there is still going (the
+  // Plex server list comes after Plex is signed in).
+  const needsLogin = noService || connectFlow;
 
   return (
     <div className={cls("app", htpc && "htpc", titleBar && "titled")}>
@@ -192,7 +202,7 @@ export function App() {
       </a>
       {titleBar && !fullscreen && <TitleBar nav={!needsLogin && !htpc} />}
       {needsLogin ? (
-        <Login />
+        <Connect />
       ) : (
         <div
           className={cls("layout", (queueOpen || lyricsPanel) && !phone && "with-queue")}
@@ -209,7 +219,9 @@ export function App() {
             <ScrollCtx.Provider value={scroll}>
               <ErrorBoundary resetKey={pos}>
                 <Suspense fallback={<Loading />}>
-                  <Page />
+                  {/* A service switched on or off: the page loads again (Settings, where the
+                      switches are, stays as it is). */}
+                  <Page key={routeName === "settings" ? "settings" : servicesEpoch} />
                 </Suspense>
               </ErrorBoundary>
             </ScrollCtx.Provider>
@@ -232,7 +244,7 @@ export function App() {
           </ErrorBoundary>
         </div>
       )}
-      {profilePicker && <ProfilePicker />}
+      {profilePicker && <ProfilePicker key={profilePicker} provider={profilePicker} />}
       <ProfileEditDialog />
       <AccountDrawer />
       <ContextMenu />

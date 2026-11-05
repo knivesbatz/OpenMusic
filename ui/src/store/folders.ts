@@ -93,13 +93,25 @@ export function moveIntoFolder(o: LibraryOrg, id: string, folderId: string, befo
 /**
  * Move a top-level entry (playlist id or `folder:<id>`) before `beforeKey` in the custom order
  * (or to the end). A playlist moved to the top level leaves its folder. `current` is the order
- * as displayed, so entries that were never ordered keep their visible position.
+ * as displayed, so entries that were never ordered keep their visible position. Entries of the old
+ * order that aren't displayed (a playlist of a service that is switched off) keep their place
+ * next to the entry they followed, so they come back where they were.
  */
 export function moveTopLevel(o: LibraryOrg, key: string, beforeKey: string | null, current: string[]): LibraryOrg {
   const d = key.startsWith("folder:") ? o : detach(o, key);
   const base = current.filter((k) => k !== key);
   const at = beforeKey ? base.indexOf(beforeKey) : -1;
   const order = at >= 0 ? [...base.slice(0, at), key, ...base.slice(at)] : [...base, key];
+  const shown = new Set(order);
+  let prev: string | null = null;
+  for (const k of o.order) {
+    if (k === key) continue;
+    if (!shown.has(k)) {
+      order.splice(prev === null ? 0 : order.indexOf(prev) + 1, 0, k);
+      shown.add(k);
+    }
+    prev = k;
+  }
   return { ...d, order, sort: "custom" };
 }
 

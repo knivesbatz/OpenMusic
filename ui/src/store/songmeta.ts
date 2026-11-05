@@ -11,6 +11,25 @@ const pending = new Set<string>();
 const requested = new Set<string>();
 const attempts = new Map<string, number>();
 let timer: ReturnType<typeof setTimeout> | undefined;
+/** Lookups go to YouTube: only while YouTube is on (main.tsx wires this to the switch). */
+let enabled: () => boolean = () => true;
+export function gateSongMeta(fn: () => boolean) {
+  enabled = fn;
+}
+
+/** Forget the lookups that found nothing (they may have failed because YouTube was off), so they
+ * are tried again. Called when a service is switched. */
+export function resetSongMetaMisses() {
+  const map = useSongMeta.getState().map;
+  const misses = Object.keys(map).filter((id) => map[id] === null);
+  for (const id of misses) {
+    requested.delete(id);
+    attempts.delete(id);
+  }
+  // Ids still waiting for an answer that never came (a request that failed) may ask again too.
+  for (const id of [...requested]) if (!(id in map)) requested.delete(id);
+  if (misses.length) useSongMeta.setState({ map: Object.fromEntries(Object.entries(map).filter(([, v]) => v !== null)) });
+}
 
 /** A YouTube track whose artwork is a video thumbnail rather than album art. */
 export function needsSongMeta(t: Track | null | undefined): t is Track {
@@ -43,7 +62,7 @@ function flush() {
 }
 
 function request(id: string) {
-  if (requested.has(id) || !inTauri) return;
+  if (requested.has(id) || !inTauri || !enabled()) return;
   requested.add(id);
   pending.add(id);
   timer ??= setTimeout(flush, 150);

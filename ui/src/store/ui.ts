@@ -24,9 +24,16 @@ export type Route =
   | { name: "profile"; section?: "top" | "recent" | "playlists" }
   | { name: "browse"; id: string; title: string };
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface Toast {
   id: number;
   text: string;
+  /** A button in the toast (e.g. "Sign in" when one provider's session expired). */
+  action?: ToastAction;
 }
 
 export interface MenuItem {
@@ -132,18 +139,20 @@ export const forward = () => useUi.setState((s) => ({ pos: Math.min(s.stack.leng
 let toastId = 0;
 const toastTimers = new Map<number, ReturnType<typeof setTimeout>>();
 
-/** Show a toast for a few seconds. Pass the id of a toast still showing to change its text instead. */
-export function toast(text: string, replace?: number): number {
+/** Show a toast for a few seconds. Pass the id of a toast still showing to change its text instead.
+ * A toast with an action stays a little longer, so there is time to press it. */
+export function toast(text: string, replace?: number, action?: ToastAction): number {
   const showing = replace != null && useUi.getState().toasts.some((t) => t.id === replace);
   const id = showing ? replace! : ++toastId;
-  useUi.setState((s) => ({ toasts: showing ? s.toasts.map((t) => (t.id === id ? { id, text } : t)) : [...s.toasts.slice(-2), { id, text }] }));
+  const item: Toast = action ? { id, text, action } : { id, text };
+  useUi.setState((s) => ({ toasts: showing ? s.toasts.map((t) => (t.id === id ? item : t)) : [...s.toasts.slice(-2), item] }));
   clearTimeout(toastTimers.get(id));
   toastTimers.set(
     id,
     setTimeout(() => {
       toastTimers.delete(id);
       useUi.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
-    }, 4000),
+    }, action ? 8000 : 4000),
   );
   return id;
 }
