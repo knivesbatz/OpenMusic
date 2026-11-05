@@ -73,13 +73,39 @@ jobs:
         run: npm run e2e
         working-directory: ui
 
+
+  # One version everywhere: the updater compares against CARGO_PKG_VERSION (Cargo.toml), the
+  # installers are named after tauri.conf.json, and the UI shows package.json. A mismatch makes the
+  # app see its own release as an update, so it fails the build. A release tag must match too.
+  versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versions match (Cargo.toml, tauri.conf.json, ui/package.json, tag)
+        env:
+          TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name || '') }}
+        run: |
+          set -e
+          cargo=$(python3 -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['workspace']['package']['version'])")
+          conf=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
+          ui=$(jq -r .version ui/package.json)
+          lock=$(jq -r .version ui/package-lock.json)
+          lockroot=$(jq -r '.packages[""].version' ui/package-lock.json)
+          echo "Cargo.toml $cargo, tauri.conf.json $conf, ui/package.json $ui, ui/package-lock.json $lock / $lockroot, tag '${TAG}'"
+          for v in "$conf" "$ui" "$lock" "$lockroot"; do
+            if [ "$v" != "$cargo" ]; then
+              echo "::error::Version mismatch: Cargo.toml [workspace.package] is $cargo, but found $v (tauri.conf.json, ui/package.json and ui/package-lock.json must all match)."
+              exit 1
+            fi
+          done
+          if [ -n "$TAG" ] && [ "${TAG#v}" != "$cargo" ]; then
+            echo "::error::Release tag $TAG doesn't match version $cargo."
+            exit 1
+          fi
+
   bundle:
-    needs: [test, e2e]
+    needs: [test, e2e, versions]
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        app: [ytspot, plexspot]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -90,13 +116,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.app }}
+          key: openspot
       - name: UI build
         run: |
           npm ci
           npm run build
         working-directory: ui
-      - name: Bundle ${{ matrix.app }} installer
+      - name: Bundle the OpenSpot installer
         shell: pwsh
         env:
           # Optional Authenticode signing: base64 .pfx and its password as repository secrets.
@@ -106,11 +132,11 @@ jobs:
           # users only press "Connect Last.fm".
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
-          # Optional: Discord application ids (discord.com/developers/applications, one app named
-          # "YTSpot" and one "PLEXSpot") for Rich Presence. Ids are public; a repository variable or
-          # secret works. Without them the Discord option is hidden.
+          # Optional: the Discord application id (discord.com/developers/applications, an app named
+          # "OpenSpot") for Rich Presence. Ids are public; a repository variable or secret works.
+          # Until an OpenSpot app exists, the YTSpot one is used. Without either the option is hidden.
+          DISCORD_CLIENT_ID_OPENSPOT: ${{ vars.DISCORD_CLIENT_ID_OPENSPOT || secrets.DISCORD_CLIENT_ID_OPENSPOT }}
           DISCORD_CLIENT_ID_YTSPOT: ${{ vars.DISCORD_CLIENT_ID_YTSPOT || secrets.DISCORD_CLIENT_ID_YTSPOT }}
-          DISCORD_CLIENT_ID_PLEXSPOT: ${{ vars.DISCORD_CLIENT_ID_PLEXSPOT || secrets.DISCORD_CLIENT_ID_PLEXSPOT }}
         run: |
           $extra = @()
           if ($env:WINDOWS_CERTIFICATE) {
@@ -125,24 +151,22 @@ jobs:
             $extra = @('--config', $cfg)
             Write-Host "Signing with $($cert.Subject)"
           } else {
-            Write-Host "No signing certificate configured: building unsigned installers"
+            Write-Host "No signing certificate configured: building an unsigned installer"
           }
           ../../../ui/node_modules/.bin/tauri build @extra
-        working-directory: apps/${{ matrix.app }}/src-tauri
+        working-directory: apps/openspot/src-tauri
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.app }}-windows
+          name: openspot-windows
           path: target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
-  # Android APKs (preview). Independent of the Windows release jobs, so it never blocks them.
+  # Android APK. Optional on pull requests and branch builds; a release needs it (the YTSpot 1.x
+  # Android app updates through the YTSpot_ copy of this APK).
   android:
+    needs: versions
     runs-on: ubuntu-latest
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        app: [ytspot, plexspot]
+    continue-on-error: ${{ !(startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != '') }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -159,26 +183,28 @@ jobs:
           targets: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
-          key: android-${{ matrix.app }}
+          key: android-openspot
       - name: UI build
         run: |
           npm ci
           npm run build
         working-directory: ui
-      - name: Build ${{ matrix.app }} APK
-        working-directory: apps/${{ matrix.app }}/src-tauri
+      - name: Build the OpenSpot APK
+        working-directory: apps/openspot/src-tauri
         env:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
         run: |
           export NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           # Through npm, so the generated Gradle project calls the CLI back as 'npm run tauri'.
+          # The package (applicationId) is the identifier, app.openmusic.ytspot, so OpenSpot
+          # installs over YTSpot 1.x; the launcher label is productName (OpenSpot).
           npm run tauri -- android init --ci
           # The generated project starts with Tauri's placeholder launcher icons.
-          npm run tauri -- icon ../../../assets/icons/${{ matrix.app }}.png
+          npm run tauri -- icon ../../../assets/icons/openspot.png
           npm run tauri -- android build --apk true --target aarch64 --ci
       - name: Sign APK
-        working-directory: apps/${{ matrix.app }}/src-tauri
+        working-directory: apps/openspot/src-tauri
         env:
           # Optional stable signing key (base64 .jks) so updates install over each other.
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
@@ -220,70 +246,132 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.app }}-android
-          path: apps/${{ matrix.app }}/src-tauri/out/*.apk
+          name: openspot-android
+          path: apps/openspot/src-tauri/out/*.apk
           if-no-files-found: error
 
+  # Upgrades real 1.x installs to the new build. The fixtures are the YTSpot and PLEXSpot installers
+  # of v1.6.1, the last 1.x release (the release job never deletes it).
+  #   ytspot:   YTSpot and PLEXSpot both installed and running; the installer runs like YTSpot's
+  #             "Restart to update" (/P /R).
+  #   plexspot: only PLEXSpot, running; the installer runs like the update on exit (/S).
+  # Both check that the old programs are gone (Uninstall keys, folders, processes), that their data
+  # is kept, that "Launch at startup" moved to OpenSpot and that OpenSpot imports PLEXSpot's data.
   install-test:
     needs: bundle
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
-        app: [ytspot, plexspot]
+        from: [ytspot, plexspot]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.app }}-windows
+          name: openspot-windows
           path: new
-      - name: Upgrade install, launch and uninstall
+      - name: Upgrade from 1.6.1, launch and uninstall
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          LEGACY_TAG: v1.6.1
+          FROM: ${{ matrix.from }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $conf = Get-Content "apps/${{ matrix.app }}/src-tauri/tauri.conf.json" | ConvertFrom-Json
+          $conf = Get-Content 'apps/openspot/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
           $name = $conf.productName
           $dir = Join-Path $env:LOCALAPPDATA $name
           $exe = Join-Path $dir "$($conf.mainBinaryName).exe"
+          $uninst = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+          $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          $legacyVer = $env:LEGACY_TAG.TrimStart('v')
+          $old = if ($env:FROM -eq 'ytspot') { @('YTSpot', 'PLEXSpot') } else { @('PLEXSpot') }
+          function DataDir($n) { Join-Path $env:APPDATA "app.openmusic.$($n.ToLower())" }
 
-          # 1. Install the newest published release first (if any) so the new build is an upgrade.
-          $tag = gh release list --repo $env:GITHUB_REPOSITORY --limit 1 --json tagName --jq '.[0].tagName'
-          if ($tag -and $tag -ne 'null') {
-            gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern "${name}_*-setup.exe" --dir old
-            $old = Get-ChildItem old -Filter *.exe | Select-Object -First 1
-            if ($old) {
-              Write-Host "Installing previous release $tag ($($old.Name))"
-              Start-Process $old.FullName -ArgumentList '/S' -Wait
-              if (!(Test-Path $exe)) { throw "previous release did not install to $exe" }
-            }
-          } else { Write-Host "No previous release; clean install only" }
+          # 1. The pinned 1.x installers. Missing fixtures fail the job: no silent clean install.
+          gh release download $env:LEGACY_TAG --repo $env:GITHUB_REPOSITORY --dir old `
+            --pattern "YTSpot_${legacyVer}_x64-setup.exe" --pattern "PLEXSpot_${legacyVer}_x64-setup.exe"
+          foreach ($n in 'YTSpot', 'PLEXSpot') {
+            if (!(Test-Path "old/${n}_${legacyVer}_x64-setup.exe")) { throw "$($env:LEGACY_TAG) has no ${n}_${legacyVer}_x64-setup.exe" }
+          }
 
-          # 2. Install the new build over it.
+          # 2. Install the old apps, start them (they create their library.db) and turn on their
+          #    "Launch at startup" entry the way the app does (HKCU Run, "<exe> --htpc").
+          foreach ($n in $old) {
+            Start-Process "old/${n}_${legacyVer}_x64-setup.exe" -ArgumentList '/S' -Wait
+            $oldExe = Join-Path $env:LOCALAPPDATA "$n\$n.exe"
+            if (!(Test-Path $oldExe)) { throw "$n $legacyVer did not install to $oldExe" }
+            if (!(Test-Path "$uninst\$n")) { throw "$n $legacyVer wrote no Uninstall key" }
+            Start-Process $oldExe | Out-Null
+            $db = Join-Path (DataDir $n) 'library.db'
+            for ($i = 0; $i -lt 60 -and !(Test-Path $db); $i++) { Start-Sleep -Seconds 1 }
+            if (!(Test-Path $db)) { throw "$n did not create $db" }
+            Set-ItemProperty $runKey -Name $n -Value "$oldExe --htpc"
+            Write-Host "$n $legacyVer installed and running"
+          }
+          Start-Sleep -Seconds 5
+
+          # 3. Install OpenSpot while the old apps still run, as their updater does.
           $new = Get-ChildItem new -Filter *.exe | Select-Object -First 1
-          Start-Process $new.FullName -ArgumentList '/S' -Wait
+          $installArgs = if ($env:FROM -eq 'ytspot') { @('/P', '/R') } else { @('/S') }
+          Write-Host "Running $($new.Name) $($installArgs -join ' ')"
+          $setup = Start-Process $new.FullName -ArgumentList $installArgs -PassThru
+          if (-not $setup.WaitForExit(300000)) { throw "the installer did not finish in 5 minutes" }
           if (!(Test-Path $exe)) { throw "not installed: $exe" }
           $ver = (Get-Item $exe).VersionInfo.ProductVersion
           Write-Host "Installed $name $ver"
           if (-not $ver.StartsWith($conf.version)) { throw "expected version $($conf.version), got $ver" }
 
-          # 3. The app must start and keep running (WebView2 is preinstalled on the runner).
-          $p = Start-Process $exe -PassThru
+          # 4. The old apps are gone; their data is not.
+          foreach ($n in 'YTSpot', 'PLEXSpot') {
+            if (Get-Process -Name $n -ErrorAction SilentlyContinue) { throw "$n.exe is still running" }
+            if (Test-Path "$uninst\$n") { throw "the $n Uninstall key is still there" }
+            if (Test-Path (Join-Path $env:LOCALAPPDATA $n)) { throw "the $n install folder is still there: $(Get-ChildItem (Join-Path $env:LOCALAPPDATA $n) | Out-String)" }
+            if ((Get-ItemProperty $runKey -ErrorAction SilentlyContinue).$n) { throw "the $n Run entry is still there" }
+          }
+          foreach ($n in $old) {
+            $db = Join-Path (DataDir $n) 'library.db'
+            if (!(Test-Path $db)) { throw "the upgrade deleted $db" }
+          }
+          $auto = (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).$name
+          if (-not $auto -or -not $auto.ToLower().Contains($exe.ToLower())) { throw "Launch at startup did not move to $name (Run value: '$auto')" }
+          Write-Host "Old apps removed, data kept, Run entry: $auto"
+
+          # 5. OpenSpot starts and keeps running. "/R" starts it after a passive install.
+          $p = $null
+          if ($installArgs -contains '/R') {
+            for ($i = 0; $i -lt 30 -and -not $p; $i++) { Start-Sleep -Seconds 1; $p = Get-Process -Name $conf.mainBinaryName -ErrorAction SilentlyContinue | Select-Object -First 1 }
+            if (-not $p) { Write-Host "::warning::/R did not start $name; starting it here" }
+          }
+          if (-not $p) { $p = Start-Process $exe -PassThru }
           Start-Sleep -Seconds 20
           if ($p.HasExited) { throw "$name exited during startup with code $($p.ExitCode)" }
           Write-Host "Running after 20 s: $([math]::Round($p.WorkingSet64 / 1MB)) MB working set (main process)"
+          $db = Join-Path (DataDir 'YTSpot') 'library.db'
+          if (!(Test-Path $db)) { throw "$name has no $db" }
+          # PLEXSpot's library was imported (migrate.rs marks each step done in kv).
+          $py = Join-Path $env:RUNNER_TEMP 'marks.py'
+          Set-Content $py -Value @(
+            'import sqlite3, sys',
+            'rows = sqlite3.connect(sys.argv[1]).execute("SELECT key FROM kv WHERE key LIKE ''migrated.plexspot%''")',
+            'print(" ".join(r[0] for r in rows))'
+          )
+          $marks = python $py $db
+          Write-Host "Import markers: $marks"
+          if (-not $marks) { throw "$name did not import PLEXSpot's data (no migrated.plexspot* key in $db)" }
           Stop-Process -Id $p.Id -Force
           Start-Sleep -Seconds 3
 
-          # 4. Uninstall cleanly.
+          # 6. Uninstall cleanly; the data stays (the "Delete app data" box is off in silent mode).
           # NSIS uninstallers re-launch from a temp copy, so poll for the removal.
           Start-Process (Join-Path $dir 'uninstall.exe') -ArgumentList '/S' -Wait
           for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
           if (Test-Path $exe) { throw "uninstall left $exe behind" }
+          if (!(Test-Path $db)) { throw "a silent uninstall deleted $db" }
+          if ((Get-ItemProperty $runKey -ErrorAction SilentlyContinue).$name) { throw "uninstall left the $name Run entry" }
           Write-Host "Uninstalled"
 
-  # Drives the real installed app through tauri-driver/WebDriver to reproduce UI crashes in
+  # Drives the real installed app through its built-in self-test to reproduce UI crashes in
   # WebView2. Diagnostic for now: it reports but doesn't block releases.
   windows-ui:
     needs: bundle
@@ -292,22 +380,24 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: ytspot-windows
+          name: openspot-windows
           path: new
-      - name: Install YTSpot
+      - name: Install OpenSpot
         shell: pwsh
         run: Start-Process (Get-ChildItem new -Filter *.exe | Select-Object -First 1).FullName -ArgumentList '/S' -Wait
       - name: Self-test in the real app (settings, scrolling, mini player, fullscreen)
         # The app clicks through itself (ui/src/selftest.ts) and logs each step; a hang or crash
-        # leaves the culprit as the last "start" line.
+        # leaves the culprit as the last "start" line, and a failed step logs "fail <step>".
         shell: pwsh
         run: |
-          $p = Start-Process "$env:LOCALAPPDATA\YTSpot\YTSpot.exe" -ArgumentList '--self-test' -PassThru
+          $p = Start-Process "$env:LOCALAPPDATA\OpenSpot\OpenSpot.exe" -ArgumentList '--self-test' -PassThru
           $finished = $p.WaitForExit(240000)
           $log = "$env:APPDATA\app.openmusic.ytspot\selftest.log"
           if (Test-Path $log) { Get-Content $log } else { Write-Host "no selftest.log (the UI never started the test)" }
           if (-not $finished) { Write-Host "APP HUNG: still running after 4 minutes"; Stop-Process -Id $p.Id -Force; exit 1 }
           if (-not ((Test-Path $log) -and (Select-String -Path $log -Pattern '\] done$' -Quiet))) { Write-Host "APP EXITED EARLY (code $($p.ExitCode))"; exit 1 }
+          $failed = Select-String -Path $log -Pattern '\] fail '
+          if ($failed) { Write-Host "FAILED STEPS:"; $failed | ForEach-Object { Write-Host $_.Line }; exit 1 }
           Write-Host "self-test passed"
       - name: Crash evidence (crash.log, Windows error reports)
         if: always()
@@ -315,13 +405,13 @@ jobs:
         run: |
           $log = "$env:APPDATA\app.openmusic.ytspot\crash.log"
           if (Test-Path $log) { Write-Host "---- crash.log ----"; Get-Content $log } else { Write-Host "no crash.log" }
-          Write-Host "---- Application event log (YTSpot / WebView2) ----"
+          Write-Host "---- Application event log (OpenSpot / WebView2) ----"
           Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = (Get-Date).AddMinutes(-30) } -ErrorAction SilentlyContinue |
-            Where-Object { $_.Message -match 'YTSpot|msedgewebview2|WebView2' } |
+            Where-Object { $_.Message -match 'OpenSpot|msedgewebview2|WebView2' } |
             Select-Object -First 20 | Format-List TimeCreated, ProviderName, Id, Message
 
   release:
-    # android is non-blocking (continue-on-error); its APKs are attached when it built them.
+    # android must succeed on release runs (it is continue-on-error only for other builds).
     # The Mac disk images come from macos.yml, which this job starts once the release exists.
     needs: [bundle, install-test, android]
     if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
@@ -332,6 +422,28 @@ jobs:
         with:
           path: installers
           merge-multiple: true
+      - name: Add the legacy names and check every asset
+        # YTSpot and PLEXSpot 1.x find updates by their own name (releases/latest, "<productName>_"
+        # + "_x64-setup.exe" / "_android-arm64.apk"), so every 2.x release also carries the OpenSpot
+        # files under those names. No PLEXSpot APK: PLEXSpot for Android is another package, which
+        # can't update into OpenSpot (its users install OpenSpot; see RELEASE_NOTES.md).
+        run: |
+          set -e
+          V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
+          cd installers
+          ls -l
+          for f in "OpenSpot_${V}_x64-setup.exe" "OpenSpot_${V}_android-arm64.apk"; do
+            if [ ! -s "$f" ]; then echo "::error::Missing $f"; exit 1; fi
+          done
+          cp "OpenSpot_${V}_x64-setup.exe" "YTSpot_${V}_x64-setup.exe"
+          cp "OpenSpot_${V}_x64-setup.exe" "PLEXSpot_${V}_x64-setup.exe"
+          cp "OpenSpot_${V}_android-arm64.apk" "YTSpot_${V}_android-arm64.apk"
+          missing=0
+          for f in "OpenSpot_${V}_x64-setup.exe" "OpenSpot_${V}_android-arm64.apk" \
+                   "YTSpot_${V}_x64-setup.exe" "YTSpot_${V}_android-arm64.apk" "PLEXSpot_${V}_x64-setup.exe"; do
+            if [ -s "$f" ]; then echo "ok $f"; else echo "::error::Missing $f"; missing=1; fi
+          done
+          exit $missing
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -339,28 +451,32 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: ${{ inputs.release_tag || github.ref_name }}
           files: |
-            installers/*.exe
-            installers/*.apk
+            installers/OpenSpot_*_x64-setup.exe
+            installers/OpenSpot_*_android-arm64.apk
+            installers/YTSpot_*_x64-setup.exe
+            installers/YTSpot_*_android-arm64.apk
+            installers/PLEXSpot_*_x64-setup.exe
           body_path: RELEASE_NOTES.md
           prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
       - name: Build the Mac disk images for this release
         # macOS runners can queue for a long time, so they never hold up this release: macos.yml
-        # builds them separately and adds them to it.
+        # builds them separately and adds them (with their legacy names) to it.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag || github.ref_name }}
         run: gh workflow run macos.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}" -f release_tag="$TAG"
       - name: Remove superseded releases
-        # Only the newest release is kept. The install test above already upgraded from the previous
-        # one, so it is no longer needed once this release is published.
+        # Only the newest release is kept, plus v1.6.1: the last 1.x release is the install test's
+        # upgrade fixture (its YTSpot_ and PLEXSpot_ installers).
         env:
           GH_TOKEN: ${{ github.token }}
           KEEP: ${{ inputs.release_tag || github.ref_name }}
+          LEGACY: v1.6.1
         run: |
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' |
             while read -r tag; do
-              if [ "$tag" != "$KEEP" ]; then
+              if [ "$tag" != "$KEEP" ] && [ "$tag" != "$LEGACY" ]; then
                 gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
               fi
             done

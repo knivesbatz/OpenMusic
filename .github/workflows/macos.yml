@@ -1,6 +1,6 @@
 name: macos
 
-# Mac disk images: one universal app (Apple silicon and Intel) per product. Ad-hoc signed and not
+# Mac disk image: OpenSpot as one universal app (Apple silicon and Intel). Ad-hoc signed and not
 # notarized (no Apple Developer account), so the first launch needs System Settings → Privacy &
 # Security → Open Anyway. Kept out of build.yml because macOS runners can queue for a long time:
 # Windows and Android releases never wait for them. build.yml's release job starts this workflow
@@ -27,10 +27,6 @@ jobs:
   macos:
     runs-on: macos-latest
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        app: [ytspot, plexspot]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,52 +39,77 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
-          key: macos-${{ matrix.app }}
+          key: macos-openspot
       - name: Core tests on macOS
-        if: matrix.app == 'ytspot'
         run: cargo test -p openmusic-core
       - name: UI build
         run: |
           npm ci
           npm run build
         working-directory: ui
-      - name: Bundle ${{ matrix.app }} disk image
+      - name: Bundle the OpenSpot disk image
         env:
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+          # Discord Rich Presence: the OpenSpot application, else the YTSpot one (see build.yml).
+          DISCORD_CLIENT_ID_OPENSPOT: ${{ vars.DISCORD_CLIENT_ID_OPENSPOT || secrets.DISCORD_CLIENT_ID_OPENSPOT }}
           DISCORD_CLIENT_ID_YTSPOT: ${{ vars.DISCORD_CLIENT_ID_YTSPOT || secrets.DISCORD_CLIENT_ID_YTSPOT }}
-          DISCORD_CLIENT_ID_PLEXSPOT: ${{ vars.DISCORD_CLIENT_ID_PLEXSPOT || secrets.DISCORD_CLIENT_ID_PLEXSPOT }}
         # "app" too: with only "dmg", Tauri deletes the .app after packing it and the check below has nothing to look at.
         run: ../../../ui/node_modules/.bin/tauri build --target universal-apple-darwin --bundles app,dmg
-        working-directory: apps/${{ matrix.app }}/src-tauri
+        working-directory: apps/openspot/src-tauri
       - name: Check the app bundle
         run: |
-          app=$(ls -d target/universal-apple-darwin/release/bundle/macos/*.app | head -1)
-          echo "$app"
-          lipo -archs "$app/Contents/MacOS/"*
+          set -e
+          app=target/universal-apple-darwin/release/bundle/macos/OpenSpot.app
+          test -d "$app" || { echo "::error::no $app"; ls target/universal-apple-darwin/release/bundle/macos/; exit 1; }
+          test -x "$app/Contents/MacOS/OpenSpot" || { echo "::error::no OpenSpot binary in $app"; exit 1; }
+          echo "bundle id: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+          lipo -archs "$app/Contents/MacOS/OpenSpot"
           codesign --verify --verbose=2 "$app"
           ls -l target/universal-apple-darwin/release/bundle/dmg/
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.app }}-macos
+          name: openspot-macos
           path: target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
   upload:
     needs: macos
-    # Also when only one of the two apps built: attach what there is.
-    if: always() && inputs.release_tag != ''
+    if: inputs.release_tag != ''
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          pattern: "*-macos"
+          name: openspot-macos
           path: dmg
-          merge-multiple: true
+      - name: Add the legacy names and check every disk image
+        # YTSpot and PLEXSpot 1.x look for "<productName>_*_universal.dmg" in the latest release, so
+        # every 2.x release also carries the OpenSpot disk image under those names.
+        run: |
+          set -e
+          V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
+          cd dmg
+          ls -l
+          if [ ! -s "OpenSpot_${V}_universal.dmg" ]; then echo "::error::Missing OpenSpot_${V}_universal.dmg"; exit 1; fi
+          cp "OpenSpot_${V}_universal.dmg" "YTSpot_${V}_universal.dmg"
+          cp "OpenSpot_${V}_universal.dmg" "PLEXSpot_${V}_universal.dmg"
+          missing=0
+          for f in "OpenSpot_${V}_universal.dmg" "YTSpot_${V}_universal.dmg" "PLEXSpot_${V}_universal.dmg"; do
+            if [ -s "$f" ]; then echo "ok $f"; else echo "::error::Missing $f"; missing=1; fi
+          done
+          exit $missing
       - name: Add the disk images to the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
         run: |
-          ls -l dmg
-          gh release upload "$TAG" dmg/*.dmg --repo "$GITHUB_REPOSITORY" --clobber
+          set -e
+          V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
+          gh release upload "$TAG" "dmg/OpenSpot_${V}_universal.dmg" "dmg/YTSpot_${V}_universal.dmg" "dmg/PLEXSpot_${V}_universal.dmg" \
+            --repo "$GITHUB_REPOSITORY" --clobber
+          # Check the release really has all three.
+          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          for f in "OpenSpot_${V}_universal.dmg" "YTSpot_${V}_universal.dmg" "PLEXSpot_${V}_universal.dmg"; do
+            echo "$assets" | grep -qxF "$f" || { echo "::error::$f is not on release $TAG"; exit 1; }
+          done

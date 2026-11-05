@@ -1,5 +1,11 @@
 # Product specification (condensed from the original brief)
 
+> **2.0.0: OpenSpot.** YTSpot and PLEXSpot are now one app, **OpenSpot**, with YouTube Music and Plex as
+> *services* the user switches on and off in Settings → Services (both, either, or neither with local
+> files only). Search, Home, Your Library and Liked Songs combine the services that are on. The
+> requirements below still apply per service: read "YTSpot" as "OpenSpot with YouTube Music" and
+> "PLEXSpot" as "OpenSpot with Plex". The design of the merge is in `docs/ARCHITECTURE.md`.
+
 The original brief (`Prompt.docx`) and the visual reference (`ytspot-plexspot.pdf`) are kept out of the
 repo. This file records every requirement from both so work can continue without them.
 
