@@ -41,7 +41,9 @@ function setRange(r: HTMLInputElement, v: string) {
   r.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-const escape = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+// Escape goes to the focused element (dialogs such as the full-screen player listen on
+// themselves), and bubbles up from there like a real key press.
+const escape = () => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
 /** A dialog, profile picker or sign-in prompt opened by itself. */
 const dialogOpen = () => !!document.querySelector('.modal-bg, [role="dialog"], [role="alertdialog"]');
@@ -162,6 +164,13 @@ export async function runSelfTest() {
     click('button[aria-label="Full screen"]');
     await sleep(800);
     escape();
+    await sleep(400);
+    // Still open (Escape missed it): use its own close button, and fail if it stays.
+    if (document.querySelector(".fullscreen")) {
+      document.querySelector<HTMLElement>(".fullscreen button[aria-label='Exit full screen']")?.click();
+      await sleep(400);
+    }
+    if (document.querySelector(".fullscreen")) throw new Error("the full-screen player did not close");
   });
   await step("transfer page", () => accountMenu("Transfer playlists"));
   await log("done");
