@@ -1,3 +1,4 @@
+import { sourceOf } from "../store/providers";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
@@ -16,7 +17,6 @@ import { PROVIDERS } from "../types";
 import { useDisplayTrack } from "../store/songmeta";
 import { cls, isTouch, serviceLabel } from "../util";
 import { IMusic, IPlay } from "./Icons";
-import { SourceBadge } from "./SourceBadge";
 
 export const Art = memo(function Art({
   src,
@@ -102,6 +102,7 @@ export const Card = memo(function Card({
   return (
     <div
       className="card"
+      data-source={sourceOf(item.id) ?? undefined}
       role="button"
       tabIndex={0}
       onClick={() => openItem(item)}
@@ -124,7 +125,6 @@ export const Card = memo(function Card({
         {item.type === "artist" ? <ArtistName name={title} /> : <TitleText text={title} />}
       </div>
       <div className="card-sub">
-        <SourceBadge id={item.id} />
         <JpText text={itemSubtitle(item, t)} />
       </div>
     </div>

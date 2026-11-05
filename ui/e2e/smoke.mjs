@@ -810,12 +810,12 @@ await test("Both services: Library Albums lists YouTube's library albums, not th
   const titles = (await p.locator(".grid .card .card-title").allTextContents()).map((x) => x.trim()).sort();
   assert.deepEqual(titles, ["Blue Hour", "Cassette Summer", "Midnight Ferry", "Orbit Season"]);
   // Every card is a YouTube one (badges show with both services on).
-  assert.equal(await p.locator('.grid .card .src-badge[data-source="youtube"]').count(), 4);
-  assert.equal(await p.locator('.grid .card .src-badge[data-source="plex"]').count(), 0);
+  assert.equal(await p.locator('.grid .card[data-source="youtube"]').count(), 4);
+  assert.equal(await p.locator('.grid .card[data-source="plex"]').count(), 0);
   // A Plex album saved in the app counts.
   await p.evaluate(() => window.__EMIT__("saved-changed", null));
   await p.waitForFunction(() => [...document.querySelectorAll(".grid .card .card-title")].some((n) => n.textContent.trim() === "Night Drive"));
-  assert.equal(await p.locator('.grid .card .src-badge[data-source="plex"]').count(), 1);
+  assert.equal(await p.locator('.grid .card[data-source="plex"]').count(), 1);
 }, { init: () => {
   const d = window.__MOCK__;
   let calls = 0;
@@ -1187,7 +1187,9 @@ async function search(p, q) {
   await p.fill("#global-search", "");
   await p.fill("#global-search", q);
 }
-const badges = (p, source) => p.locator(source ? `.src-badge[data-source="${source}"]` : ".src-badge");
+// Visible source badges were removed (the user asked); rows and cards carry an invisible data-source.
+const badges = (p) => p.locator(".src-badge");
+const srcs = (p, source) => p.locator(`[data-source="${source}"]`);
 
 await test("Services: switching Plex off hides it everywhere and forgets its search results; back on brings it back", async (p) => {
   // Both on: Plex and YouTube shelves on Home.
@@ -1195,7 +1197,7 @@ await test("Services: switching Plex off hides it everywhere and forgets its sea
   await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
   await search(p, "aster");
   await p.waitForSelector(".top-result .top-name:has-text('Aster Vale')");
-  await p.locator('.top-songs .src-badge[data-source="plex"]').first().waitFor();
+  await p.locator('.top-songs [data-source="plex"]').first().waitFor();
   await p.locator(".lib-list .side-item", { hasText: "autumn" }).waitFor();
   await p.fill("#global-search", "");
   await p.click(".browse-btn");
@@ -1237,8 +1239,9 @@ await test("Services: switching Plex off hides it everywhere and forgets its sea
   await p.waitForFunction(() => window.__STATE__.services.plex);
   await search(p, "aster");
   await p.waitForSelector(".top-result .top-name:has-text('Aster Vale')");
-  await badges(p, "plex").first().waitFor();
-  await badges(p, "youtube").first().waitFor();
+  await srcs(p, "plex").first().waitFor();
+  await srcs(p, "youtube").first().waitFor();
+  assert.equal(await badges(p).count(), 0, "no visible source badges, even with both services on");
   await p.click(".lib-list .side-item >> text=autumn");
 });
 
@@ -1246,14 +1249,14 @@ await test("Combined search: each section mixes both services, and every row and
   await search(p, "aster");
   await p.waitForSelector(".top-result .top-name:has-text('Aster Vale')");
   // The Top result is the best title match (Plex's artist), with its badge.
-  await p.locator('.top-result .src-badge[data-source="plex"]').waitFor();
+  await p.locator('.top-result .top-card[data-source="plex"]').waitFor();
   // Songs: Plex's, YouTube's and the local file, each with its own mark.
-  await p.locator('.top-songs .tl-row .src-badge[data-source="youtube"]').first().waitFor();
-  assert.ok((await p.locator('.top-songs .tl-row .src-badge[data-source="plex"]').count()) > 0);
+  await p.locator('.top-songs .tl-row[data-source="youtube"]').first().waitFor();
+  assert.ok((await p.locator('.top-songs .tl-row[data-source="plex"]').count()) > 0);
   await p.locator(".top-songs .tl-row .name", { hasText: "home demo" }).waitFor();
   // Artists and albums interleave the two services.
   const artists = p.locator(".shelf", { has: p.locator("h2", { hasText: /^Artists$/ }) });
-  const sources = await artists.locator(".card .src-badge").evaluateAll((els) => els.map((e) => e.dataset.source));
+  const sources = await artists.locator(".card[data-source]").evaluateAll((els) => els.map((e) => e.dataset.source));
   assert.deepEqual(sources.slice(0, 4), ["plex", "youtube", "plex", "youtube"]);
   // A filter chip asks both services for the full list.
   await p.click('.chips button:has-text("Albums")');
@@ -1381,8 +1384,8 @@ await test("Liked Songs combines YouTube's liked songs and Plex's; with YouTube 
   const names = async () => (await p.locator(".page .tl-row:not(.tl-head) .name").allTextContents()).map((x) => x.trim());
   await p.waitForFunction(() => document.querySelectorAll(".page .tl-row:not(.tl-head)").length === 5);
   assert.deepEqual((await names()).sort(), ["Cassette Heart", "Ferry Lights", "Glasshouse", "Orbit", "Undertow"]);
-  assert.equal(await p.locator('.page .tl-row .src-badge[data-source="youtube"]').count(), 3);
-  assert.equal(await p.locator('.page .tl-row .src-badge[data-source="plex"]').count(), 2);
+  assert.equal(await p.locator('.page .tl-row[data-source="youtube"]').count(), 3);
+  assert.equal(await p.locator('.page .tl-row[data-source="plex"]').count(), 2);
   await openSettings(p);
   await serviceSwitch(p, "youtube").click();
   await p.waitForFunction(() => !window.__STATE__.services.youtube);

@@ -49,7 +49,6 @@ const en = {
   noteAuthExpired: "{service}: your session expired. Sign in again in Settings → Services.",
   noteNotSignedIn: "Sign in to {service} in Settings → Services to see it here.",
   noteFailed: "{service} couldn't be loaded. Showing the rest.",
-  fromService: "From {service}",
   rowServiceOff: "{service} is off or not signed in",
   // ---- end B ----
   home: "Home",
@@ -596,7 +595,6 @@ const ja: Record<Key, string> = {
   noteAuthExpired: "{service}: セッションの有効期限が切れました。設定 → サービスからもう一度サインインしてください。",
   noteNotSignedIn: "ここに表示するには、設定 → サービスで{service}にサインインしてください。",
   noteFailed: "{service}を読み込めませんでした。ほかの結果を表示しています。",
-  fromService: "{service}から",
   rowServiceOff: "{service}がオフか、サインインしていません",
   // ---- end B ----
   home: "ホーム",

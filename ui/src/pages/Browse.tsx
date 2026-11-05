@@ -19,13 +19,12 @@ import {
   usePhoneLayout,
   useProvidersKey,
 } from "../components/common";
-import { SourceBadge } from "../components/SourceBadge";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { localError, shelfTitle, translate, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
-import { capsOf, useBothOn, useOn } from "../store/providers";
+import { capsOf, sourceOf, useBothOn, useOn } from "../store/providers";
 import { useMe } from "../store/profile";
 import { sortAlbums, sortArtists } from "../store/librarySort";
 import { setSort, setView, useFolders } from "../store/folders";
@@ -435,12 +434,11 @@ export function Search({ q }: { q: string }) {
             {r.top && (
               <section className="top-result">
                 <h2>{t("topResult")}</h2>
-                <div className="top-card" role="button" tabIndex={0} onClick={() => openItem(r.top!)} onKeyDown={(e) => e.key === "Enter" && openItem(r.top!)} onContextMenu={(e) => cardMenu(e, r.top!)}>
+                <div className="top-card" data-source={sourceOf(r.top.id) ?? undefined} role="button" tabIndex={0} onClick={() => openItem(r.top!)} onKeyDown={(e) => e.key === "Enter" && openItem(r.top!)} onContextMenu={(e) => cardMenu(e, r.top!)}>
                   <Art src={r.top.artwork} size={240} round={r.top.type === "artist"} className="lg" />
                   <div className="top-name">{r.top.type === "artist" ? r.top.name : r.top.title}</div>
                   <div className="muted">
                     <span className="badge-pill">{t(r.top.type === "track" ? "song" : r.top.type)}</span>
-                    <SourceBadge id={r.top.id} after />
                   </div>
                   <PlayFab big label={t("play")} onClick={(e) => (e.stopPropagation(), playItem(r.top!))} />
                 </div>
@@ -917,14 +915,13 @@ function LibrarySortButton({ tab }: { tab: "albums" | "artists" }) {
 
 function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; pin?: boolean; badgeId?: string; onClick: () => void; onContext?: (e: React.MouseEvent) => void }) {
   return (
-    <div className="lib-row" role="button" tabIndex={0} onClick={p.onClick} onKeyDown={(e) => e.key === "Enter" && p.onClick()} onContextMenu={p.onContext}>
+    <div className="lib-row" data-source={sourceOf(p.badgeId) ?? undefined} role="button" tabIndex={0} onClick={p.onClick} onKeyDown={(e) => e.key === "Enter" && p.onClick()} onContextMenu={p.onContext}>
       {p.icon}
       <div className="lib-row-text">
         <span className="name">{p.title}</span>
         {p.sub && (
           <span className="sub">
             {p.pin && <I.IPin size={14} className="lib-pin" />}
-            <SourceBadge id={p.badgeId} />
             {p.sub}
           </span>
         )}
