@@ -1,6 +1,6 @@
 // Home, Search and the Library grid.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, createPlaylist, playlistMenu, podcastMenu, trackMenu } from "../actions";
+import { albumMenu, artistMenu, playlistMenu, podcastMenu, trackMenu } from "../actions";
 import { api, artUrl, errorMessage, inTauri } from "../api";
 import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, itemSubtitle, openItem, useAsync, usePageTitle, usePhoneLayout } from "../components/common";
 import * as I from "../components/Icons";
@@ -560,7 +560,7 @@ const ctxItem = (c: PlayContext): MediaItem =>
       ? { type: "artist", id: c.id, name: c.title, artwork: c.artwork }
       : { type: "playlist", id: c.id, title: c.title, artwork: c.artwork, local: c.id.startsWith("app:") };
 
-/** Your Library, in the classic Spotify layout: categories on desktop, Music/Podcasts tabs on phones. */
+/** Your Library: categories on desktop; on phones, PhoneLibrary. */
 export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const t = useT();
   const lib = useApp((s) => s.library);
@@ -572,7 +572,6 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const [q, setQ] = useState("");
   const albumSort = useSettings((s) => s.albumSort);
   const artistSort = useSettings((s) => s.artistSort);
-  const classic = useSettings((s) => s.classicLibrary);
   useAsync(() => refreshLibrary(false), []);
   const cur: LibraryTab = tab ?? "playlists";
   if (cur === "recent") return <RecentPage />;
@@ -623,81 +622,14 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
     );
   }
 
-  // The classic phone library (Music / Podcasts, then Playlists · Artists · Albums tabs), or
-  // today's Spotify layout (chips, sort row, one list): Settings → "Classic Your Library".
-  if (!classic) return <PhoneLibrary tab={tab} playlists={playlists.filter((p) => p !== liked)} liked={liked} />;
-
-  const podcasts = cur === "podcasts";
-  return (
-    <div className="page lib-classic">
-      <div className="lib-top">
-        <button className={cls("lib-big", !podcasts && "on")} onClick={() => go("playlists")}>
-          {t("music")}
-        </button>
-        {caps?.podcasts && (
-          <button className={cls("lib-big", podcasts && "on")} onClick={() => go("podcasts")}>
-            {t("podcasts")}
-          </button>
-        )}
-      </div>
-      {!podcasts && (
-        <div className="lib-tabs" role="tablist">
-          {(["playlists", "artists", "albums"] as const).map((f) => (
-            <button key={f} role="tab" aria-selected={cur === f} className={cls("lib-tab", cur === f && "on")} onClick={() => go(f)}>
-              {t(f)}
-            </button>
-          ))}
-        </div>
-      )}
-      {(cur === "albums" || cur === "artists") && (
-        <div className="lib-sort-row">
-          <LibrarySortButton tab={cur} />
-        </div>
-      )}
-      <div className="lib-rows" key={cur + albumSort.key + albumSort.desc + artistSort.key + artistSort.desc}>
-        {cur === "playlists" && (
-          <>
-            <LibRow
-              icon={<div className="art grad-new"><I.IPlus size={26} /></div>}
-              title={t("createPlaylist")}
-              onClick={async () => {
-                const pl = await createPlaylist();
-                if (pl) navigate({ name: "playlist", id: pl.id });
-              }}
-            />
-            {liked && <LibRow icon={<div className="art grad-liked"><I.IHeartFill size={24} /></div>} title={t("likedSongs")} sub={liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : undefined} onClick={() => navigate({ name: "playlist", id: liked.id })} />}
-            <LibRow icon={<div className="art grad-local"><I.IFolder size={24} /></div>} title={t("localFiles")} onClick={() => navigate({ name: "local" })} />
-            {caps?.downloads && <LibRow icon={<div className="art grad-dl"><I.IDownload size={24} /></div>} title={t("downloads")} onClick={() => navigate({ name: "downloads" })} />}
-          </>
-        )}
-        {podcasts && (
-          <LibRow icon={<div className="art grad-episodes"><I.IBookmark size={24} /></div>} title={t("yourEpisodes")} sub={t("episodesCount", { n: saved.episodes.length })} onClick={() => navigate({ name: "episodes" })} />
-        )}
-        {!lib && !err ? (
-          <Loading />
-        ) : (
-          shown.map((it) => (
-            <LibRow
-              key={it.type + it.id}
-              icon={<Art src={it.artwork} size={128} round={it.type === "artist"} />}
-              title={it.type === "artist" ? it.name : it.title}
-              sub={itemSubtitle(it, t)}
-              onClick={() => openItem(it)}
-              onContext={(e) => cardMenu(e, it)}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  );
-
+  return <PhoneLibrary tab={tab} playlists={playlists.filter((p) => p !== liked)} liked={liked} />;
 }
 
 type PhoneChip = "playlists" | "podcasts" | "albums" | "artists";
 
-/** Your Library on phones, as in Spotify's app: filter chips (Playlists, Podcasts, Albums,
- * Artists), a sort row with the list/grid switch, then everything in one list: Liked Songs and
- * the app's own collections first. */
+/** Your Library on phones, as in Spotify's app: Playlists · Artists · Albums tabs (the older
+ * underlined style), a sort row with the list/grid switch, then everything in one list: Liked
+ * Songs and the app's own collections first. */
 function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: Playlist[]; liked?: Playlist }) {
   const t = useT();
   const lib = useApp((s) => s.library);
@@ -728,7 +660,6 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
           : items;
   const grid = org.view === "grid" || org.view === "compactGrid";
   const go = (c: PhoneChip | null) => navigate(c ? { name: "library", tab: c } : { name: "library" }, true);
-  const chips: PhoneChip[] = ["playlists", ...(caps?.podcasts ? (["podcasts"] as PhoneChip[]) : []), "albums", "artists"];
   const sortNames: Record<string, string> = { recent: t("sortRecent"), added: t("recentlyAdded"), alpha: t("sortAlpha"), creator: t("sortCreator"), custom: t("sortRecent") };
   const sortMenu = (e: React.MouseEvent) =>
     openMenu(e, [
@@ -743,19 +674,13 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
   ];
   return (
     <div className="page lib-phone">
-      <div className="chips lib-chips">
-        {chip && (
-          <button className="chip clear" aria-label={t("clear")} onClick={() => go(null)}>
-            <I.IClose size={16} />
+      {/* The old Spotify tabs with the green underline; tap the open one again to show everything. */}
+      <div className="lib-tabs" role="tablist">
+        {(["playlists", "artists", "albums"] as const).map((c) => (
+          <button key={c} role="tab" aria-selected={chip === c} className={cls("lib-tab", chip === c && "on")} onClick={() => go(chip === c ? null : c)}>
+            {t(c)}
           </button>
-        )}
-        {chips
-          .filter((c) => !chip || c === chip)
-          .map((c) => (
-            <button key={c} className={cls("chip", chip === c && "on")} aria-pressed={chip === c} onClick={() => go(chip === c ? null : c)}>
-              {t(c)}
-            </button>
-          ))}
+        ))}
       </div>
       <div className="lib-sortbar">
         <button className="lib-sortbtn" onClick={sortMenu} aria-label={`${t("sortMenu")}: ${sortNames[org.sort]}`}>

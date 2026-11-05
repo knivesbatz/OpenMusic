@@ -1,9 +1,17 @@
-# OpenMusic 1.6.0
+# OpenMusic 1.6.1
 
-More of Spotify's phone app: a Create tab, Find in playlist and Sort above the cover, a bar that
-pins with the cover's colour and the play button, and the classic Your Library back.
+One Your Library on phones: today's layout with the older Playlists · Artists · Albums tabs.
 
-## New in 1.6.0
+## New in 1.6.1
+- **Your Library on phones** is now always the newer layout (your picture, "Your Library", search
+  and +, the Recents sort and grid switch, one list with Liked Songs and Your Episodes pinned), with
+  the older **Playlists · Artists · Albums** tabs and their green underline in place of the pill
+  chips. Tap a tab to show only that; tap it again to show everything (podcasts included).
+- The **Classic Your Library** setting is gone (there's one layout now).
+- The **Create** tab is gone: the bottom bar is Home, Search and Your Library again. New
+  playlists come from the + next to "Your Library" (or Create playlist on desktop).
+
+## Also in 1.6.0
 - **Create tab.** A fourth tab, **+ Create**, next to Your Library. It opens a panel above the tabs
   with **Playlist**, **Folder** and **Transfer playlists**. While it's open the tab turns into a
   white ✕.

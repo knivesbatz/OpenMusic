@@ -351,3 +351,8 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Spotify chips (green when on, outlined), pin on Liked Songs / Your Episodes, "Playlist • owner" rows,
   your picture by your own playlists
 - e2e 53/53 (new phone test)
+
+## 1.6.1
+- ✅ Phone library: one layout (the 1.5.0 one) with the old Playlists · Artists · Albums underlined tabs
+  instead of chips (tap again = everything); Classic Your Library setting removed; Create tab removed
+  (user's call). e2e 53/53

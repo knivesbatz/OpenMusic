@@ -38,8 +38,6 @@ export interface Settings {
   translateLyrics: boolean;
   /** Playlists "View as": Compact drops the artwork column. */
   compactTracks: boolean;
-  /** Phones: the classic Your Library (Music / Podcasts and Playlists · Artists · Albums tabs). */
-  classicLibrary: boolean;
   /** Your Library → Albums / Artists "Sort by". */
   albumSort: LibSort<AlbumSortKey>;
   artistSort: LibSort<ArtistSortKey>;
@@ -74,7 +72,6 @@ export const defaults: Settings = {
   translateNames: true,
   translateLyrics: true,
   compactTracks: false,
-  classicLibrary: true,
   albumSort: { key: "recent", desc: false },
   artistSort: { key: "recent", desc: false },
   lastfmScrobble: false,
