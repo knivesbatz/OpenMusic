@@ -1,6 +1,6 @@
 //! Offline downloads (Plex only — the server hands out the original file to authorized users,
 //! honouring its own "allow downloads" permission). YouTube audio is not downloadable through
-//! any supported interface, so YTSpot reports downloads as unavailable instead of faking them.
+//! any supported interface, so only Plex items offer downloads (per item, see `Capabilities`).
 //!
 //! Files stream into `<id>.part` and are renamed only after the full body arrived, so an
 //! interrupted download can never be mistaken for a complete one.
@@ -85,8 +85,9 @@ pub fn recover(state: &AppState) {
 }
 
 pub fn enqueue(app: AppHandle, state: Arc<AppState>, tracks: Vec<Track>) -> Result<usize> {
-    if state.flavor != crate::Flavor::Plex {
-        return Err(Error::Unsupported("downloads are not available for this provider".into()));
+    // Plex items only; nothing else can be downloaded.
+    if !state.on(crate::state::Provider::Plex) {
+        return Err(Error::Disabled(crate::state::Provider::Plex));
     }
     let mut queued = 0;
     for t in tracks.into_iter().filter(|t| t.source == Source::Plex) {

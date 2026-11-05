@@ -2,7 +2,7 @@
 //! plex.tv PIN sign-in, `/api/v2/resources` server discovery, and the server's `/library`,
 //! `/hubs/search`, `/playlists` and `/:/scrobble` endpoints. Responses are requested as JSON.
 //!
-//! PLEXSpot never writes to Plex playlists: app playlists live in SQLite (see `db.rs`).
+//! OpenSpot never writes to Plex playlists: app playlists live in SQLite (see `db.rs`).
 
 use std::time::Duration;
 
@@ -11,8 +11,19 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::model::*;
+use crate::state::Provider;
 
-pub const PRODUCT: &str = "PLEXSpot";
+const EXPIRED: Error = Error::AuthExpired(Some(Provider::Plex));
+
+/// plex.tv and server answers: a 401 means the Plex token (or server token) is no longer valid.
+fn checked(resp: reqwest::Response) -> Result<reqwest::Response> {
+    if resp.status().as_u16() == 401 {
+        return Err(EXPIRED);
+    }
+    Ok(resp.error_for_status()?)
+}
+
+pub const PRODUCT: &str = "OpenSpot";
 const PLEX_TV: &str = "https://plex.tv";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,8 +278,8 @@ impl Plex {
             .headers(self.http.get(format!("{PLEX_TV}/api/v2/user")))
             .header("X-Plex-Token", token)
             .send()
-            .await?
-            .error_for_status()?
+            .await
+            .map(checked)??
             .json()
             .await?;
         Ok(s(&v, "username").or_else(|| s(&v, "title")).unwrap_or_default())
@@ -280,8 +291,8 @@ impl Plex {
             .headers(self.http.get(format!("{PLEX_TV}/api/v2/user")))
             .header("X-Plex-Token", token)
             .send()
-            .await?
-            .error_for_status()?
+            .await
+            .map(checked)??
             .json()
             .await?;
         let name = s(&v, "title").or_else(|| s(&v, "username")).unwrap_or_default();
@@ -293,7 +304,7 @@ impl Plex {
     pub async fn home_users(&self, token: &str) -> Result<Vec<PlexUser>> {
         let resp = self.headers(self.http.get(format!("{PLEX_TV}/api/v2/home/users"))).header("X-Plex-Token", token).send().await?;
         match resp.status().as_u16() {
-            401 => return Err(Error::AuthExpired),
+            401 => return Err(EXPIRED),
             // Accounts without a Plex Home.
             403 | 404 => return Ok(Vec::new()),
             _ => {}
@@ -329,10 +340,7 @@ impl Plex {
             .header("X-Plex-Token", token)
             .send()
             .await?;
-        if resp.status().as_u16() == 401 {
-            return Err(Error::AuthExpired);
-        }
-        let v: Value = resp.error_for_status()?.json().await?;
+        let v: Value = checked(resp)?.json().await?;
         let mut out = Vec::new();
         for r in v.as_array().cloned().unwrap_or_default() {
             let provides = s(&r, "provides").unwrap_or_default();
@@ -429,7 +437,7 @@ impl Plex {
             .await
             .map_err(|e| if e.is_connect() || e.is_timeout() { Error::Offline(e.to_string()) } else { e.into() })?;
         match resp.status().as_u16() {
-            401 => Err(Error::AuthExpired),
+            401 => Err(EXPIRED),
             404 => Err(Error::NotFound(path.into())),
             _ => Ok(resp.error_for_status()?.json().await?),
         }
@@ -468,6 +476,11 @@ impl Plex {
             }
         }
         out
+    }
+
+    /// Tracks the user has liked (rated) on this server, for Liked Songs.
+    pub async fn liked_tracks(&self, sess: &Session) -> Vec<Track> {
+        self.per_section(sess, "type=10&userRating>>=5", to_track).await
     }
 
     /// Ids of tracks the user has liked (rated) on this server.
@@ -791,11 +804,7 @@ impl Plex {
             rating_key(id),
             if liked { 10 } else { -1 }
         );
-        self.headers(self.http.put(url))
-            .header("X-Plex-Token", &sess.server.access_token)
-            .send()
-            .await?
-            .error_for_status()?;
+        checked(self.headers(self.http.put(url)).header("X-Plex-Token", &sess.server.access_token).send().await?)?;
         Ok(())
     }
 }

@@ -17,6 +17,7 @@ use sha1::{Digest, Sha1};
 
 use crate::error::{Error, Result};
 use crate::model::*;
+use crate::state::Provider;
 
 const BASE: &str = "https://music.youtube.com/youtubei/v1/";
 const ORIGIN: &str = "https://music.youtube.com";
@@ -999,7 +1000,7 @@ impl Ytm {
             }
         }
         match resp.status().as_u16() {
-            401 | 403 => Err(Error::AuthExpired),
+            401 | 403 => Err(Error::AuthExpired(Some(Provider::YouTube))),
             404 => Err(Error::NotFound(endpoint.into())),
             _ => Ok(resp.error_for_status()?.json().await?),
         }
@@ -1229,7 +1230,7 @@ impl Ytm {
             artist: Some(Artist {
                 id: id.into(),
                 name: header.map(|h| text(h.get("title"))).unwrap_or_default(),
-                artwork: header.and_then(|h| thumbnail(h)),
+                artwork: header.and_then(thumbnail),
             }),
             description: header.map(|h| text(h.get("description"))).filter(|d| !d.is_empty()),
             followers: header.and_then(subscriber_count),
@@ -1417,7 +1418,7 @@ impl Ytm {
         ] {
             match self.library_items(id).await {
                 Ok(items) => split_by_kind(items, &mut res),
-                Err(Error::AuthExpired) => return Err(Error::AuthExpired),
+                Err(e @ Error::AuthExpired(_)) => return Err(e),
                 Err(e) => log::warn!("library shelf {id} failed: {e}"),
             }
         }

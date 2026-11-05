@@ -150,7 +150,7 @@ impl LastFm {
 fn to_err(e: CallError) -> Error {
     match e {
         CallError::Temporary(m) => Error::Offline(m),
-        CallError::Auth => Error::AuthExpired,
+        CallError::Auth => Error::AuthExpired(None),
         CallError::Fatal(m) => Error::Invalid(m),
     }
 }

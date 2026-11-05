@@ -1,7 +1,7 @@
 //! "Share audio with Discord" (Windows).
 //!
 //! Discord's Go Live (and OBS's application audio capture) records the audio of the process that
-//! owns the shared window. The app's windows belong to YTSpot.exe / PLEXSpot.exe, but its sound is
+//! owns the shared window. The app's windows belong to OpenSpot.exe, but its sound is
 //! made by the WebView2 runtime in separate msedgewebview2.exe processes, so a shared window, the
 //! mini player included, streams without audio.
 //!
