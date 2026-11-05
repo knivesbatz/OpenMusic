@@ -1,12 +1,13 @@
-// The Profile page's data: who is signed in (from the provider), the photo and name chosen in the
-// app (kv "profile", app-only: the YouTube/Plex account is never changed), and the artists
-// from your listening history.
+// The Profile page's data: who is signed in (the YouTube channel when YouTube is on and signed in,
+// otherwise the Plex account), the photo and name chosen in the app (kv "profile", app-only: the
+// YouTube/Plex account is never changed), and the artists from your listening history.
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { create } from "zustand";
 import { api, errorMessage, inTauri } from "../api";
 import { translate, type Key } from "../i18n";
-import type { ProfileInfo } from "../types";
-import { setLocalOnly, useApp } from "./app";
+import type { AuthAll, Provider, ProfileInfo, Services } from "../types";
+import { refreshAuth, refreshLibrary, useApp } from "./app";
+import { serviceName } from "./providers";
 import { useSettings } from "./settings";
 import { confirmDialog, toast } from "./ui";
 
@@ -47,11 +48,21 @@ export async function saveCustomProfile(c: CustomProfile) {
   if (inTauri) await api.kvSet("profile", c);
 }
 
+/** The account whose identity the app shows: YouTube when it is on and signed in, else Plex. */
+export function identityProvider(services: Services, auth: AuthAll | null): Provider | null {
+  if (services.youtube && auth?.youtube.signedIn) return "youtube";
+  if (services.plex && auth?.plex.signedIn) return "plex";
+  return null;
+}
+
 /** The name and picture to show: what was chosen in the app, else the account's. */
 export function useMe(): { name: string; photo: string | null } {
   const custom = useProfile((s) => s.custom);
   const info = useProfile((s) => s.info);
-  const account = useApp((s) => s.auth?.account);
+  const account = useApp((s) => {
+    const p = identityProvider(s.services, s.auth);
+    return p ? s.auth?.[p].account : null;
+  });
   return {
     name: custom.name?.trim() || info?.name || account || "",
     photo: custom.photo || info?.photo || null,
@@ -79,8 +90,8 @@ export async function pickPhoto(): Promise<string | null> {
 const lang = () => useSettings.getState().language;
 
 /** Account settings on the provider's own site. */
-export function accountUrl(): string {
-  return useApp.getState().info?.flavor === "plex" ? "https://app.plex.tv/desktop/#!/settings/account" : "https://myaccount.google.com/";
+export function accountUrl(provider: Provider): string {
+  return provider === "plex" ? "https://app.plex.tv/desktop/#!/settings/account" : "https://myaccount.google.com/";
 }
 
 export const SUPPORT_URL = "https://github.com/knivesbatz/OpenMusic/issues";
@@ -90,13 +101,29 @@ export function openExternal(url: string) {
   else window.open(url, "_blank", "noopener");
 }
 
-export async function signOut() {
-  const t = (k: Key) => translate(lang(), k);
-  if (!(await confirmDialog({ title: t("signOut"), body: t("signOutBody"), confirm: t("signOut") }))) return;
-  const yt = useApp.getState().info?.flavor === "youtube";
-  await api.signOut().catch(() => {});
-  await api.kvSet(yt ? "yt.profileChosen" : "plex.profileChosen", false).catch(() => {});
-  await setLocalOnly(false);
+/** Sign out of one provider, after asking. Plex turns its switch off (it has nothing to show
+ * without an account); YouTube stays on and plays without an account. */
+export async function signOut(provider: Provider) {
+  const t = (k: Key) => translate(lang(), k, { service: serviceName(provider) });
+  if (!(await confirmDialog({ title: t("signOutOf"), body: t("signOutBodyFor"), confirm: t("signOut") }))) return;
+  try {
+    await api.signOut(provider);
+  } catch (e) {
+    toast(errorMessage(e));
+    return;
+  }
+  await api.kvSet(provider === "youtube" ? "yt.profileChosen" : "plex.profileChosen", false).catch(() => {});
   useProfile.setState({ info: null });
-  useApp.setState({ auth: await api.authStatus(), library: null });
+  await refreshAuth();
+  useApp.setState({ library: null });
+  void refreshLibrary(true);
+  void loadProfile(true);
 }
+
+// The shown identity follows the switches and sign-ins: load it again when they change (only
+// once something asked for it).
+useApp.subscribe((s, prev) => {
+  if (s.services === prev.services && s.auth === prev.auth) return;
+  if (identityProvider(s.services, s.auth) === identityProvider(prev.services, prev.auth) && s.auth === prev.auth) return;
+  if (useProfile.getState().info || useProfile.getState().error) void loadProfile(true);
+});

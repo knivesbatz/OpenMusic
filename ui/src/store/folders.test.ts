@@ -38,6 +38,18 @@ describe("playlist folders", () => {
     expect(arrange(o, [...pls, { id: "p4", title: "New" }])).toEqual(["p3", folderKey("f"), "p2", "p1", "p4"]);
   });
 
+  it("custom order keeps the places of entries that aren't shown (a service switched off)", () => {
+    // yt:a and yt:b belong to a service that is off: not displayed, still in the saved order.
+    const o: LibraryOrg = { ...emptyOrg, sort: "custom", order: ["yt:b", "p1", "yt:a", "p2", "p3"] };
+    const shown = ["p1", "p2", "p3"];
+    const moved = moveTopLevel(o, "p3", "p1", shown);
+    expect(moved.order).toEqual(["yt:b", "p3", "p1", "yt:a", "p2"]);
+    // Switched back on, they show where they were.
+    expect(arrange(moved, [...pls, { id: "yt:a", title: "A" }, { id: "yt:b", title: "B" }])).toEqual(["yt:b", "p3", "p1", "yt:a", "p2"]);
+    // When the entry a hidden one followed moves away, the hidden one stays after its new neighbour.
+    expect(moveTopLevel(moved, "p1", null, ["p3", "p1", "p2"]).order).toEqual(["yt:b", "p3", "yt:a", "p2", "p1"]);
+  });
+
   it("moving a foldered playlist to the top level takes it out of the folder", () => {
     const o1 = moveIntoFolder(withFolder, "p1", "f");
     const o2 = moveTopLevel(o1, "p1", null, arrange(o1, pls));

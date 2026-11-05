@@ -86,6 +86,66 @@ describe("queue", () => {
     expect(titles(q)).toEqual(["T1", "T2"]);
   });
 
+  describe("tracks that can't play (their service is off)", () => {
+    const yt = (n: number): Track => ({ id: `yt:v${n}`, source: "youtube", title: `Y${n}`, artist: "A" });
+    // YouTube is switched off.
+    const ok: Q.Playable = (t) => !t.id.startsWith("yt:");
+
+    it("next and previous skip them, both ways", () => {
+      const q = Q.load([tr(1), yt(2), yt(3), tr(4)], 0, false, ok);
+      expect(Q.nextIndex(q, "off", true, ok)).toBe(3);
+      const at4 = Q.advance(q, 3);
+      expect(Q.prevIndex(at4, "off", ok)).toBe(0);
+      // The end of the queue: stop, or wrap past the skipped ones with repeat all.
+      expect(Q.nextIndex(at4, "off", false, ok)).toBe(-1);
+      expect(Q.nextIndex(at4, "all", false, ok)).toBe(0);
+      expect(Q.prevIndex(q, "all", ok)).toBe(3);
+      // Nothing playable before the first track: restart it.
+      expect(Q.prevIndex(q, "off", ok)).toBe(0);
+    });
+
+    it("load starts at the next track that can play", () => {
+      const q = Q.load([tr(1), yt(2), tr(3)], 1, false, ok);
+      expect(Q.current(q)!.track.id).toBe("plex:3");
+      // Past the end it wraps to the start.
+      expect(Q.current(Q.load([tr(1), yt(2)], 1, false, ok))!.track.id).toBe("plex:1");
+      // With shuffle the playable start still comes first.
+      expect(Q.current(Q.load([yt(1), tr(2), yt(3), tr(4)], 0, true, ok))!.track.id).toBe("plex:2");
+    });
+
+    it("nothing playable: -1, whatever the repeat mode", () => {
+      const q = Q.load([yt(1), yt(2), yt(3)], 0, false, ok);
+      expect(q.index).toBe(-1);
+      expect(q.items).toHaveLength(3);
+      expect(Q.current(q)).toBeUndefined();
+      // A queue restored with every track disabled (current one included).
+      const restored: Q.QueueState = { items: Q.toItems([yt(1), yt(2)]), index: 0, unshuffled: null };
+      for (const r of ["off", "all", "one"] as Q.Repeat[]) {
+        expect(Q.nextIndex(restored, r, false, ok)).toBe(-1);
+        expect(Q.nextIndex(restored, r, true, ok)).toBe(-1);
+      }
+    });
+
+    it("repeat one replays the current track only while it can play", () => {
+      const q = Q.load([tr(1), tr(2)], 0, false, ok);
+      expect(Q.nextIndex(q, "one", false, ok)).toBe(0);
+      expect(Q.nextIndex(q, "one", false, () => false)).toBe(-1);
+      // Repeat all with one playable track: it plays again.
+      const single = Q.load([tr(1), yt(2)], 0, false, ok);
+      expect(Q.nextIndex(single, "all", false, ok)).toBe(0);
+    });
+
+    it("a manual queue item from a disabled service is skipped, and stays queued", () => {
+      let q = Q.enqueue(Q.load([tr(1), tr(2)], 0, false, ok), [yt(9)]);
+      expect(titles(q)).toEqual(["T1", "Y9", "T2"]);
+      const i = Q.nextIndex(q, "off", true, ok);
+      expect(q.items[i].track.title).toBe("T2");
+      q = Q.advance(q, i);
+      expect(Q.current(q)!.track.title).toBe("T2");
+      expect(titles(q)).toEqual(["T1", "Y9", "T2"]);
+    });
+  });
+
   it("autoplay extends the context after the last track and plays on", () => {
     let q = Q.load([tr(1), tr(2)], 1);
     expect(Q.nextIndex(q, "off", false)).toBe(-1);

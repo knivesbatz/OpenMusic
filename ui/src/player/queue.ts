@@ -20,6 +20,11 @@ export interface QueueState {
 
 export type Repeat = "off" | "all" | "one";
 
+/** Can a track be played now? (A service switched off makes its tracks unplayable; see
+ * store/providers.ts playable().) The default plays everything. */
+export type Playable = (t: Track) => boolean;
+const everything: Playable = () => true;
+
 let uidCounter = 0;
 export const newUid = () => `q${Date.now().toString(36)}${(uidCounter++).toString(36)}`;
 
@@ -33,11 +38,24 @@ export function current(q: QueueState): QItem | undefined {
   return q.index >= 0 ? q.items[q.index] : undefined;
 }
 
-/** Replace the queue with a context (album, playlist, …) and start at `start`. */
-export function load(tracks: Track[], start = 0, shuffle = false): QueueState {
+/** First playable index at or after `from`, wrapping around; -1 when nothing is playable. */
+function firstPlayable(items: QItem[], from: number, ok: Playable): number {
+  for (let k = 0; k < items.length; k++) {
+    const i = (from + k) % items.length;
+    if (ok(items[i].track)) return i;
+  }
+  return -1;
+}
+
+/**
+ * Replace the queue with a context (album, playlist, …) and start at `start`, or at the next track
+ * after it that can play. With nothing playable the queue holds the tracks with index -1.
+ */
+export function load(tracks: Track[], start = 0, shuffle = false, ok: Playable = everything): QueueState {
   let items = toItems(tracks);
   const s = Math.max(0, Math.min(start, items.length - 1));
-  let index = items.length ? s : -1;
+  let index = items.length ? firstPlayable(items, s, ok) : -1;
+  if (index < 0) return { items, index: -1, unshuffled: null };
   let unshuffled: string[] | null = null;
   if (shuffle && items.length > 1) {
     unshuffled = items.map((i) => i.uid);
@@ -120,17 +138,39 @@ export function move(q: QueueState, uids: string[], beforeIndex: number): QueueS
   return { ...q, items, index };
 }
 
-/** Index to play after the current one finishes or the user presses Next. -1 = stop. */
-export function nextIndex(q: QueueState, repeat: Repeat, userSkip: boolean): number {
-  if (q.index < 0 || !q.items.length) return -1;
-  if (repeat === "one" && !userSkip) return q.index;
-  if (q.index + 1 < q.items.length) return q.index + 1;
-  return repeat === "off" ? -1 : 0;
+/**
+ * Index to play after the current one finishes or the user presses Next, skipping tracks that
+ * can't play. -1 = stop (also when nothing in the queue can play, whatever the repeat mode).
+ */
+export function nextIndex(q: QueueState, repeat: Repeat, userSkip: boolean, ok: Playable = everything): number {
+  const n = q.items.length;
+  if (q.index < 0 || !n) return -1;
+  if (repeat === "one" && !userSkip && ok(q.items[q.index].track)) return q.index;
+  // At most one lap: with repeat on, the current track itself comes last.
+  for (let step = 1; step <= n; step++) {
+    let i = q.index + step;
+    if (i >= n) {
+      if (repeat === "off") return -1;
+      i -= n;
+    }
+    if (ok(q.items[i].track)) return i;
+  }
+  return -1;
 }
 
-export function prevIndex(q: QueueState, repeat: Repeat): number {
-  if (q.index > 0) return q.index - 1;
-  if (repeat !== "off" && q.items.length) return q.items.length - 1;
+/** Index of the track before the current one that can play; the current index when there is none
+ * (the engine restarts the current track). */
+export function prevIndex(q: QueueState, repeat: Repeat, ok: Playable = everything): number {
+  const n = q.items.length;
+  if (q.index < 0 || !n) return q.index;
+  for (let step = 1; step < n; step++) {
+    let i = q.index - step;
+    if (i < 0) {
+      if (repeat === "off") break;
+      i += n;
+    }
+    if (ok(q.items[i].track)) return i;
+  }
   return q.index;
 }
 

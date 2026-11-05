@@ -5,24 +5,50 @@ import type * as T from "./types";
 export const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 // Sign-in and session commands answer for themselves; everything else gets one retry after the
-// session is repaired.
-const NO_RECOVER = new Set(["auth_recover", "auth_status", "sign_out", "yt_login", "plex_pin_poll", "plex_pin_start", "plex_servers", "plex_select_server"]);
-let recovering: Promise<boolean> | null = null;
+// session of the provider that refused it is repaired.
+const NO_RECOVER = new Set([
+  "auth_recover",
+  "auth_status",
+  "sign_out",
+  "yt_login",
+  "plex_pin_poll",
+  "plex_pin_start",
+  "plex_servers",
+  "plex_select_server",
+  "services_get",
+  "services_set",
+]);
+/** One repair per provider at a time: a YouTube refusal never waits on a Plex repair. */
+const recovering: Record<T.Provider, Promise<boolean> | null> = { youtube: null, plex: null };
 
 async function call<R>(cmd: string, args?: Record<string, unknown>): Promise<R> {
   try {
     return await invoke<R>(cmd, args);
   } catch (e) {
-    if (errorCode(e) !== "authExpired" || NO_RECOVER.has(cmd)) throw e;
+    const provider = errorProvider(e);
+    // An authExpired that names no provider (a stray 401 from elsewhere) is never "repaired".
+    if (errorCode(e) !== "authExpired" || !provider || NO_RECOVER.has(cmd)) throw e;
     // A refused request is usually a stale Plex server token or an old YouTube cookie, not a
-    // signed-out account: repair the session (once for all the requests failing together) and
-    // try again before showing an error.
-    recovering ??= invoke<boolean>("auth_recover")
+    // signed-out account: repair that provider's session (once for all the requests failing
+    // together) and try again before showing an error.
+    recovering[provider] ??= invoke<boolean>("auth_recover", { provider })
       .catch(() => false)
-      .finally(() => setTimeout(() => (recovering = null), 10_000));
-    if (!(await recovering)) throw e;
+      .finally(() => setTimeout(() => (recovering[provider] = null), 10_000));
+    if (!(await recovering[provider])) throw e;
     return invoke<R>(cmd, args);
   }
+}
+
+/** Gets the `errors` of every merged (fan-out) result: store/app.ts shows a per-provider notice
+ * for a session the core could not repair. */
+let onPartErrors: ((errors: T.ProviderError[]) => void) | null = null;
+export const setPartErrorHandler = (fn: (errors: T.ProviderError[]) => void) => {
+  onPartErrors = fn;
+};
+
+function noteParts<R extends { errors?: T.ProviderError[] }>(r: R): R {
+  if (r?.errors?.length) onPartErrors?.(r.errors);
+  return r;
 }
 
 export function errorMessage(e: unknown): string {
@@ -33,6 +59,12 @@ export function errorMessage(e: unknown): string {
 export function errorCode(e: unknown): string | undefined {
   if (e && typeof e === "object" && "code" in e) return String((e as T.ApiError).code);
   return undefined;
+}
+
+/** The provider an error is about ("youtube" | "plex"), when the core named one. */
+export function errorProvider(e: unknown): T.Provider | undefined {
+  const p = e && typeof e === "object" && "provider" in e ? (e as T.ApiError).provider : undefined;
+  return p === "youtube" || p === "plex" ? p : undefined;
 }
 
 // Windows and Android webviews reach custom protocols as http://<scheme>.localhost.
@@ -64,23 +96,33 @@ export const api = {
   kvGet: <V>(key: string) => call<V | null>("kv_get", { key }),
   kvSet: (key: string, value: unknown) => call<void>("kv_set", { key, value }),
 
-  authStatus: () => call<T.AuthStatus>("auth_status"),
+  servicesGet: () => call<T.Services>("services_get"),
+  /** Turn services on or off; emits `services-changed`. Never signs out and never asks anything. */
+  servicesSet: (services: T.Services) => call<void>("services_set", { services }),
+
+  authStatus: () => call<T.AuthAll>("auth_status"),
+  /** Repair one provider's session (Plex: re-probe the server; YouTube: renew the cookies). */
+  authRecover: (provider: T.Provider) => call<boolean>("auth_recover", { provider }),
   plexPinStart: () => call<{ id: number; code: string; authUrl: string }>("plex_pin_start"),
   plexPinPoll: (id: number) => call<boolean>("plex_pin_poll", { id }),
   plexServers: () => call<T.PlexServer[]>("plex_servers"),
   plexSelectServer: (clientIdentifier: string) => call<string>("plex_select_server", { clientIdentifier }),
   plexReconnect: () => call<void>("plex_reconnect_cmd"),
   ytLogin: () => call<void>("yt_login"),
-  signOut: () => call<void>("sign_out"),
+  /** Sign out of one provider. Plex turns its switch off; YouTube stays on (anonymous). */
+  signOut: (provider: T.Provider) => call<void>("sign_out", { provider }),
 
-  home: (refresh: boolean) => call<T.HomeData>("home", { refresh }),
+  home: (refresh: boolean) => call<T.HomeData>("home", { refresh }).then(noteParts),
   newReleases: (refresh: boolean) => call<T.Shelf[]>("new_releases", { refresh }),
-  search: (query: string) => call<T.SearchResults>("search", { query }),
-  searchKind: (query: string, kind: string) => call<T.SearchResults>("search_kind", { query, kind }),
+  /** One provider's results, or (provider null or left out) local files and app playlists only.
+   * The UI asks each source in parallel and merges them (searchMerge.ts). */
+  search: (query: string, provider?: T.Provider | null) => call<T.SearchResults>("search", { query, provider: provider ?? null }),
+  searchKind: (query: string, kind: string, provider?: T.Provider | null) =>
+    call<T.SearchResults>("search_kind", { query, kind, provider: provider ?? null }),
   artist: (id: string) => call<T.ArtistPage>("artist", { id }),
   album: (id: string) => call<T.AlbumPage>("album", { id }),
   playlist: (id: string) => call<T.PlaylistPage>("playlist", { id }),
-  library: (refresh: boolean) => call<T.Library>("library", { refresh }),
+  library: (refresh: boolean) => call<T.Library>("library", { refresh }).then(noteParts),
   radio: (track: T.Track) => call<T.Track[]>("radio", { track }),
   mediaUpdate: (now: T.NowPlaying) => call<void>("media_update", { now }),
   widgetRefresh: () => call<void>("widget_refresh"),
@@ -103,6 +145,8 @@ export const api = {
   markPlayed: (track: T.Track) => call<void>("mark_played", { track }),
   rate: (track: T.Track, liked: boolean) => call<void>("rate", { track, liked }),
   likedIds: () => call<string[]>("liked_ids"),
+  /** The combined Liked Songs page (YouTube liked songs, then Plex rated tracks). */
+  likedTracks: (refresh: boolean) => call<T.LikedTracks>("liked_tracks", { refresh }).then(noteParts),
   plexHomeUsers: () => call<T.PlexUser[]>("plex_home_users"),
   plexSwitchUser: (uuid: string, pin: string | null) => call<void>("plex_switch_user", { uuid, pin }),
   ytAccounts: () => call<T.YtAccount[]>("yt_accounts"),
