@@ -1,6 +1,10 @@
 import { useSettings } from "./store/settings";
 
 const en = {
+  // ---- OpenSpot: state, sign-in and Settings (builder A adds keys below) ----
+  // ---- end A ----
+  // ---- OpenSpot: pages and components (builder B adds keys below) ----
+  // ---- end B ----
   home: "Home",
   search: "Search",
   library: "Your Library",
@@ -500,6 +504,10 @@ const en = {
 export type Key = keyof typeof en;
 
 const ja: Record<Key, string> = {
+  // ---- OpenSpot: state, sign-in and Settings (builder A adds keys below) ----
+  // ---- end A ----
+  // ---- OpenSpot: pages and components (builder B adds keys below) ----
+  // ---- end B ----
   home: "ホーム",
   search: "検索",
   library: "マイライブラリ",

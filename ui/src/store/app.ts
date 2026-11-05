@@ -2,7 +2,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorCode, errorMessage, inTauri } from "../api";
-import type { Album, AppInfo, Artist, AuthStatus, Library, Playlist, Podcast, Track } from "../types";
+import type { Album, AppInfo, Artist, AuthStatus, Library, Playlist, Podcast, Services, Track } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { translate } from "../i18n";
 import { useSettings } from "./settings";
@@ -11,6 +11,8 @@ import { loadFolders } from "./folders";
 
 interface AppStore {
   info: AppInfo | null;
+  /** Settings → Services switches (store/providers.ts reads them). */
+  services: Services;
   auth: AuthStatus | null;
   /** User chose "Continue with local files only" on the sign-in page. */
   localOnly: boolean;
@@ -27,6 +29,7 @@ interface AppStore {
 
 export const useApp = create<AppStore>(() => ({
   info: null,
+  services: { youtube: false, plex: false },
   auth: null,
   localOnly: false,
   online: true,

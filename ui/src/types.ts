@@ -147,11 +147,32 @@ export interface Capabilities {
   discordPresence?: boolean;
 }
 
+/** A streaming service OpenSpot can use. Items carry it in their id prefix: `yt:` / `plex:`. */
+export type Provider = "youtube" | "plex";
+export const PROVIDERS: Provider[] = ["youtube", "plex"];
+
+/** The Settings → Services switches. Off hides a service everywhere but keeps its sign-in. */
+export interface Services {
+  youtube: boolean;
+  plex: boolean;
+}
+
+/** One provider's part of a merged (fan-out) result that failed: the rest still shows. */
+export interface ProviderError {
+  provider: Provider;
+  /** "authExpired" | "offline" | "timeout" | "disabled" | "notSignedIn" | "network" | … */
+  code: string;
+  message?: string;
+}
+
 export interface AppInfo {
-  flavor: "youtube" | "plex";
   name: string;
   version: string;
-  capabilities: Capabilities;
+  /** What each provider can do; the UI combines them with `services` (store/providers.ts caps()). */
+  providers: Record<Provider, Capabilities>;
+  services: Services;
+  /** Discord Rich Presence is built in (desktop builds with a Discord application id). */
+  discordPresence?: boolean;
   /** Local artwork server base URL; absent when it failed to start. */
   artBase?: string | null;
   /** "windows", "macos", "linux", "android", "ios". */
@@ -200,6 +221,9 @@ export interface HomeData {
   stale: boolean;
   error?: ApiError | null;
 }
+
+/** Sign-in state of every provider (`auth_status`). */
+export type AuthAll = Record<Provider, AuthStatus>;
 
 export interface AuthStatus {
   signedIn: boolean;
