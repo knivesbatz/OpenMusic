@@ -333,3 +333,8 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   song screen About the artist card. e2e 52/52 with the phone paths
 - 🟡 Still unlike Spotify: playlist action row (download/share icons), pinned compact header on
   scroll, Create tab, smart shuffle, Jam
+
+## 1.5.1
+- ✅ APKs signed with the stable key (ANDROID_KEYSTORE secrets added). Release builds now fail
+  instead of falling back to a throwaway key, and check the certificate's SHA-256 (a7979368…0bf9)
+- 🟡 Android self-update from 1.5.1 to the next version not yet seen on a phone
