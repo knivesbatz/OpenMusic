@@ -1214,3 +1214,13 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .pl-sortbtn { height: 38px; padding: 0 16px; border-radius: 6px; background: #ffffff1f; color: var(--text); font-weight: 700; font-size: 0.9375rem; flex: none; }
   .pl-sortbtn:active { background: #ffffff33; }
 }
+
+/* Phones: Spotify's chips (outlined, green when on), the pin on pinned library rows, and your
+   picture next to your own playlists. */
+@media (max-width: 760px) {
+  .phone-chips .chip, .lib-chips .chip { background: transparent; border: 1px solid #ffffff59; color: var(--text); }
+  .phone-chips .chip.on, .lib-chips .chip.on { background: var(--green); border-color: var(--green); color: #000; }
+  .lib-chips .chip.clear { border-color: transparent; background: #ffffff26; }
+  .lib-pin { color: var(--green); vertical-align: -2px; margin-right: 4px; flex: none; }
+}
+img.avatar { object-fit: cover; }

@@ -348,4 +348,6 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Classic Your Library on phones again (Music/Podcasts + Playlists/Artists/Albums tabs), default on;
   Settings → Classic Your Library off = the 1.5.0 chips layout
 - ✅ Album header on phones: artist line, then "Album • year"; filled Home/Library tab icons
+- ✅ Spotify chips (green when on, outlined), pin on Liked Songs / Your Episodes, "Playlist • owner" rows,
+  your picture by your own playlists
 - e2e 53/53 (new phone test)

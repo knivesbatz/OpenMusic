@@ -8,6 +8,7 @@ import { TrackList } from "../components/TrackList";
 import { shelfTitle, translate, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
+import { useMe } from "../store/profile";
 import { sortAlbums, sortArtists } from "../store/librarySort";
 import { setSort, setView, useFolders } from "../store/folders";
 import { useSettings } from "../store/settings";
@@ -704,6 +705,7 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
   const saved = useApp((s) => s.saved);
   const caps = useApp((s) => s.info?.capabilities);
   const org = useFolders();
+  const me = useMe();
   const chip: PhoneChip | null = tab === "playlists" || tab === "podcasts" || tab === "albums" || tab === "artists" ? tab : null;
   const ytLibrary = useApp.getState().info?.flavor === "youtube";
   const of = (c: PhoneChip) => !chip || chip === c;
@@ -733,9 +735,9 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
       { label: t("sortMenu"), heading: true },
       ...(["recent", "added", "alpha", "creator"] as const).map((k) => ({ label: sortNames[k], checked: (org.sort === "custom" ? "recent" : org.sort) === k, onClick: () => setSort(k) })),
     ]);
-  const pinned: { key: string; icon: React.ReactNode; title: string; sub?: string; go: () => void }[] = [
-    ...(liked && of("playlists") ? [{ key: "liked", icon: <div className="art grad-liked"><I.IHeartFill size={grid ? 40 : 24} /></div>, title: t("likedSongs"), sub: [t("playlist"), liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : null].filter(Boolean).join(" • "), go: () => navigate({ name: "playlist", id: liked.id }) }] : []),
-    ...(caps?.podcasts && of("podcasts") ? [{ key: "episodes", icon: <div className="art grad-episodes"><I.IBookmark size={grid ? 40 : 24} /></div>, title: t("yourEpisodes"), sub: t("episodesCount", { n: saved.episodes.length }), go: () => navigate({ name: "episodes" }) }] : []),
+  const pinned: { key: string; icon: React.ReactNode; title: string; sub?: string; pin?: boolean; go: () => void }[] = [
+    ...(liked && of("playlists") ? [{ key: "liked", icon: <div className="art grad-liked"><I.IHeartFill size={grid ? 40 : 24} /></div>, title: t("likedSongs"), pin: true, sub: [t("playlist"), me.name || (liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : null)].filter(Boolean).join(" • "), go: () => navigate({ name: "playlist", id: liked.id }) }] : []),
+    ...(caps?.podcasts && of("podcasts") ? [{ key: "episodes", icon: <div className="art grad-episodes"><I.IBookmark size={grid ? 40 : 24} /></div>, title: t("yourEpisodes"), pin: true, sub: [t("playlist"), t("episodesCount", { n: saved.episodes.length })].join(" • "), go: () => navigate({ name: "episodes" }) }] : []),
     ...(!chip ? [{ key: "local", icon: <div className="art grad-local"><I.IFolder size={grid ? 40 : 24} /></div>, title: t("localFiles"), go: () => navigate({ name: "local" }) }] : []),
     ...(!chip && caps?.downloads ? [{ key: "downloads", icon: <div className="art grad-dl"><I.IDownload size={grid ? 40 : 24} /></div>, title: t("downloads"), go: () => navigate({ name: "downloads" }) }] : []),
   ];
@@ -769,7 +771,7 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
       ) : (
         <div className={cls("lib-rows", grid && "lib-grid")} key={(chip ?? "all") + org.sort + org.view}>
           {pinned.map((x) => (
-            <LibRow key={x.key} icon={x.icon} title={x.title} sub={x.sub} onClick={x.go} />
+            <LibRow key={x.key} icon={x.icon} title={x.title} sub={x.sub} pin={x.pin} onClick={x.go} />
           ))}
           {!lib && !err ? (
             <Loading />
@@ -779,7 +781,8 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
                 key={it.type + it.id}
                 icon={<Art src={it.artwork} size={grid ? 240 : 128} round={it.type === "artist"} />}
                 title={name(it)}
-                sub={itemSubtitle(it, t)}
+                // Spotify's rows: "Playlist • maya" (app playlists are yours).
+                sub={it.type === "playlist" ? [t("playlist"), it.local ? me.name : it.owner].filter(Boolean).join(" • ") : itemSubtitle(it, t)}
                 onClick={() => openItem(it)}
                 onContext={(e) => cardMenu(e, it)}
               />
@@ -841,13 +844,18 @@ function LibrarySortButton({ tab }: { tab: "albums" | "artists" }) {
   );
 }
 
-function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; onClick: () => void; onContext?: (e: React.MouseEvent) => void }) {
+function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; pin?: boolean; onClick: () => void; onContext?: (e: React.MouseEvent) => void }) {
   return (
     <div className="lib-row" role="button" tabIndex={0} onClick={p.onClick} onKeyDown={(e) => e.key === "Enter" && p.onClick()} onContextMenu={p.onContext}>
       {p.icon}
       <div className="lib-row-text">
         <span className="name">{p.title}</span>
-        {p.sub && <span className="sub">{p.sub}</span>}
+        {p.sub && (
+          <span className="sub">
+            {p.pin && <I.IPin size={14} className="lib-pin" />}
+            {p.sub}
+          </span>
+        )}
       </div>
     </div>
   );

@@ -21,6 +21,10 @@ pins with the cover's colour and the play button, and the classic Your Library b
   the newer layout (filter chips and one list).
 - **Albums on phones:** the artist on its own line, then "Album • 2015".
 - **Tabs:** Home and Your Library use filled icons when they're the open tab.
+- **Chips like Spotify's:** the selected chip (Home's All / Music / Podcasts, Your Library's
+  filters) is green with black text; the others are outlined.
+- **Your Library (newer layout):** Liked Songs and Your Episodes carry Spotify's green pin, and
+  playlists read "Playlist • <owner>". Your own playlists show your profile picture by your name.
 
 ## Also in 1.5.1
 - **Android: one last manual install.** Earlier APKs were each signed with a new temporary key, so

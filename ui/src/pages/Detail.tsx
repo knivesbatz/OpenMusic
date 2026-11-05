@@ -13,6 +13,7 @@ import { newestFirst, splitCompilations } from "../store/discography";
 import { setPlaylistSort, sortTracks, usePlaylistSort, type SortKey } from "../store/playlistSort";
 import { orderEpisodes, setOldestFirst, useOldestFirst } from "../store/podcastSort";
 import { useSettings } from "../store/settings";
+import { useMe } from "../store/profile";
 import { navigate, openMenu, toast } from "../store/ui";
 import type { Album, Artist, PlayContext, Track } from "../types";
 import { cls, fmtTime, totalDuration } from "../util";
@@ -395,6 +396,7 @@ function DiscChips({ disc, setDisc, hasAppears, hasCompilations }: { disc: Disc;
 export function PlaylistPage({ id }: { id: string }) {
   const t = useT();
   const phone = usePhoneLayout();
+  const me = useMe();
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
   usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
     art: data?.playlist.artwork ?? data?.tracks[0]?.artwork,
@@ -417,6 +419,9 @@ export function PlaylistPage({ id }: { id: string }) {
   const sorted = sort.key !== "custom";
   const ctx: PlayContext = { kind: "playlist", id, title: playlist.title, artwork: playlist.artwork };
   const editable = playlist.local;
+  // Your own playlists show your profile picture by your name, like Spotify.
+  const mine = playlist.local || (!!me.name && playlist.owner === me.name);
+  const ownerPhoto = mine ? artUrl(me.photo, 64) : undefined;
 
   async function reorder(order: number[]) {
     if (busy) return;
@@ -444,9 +449,13 @@ export function PlaylistPage({ id }: { id: string }) {
             {playlist.description && <p className="muted hero-desc">{playlist.description}</p>}
             {playlist.owner && (
               <span className="hero-owner">
-                <span className="avatar" aria-hidden="true">
-                  {playlist.owner.slice(0, 1).toUpperCase()}
-                </span>
+                {ownerPhoto ? (
+                  <img className="avatar" src={ownerPhoto} alt="" />
+                ) : (
+                  <span className="avatar" aria-hidden="true">
+                    {playlist.owner.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
                 <strong>{playlist.owner}</strong>
               </span>
             )}
