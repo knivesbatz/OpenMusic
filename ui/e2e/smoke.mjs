@@ -1091,6 +1091,50 @@ await test("Android: a new version found at startup is downloaded and installed 
   },
 });
 
+await test("Phone: Create tab, classic library, Find in playlist + Sort sheet, pinned bar with play", async (p) => {
+  await p.setViewportSize({ width: 390, height: 844 });
+  // Create: a panel above the tabs; the tab turns into a close button.
+  await p.click(".mobile-tabs .create-tab");
+  await p.locator(".create-panel .create-row").first().waitFor();
+  assert.equal(await p.locator(".create-panel .create-row").count(), 3);
+  assert.equal(await p.locator(".create-tab").getAttribute("aria-expanded"), "true");
+  await p.click(".mobile-tabs .create-tab");
+  assert.equal(await p.locator(".create-panel").count(), 0);
+  // Classic Your Library (the default): Music / Podcasts, then Playlists · Artists · Albums.
+  await p.click('.mobile-tabs button:has-text("Your Library")');
+  await p.locator(".lib-classic .lib-tab.on", { hasText: "Playlists" }).waitFor();
+  await p.locator(".lib-row", { hasText: "Create playlist" }).waitFor();
+  // A playlist: Find in playlist and Sort above the cover; Sort opens the Sort by sheet.
+  await p.locator(".lib-row", { hasText: "Road trip" }).first().click();
+  const before = await p.locator(".detail .tl-row .tl-text .name").allTextContents();
+  await p.locator(".pl-findbar .pl-sortbtn").click();
+  await p.locator(".menu-sheet .sheet-item", { hasText: "Title" }).click();
+  await p.waitForFunction(() => !document.querySelector(".menu-sheet"));
+  const after = await p.locator(".detail .tl-row .tl-text .name").allTextContents();
+  assert.notDeepEqual(after, before, "the order changed");
+  await p.locator(".pl-findbar .pl-sortbtn").click();
+  await p.locator(".menu-sheet .sheet-item.on", { hasText: "Title" }).waitFor();
+  await p.keyboard.press("Escape");
+  await p.waitForFunction(() => !document.querySelector(".menu-sheet"));
+  await p.fill(".pl-findfield input", "zzzz-no-match");
+  await p.locator(".detail .muted", { hasText: "No" }).first().waitFor();
+  await p.fill(".pl-findfield input", "");
+  // Scrolled past the play button: the bar pins with the name and its own play button.
+  await p.evaluate(() => document.querySelector(".main").scrollTo(0, 2000));
+  await p.locator(".topbar.detail-bar.pinned .bar-fab").waitFor();
+  const name = (await p.locator(".detail .hero h1").textContent()).trim();
+  assert.equal((await p.locator(".topbar.detail-bar .phone-title").textContent()).trim(), name);
+  // Its play button starts this playlist (the mock's Android player never reports "playing").
+  await p.evaluate(() => (window.__CALLS__.length = 0));
+  await p.click(".topbar.detail-bar .bar-fab");
+  await p.waitForFunction(() => window.__CALLS__.includes("resolve_stream"));
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.app_info = { ...d.app_info, platform: "android" };
+  },
+});
+
 await browser.close();
 server.httpServer.close();
 const failed = results.filter((r) => !r.ok).length;

@@ -1,8 +1,28 @@
-# OpenMusic 1.5.1
+# OpenMusic 1.6.0
 
-Android apps signed with OpenMusic's permanent key, so from now on they update themselves.
+More of Spotify's phone app: a Create tab, Find in playlist and Sort above the cover, a bar that
+pins with the cover's colour and the play button, and the classic Your Library back.
 
-## New in 1.5.1
+## New in 1.6.0
+- **Create tab.** A fourth tab, **+ Create**, next to Your Library. It opens a panel above the tabs
+  with **Playlist**, **Folder** and **Transfer playlists**. While it's open the tab turns into a
+  white ✕.
+- **Find in playlist and Sort.** On a playlist, a **Find in playlist** box and a **Sort** button sit
+  above the cover. Sort opens the **Sort by** sheet from the bottom (Custom order, Title, Artist,
+  Album, Recently added, Release date, Duration, plus Compact / List). The current choice is
+  green, and picking it again flips the direction. The play, shuffle and ••• buttons stay where
+  they were.
+- **Pinned bar.** Scroll a playlist, album or artist page and, once the green play button reaches
+  the top, the bar fills with the cover's colour, shows the name in the middle and keeps a green
+  play/pause button on its edge.
+- **Classic Your Library is back on phones** (and is the default): **Music** and **Podcasts** at
+  the top, then **Playlists · Artists · Albums** tabs with the green underline, a **Create
+  playlist** row and Liked Songs. Settings → Accessibility → **Classic Your Library** switches to
+  the newer layout (filter chips and one list).
+- **Albums on phones:** the artist on its own line, then "Album • 2015".
+- **Tabs:** Home and Your Library use filled icons when they're the open tab.
+
+## Also in 1.5.1
 - **Android: one last manual install.** Earlier APKs were each signed with a new temporary key, so
   Android refused to install one over another. 1.5.1 and every later version are signed with
   the same permanent key.

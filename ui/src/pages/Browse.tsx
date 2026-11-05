@@ -1,6 +1,6 @@
 // Home, Search and the Library grid.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, playlistMenu, podcastMenu, trackMenu } from "../actions";
+import { albumMenu, artistMenu, createPlaylist, playlistMenu, podcastMenu, trackMenu } from "../actions";
 import { api, artUrl, errorMessage, inTauri } from "../api";
 import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, itemSubtitle, openItem, useAsync, usePageTitle, usePhoneLayout } from "../components/common";
 import * as I from "../components/Icons";
@@ -571,6 +571,7 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const [q, setQ] = useState("");
   const albumSort = useSettings((s) => s.albumSort);
   const artistSort = useSettings((s) => s.artistSort);
+  const classic = useSettings((s) => s.classicLibrary);
   useAsync(() => refreshLibrary(false), []);
   const cur: LibraryTab = tab ?? "playlists";
   if (cur === "recent") return <RecentPage />;
@@ -621,7 +622,74 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
     );
   }
 
-  return <PhoneLibrary tab={tab} playlists={playlists.filter((p) => p !== liked)} liked={liked} />;
+  // The classic phone library (Music / Podcasts, then Playlists · Artists · Albums tabs), or
+  // today's Spotify layout (chips, sort row, one list): Settings → "Classic Your Library".
+  if (!classic) return <PhoneLibrary tab={tab} playlists={playlists.filter((p) => p !== liked)} liked={liked} />;
+
+  const podcasts = cur === "podcasts";
+  return (
+    <div className="page lib-classic">
+      <div className="lib-top">
+        <button className={cls("lib-big", !podcasts && "on")} onClick={() => go("playlists")}>
+          {t("music")}
+        </button>
+        {caps?.podcasts && (
+          <button className={cls("lib-big", podcasts && "on")} onClick={() => go("podcasts")}>
+            {t("podcasts")}
+          </button>
+        )}
+      </div>
+      {!podcasts && (
+        <div className="lib-tabs" role="tablist">
+          {(["playlists", "artists", "albums"] as const).map((f) => (
+            <button key={f} role="tab" aria-selected={cur === f} className={cls("lib-tab", cur === f && "on")} onClick={() => go(f)}>
+              {t(f)}
+            </button>
+          ))}
+        </div>
+      )}
+      {(cur === "albums" || cur === "artists") && (
+        <div className="lib-sort-row">
+          <LibrarySortButton tab={cur} />
+        </div>
+      )}
+      <div className="lib-rows" key={cur + albumSort.key + albumSort.desc + artistSort.key + artistSort.desc}>
+        {cur === "playlists" && (
+          <>
+            <LibRow
+              icon={<div className="art grad-new"><I.IPlus size={26} /></div>}
+              title={t("createPlaylist")}
+              onClick={async () => {
+                const pl = await createPlaylist();
+                if (pl) navigate({ name: "playlist", id: pl.id });
+              }}
+            />
+            {liked && <LibRow icon={<div className="art grad-liked"><I.IHeartFill size={24} /></div>} title={t("likedSongs")} sub={liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : undefined} onClick={() => navigate({ name: "playlist", id: liked.id })} />}
+            <LibRow icon={<div className="art grad-local"><I.IFolder size={24} /></div>} title={t("localFiles")} onClick={() => navigate({ name: "local" })} />
+            {caps?.downloads && <LibRow icon={<div className="art grad-dl"><I.IDownload size={24} /></div>} title={t("downloads")} onClick={() => navigate({ name: "downloads" })} />}
+          </>
+        )}
+        {podcasts && (
+          <LibRow icon={<div className="art grad-episodes"><I.IBookmark size={24} /></div>} title={t("yourEpisodes")} sub={t("episodesCount", { n: saved.episodes.length })} onClick={() => navigate({ name: "episodes" })} />
+        )}
+        {!lib && !err ? (
+          <Loading />
+        ) : (
+          shown.map((it) => (
+            <LibRow
+              key={it.type + it.id}
+              icon={<Art src={it.artwork} size={128} round={it.type === "artist"} />}
+              title={it.type === "artist" ? it.name : it.title}
+              sub={itemSubtitle(it, t)}
+              onClick={() => openItem(it)}
+              onContext={(e) => cardMenu(e, it)}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+
 }
 
 type PhoneChip = "playlists" | "podcasts" | "albums" | "artists";

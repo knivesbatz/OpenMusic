@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { albumMenu, canChangeCover, changeCover, downloadTracks, playlistMenu, toggleSaved, trackHead, trackMenu } from "../actions";
 import { api, artUrl, errorMessage } from "../api";
-import { Art, ArtistName, ErrorBox, Loading, PlayFab, TitleText, useAsync, usePageTitle } from "../components/common";
+import { Art, ArtistName, ErrorBox, Loading, PlayFab, TitleText, useAsync, usePageTitle, usePhoneLayout } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT } from "../i18n";
@@ -110,6 +110,31 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
   );
 }
 
+/** Phones (Spotify's app): "Find in playlist" and a Sort button above the cover. Sort opens the
+ * "Sort by" sheet. */
+function PhoneFindBar({ id, tracks, value, onChange }: { id: string; tracks: Track[]; value: string | null; onChange: (v: string | null) => void }) {
+  const t = useT();
+  const { open } = useSortMenu(id, tracks);
+  return (
+    <div className="pl-findbar">
+      <label className="pl-findfield">
+        <I.ISearch size={18} />
+        <input
+          type="search"
+          placeholder={t("findInPlaylist")}
+          aria-label={t("findInPlaylist")}
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && (e.currentTarget.blur(), onChange(null))}
+        />
+      </label>
+      <button className="pl-sortbtn" onClick={open}>
+        {t("sortShort")}
+      </button>
+    </div>
+  );
+}
+
 /** Spotify's search-in-playlist: an icon that opens a filter box. */
 function PlaylistFind({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
   const t = useT();
@@ -137,7 +162,7 @@ function PlaylistFind({ value, onChange }: { value: string | null; onChange: (v:
 }
 
 /** Spotify's "Sort by" / "View as" menu for a playlist; the choice is kept until changed. */
-function SortButton({ id, tracks }: { id: string; tracks: Track[] }) {
+function useSortMenu(id: string, tracks: Track[]) {
   const t = useT();
   const sort = usePlaylistSort(id);
   const compact = useSettings((s) => s.compactTracks);
@@ -169,6 +194,12 @@ function SortButton({ id, tracks }: { id: string; tracks: Track[] }) {
       { label: t("viewCompact"), checked: compact, onClick: () => setSettings({ compactTracks: true }) },
       { label: t("viewList"), checked: !compact, onClick: () => setSettings({ compactTracks: false }) },
     ]);
+  return { open, current, sort };
+}
+
+function SortButton({ id, tracks }: { id: string; tracks: Track[] }) {
+  const t = useT();
+  const { open, current, sort } = useSortMenu(id, tracks);
   return (
     <button className="sort-btn" aria-label={`${t("sortMenu")}: ${current.label}`} title={t("sortMenu")} onClick={open}>
       <span>{current.label}</span>
@@ -180,12 +211,18 @@ function SortButton({ id, tracks }: { id: string; tracks: Track[] }) {
 
 export function AlbumPage({ id }: { id: string }) {
   const t = useT();
+  const phone = usePhoneLayout();
   const { data, error, loading, reload } = useAsync(() => api.album(id), [id]);
-  usePageTitle(data?.album.title, () => data && P.playTracks(data.tracks, 0, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }));
+  usePageTitle(data?.album.title, () => data && P.playTracks(data.tracks, 0, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }), { art: data?.album.artwork, ctxId: id });
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const { album, tracks } = data;
   const ctx: PlayContext = { kind: "album", id, title: album.title, artwork: album.artwork };
+  const artist = (
+    <button className="link strong" onClick={() => album.artistId && navigateArtist(album.artistId)}>
+      <ArtistName name={album.artist} />
+    </button>
+  );
   return (
     <div className="page detail">
       <Hero
@@ -193,12 +230,18 @@ export function AlbumPage({ id }: { id: string }) {
         kind={album.kind ?? t("album")}
         title={album.title}
         meta={
-          <>
-            <button className="link strong" onClick={() => album.artistId && navigateArtist(album.artistId)}>
-              <ArtistName name={album.artist} />
-            </button>
-            {album.year ? ` • ${album.year}` : ""} • {t("songsCount", { n: tracks.length })}, {fmtTime(totalDuration(tracks))}
-          </>
+          phone ? (
+            // Spotify's app: the artist on one line, then "Album • 2015".
+            <>
+              <span className="hero-owner">{artist}</span>
+              <span className="hero-stats">{[album.kind ?? t("album"), album.year].filter(Boolean).join(" • ")}</span>
+            </>
+          ) : (
+            <>
+              {artist}
+              {album.year ? ` • ${album.year}` : ""} • {t("songsCount", { n: tracks.length })}, {fmtTime(totalDuration(tracks))}
+            </>
+          )
         }
       />
       <ActionBar
@@ -251,7 +294,7 @@ export function ArtistPage({ id }: { id: string }) {
   // Compilations by name from MusicBrainz (YouTube Music doesn't mark them; Plex only when tagged).
   const artistName = data?.artist?.name ?? "";
   const { data: mbCompilations } = useAsync(() => (artistName ? api.artistCompilations(artistName) : Promise.resolve([])), [artistName]);
-  usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }));
+  usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }), { art: data?.artist?.artwork, ctxId: id });
   const [more, setMore] = useState(false);
   const [disc, setDisc] = useState<Disc>("popular");
   const [showAll, setShowAll] = useState(false);
@@ -351,8 +394,12 @@ function DiscChips({ disc, setDisc, hasAppears, hasCompilations }: { disc: Disc;
 
 export function PlaylistPage({ id }: { id: string }) {
   const t = useT();
+  const phone = usePhoneLayout();
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
-  usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }));
+  usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
+    art: data?.playlist.artwork ?? data?.tracks[0]?.artwork,
+    ctxId: id,
+  });
   const [busy, setBusy] = useState(false);
   const sort = usePlaylistSort(id);
   const compact = useSettings((s) => s.compactTracks);
@@ -386,6 +433,7 @@ export function PlaylistPage({ id }: { id: string }) {
 
   return (
     <div className="page detail">
+      {phone && tracks.length > 1 && <PhoneFindBar id={id} tracks={tracks} value={find} onChange={setFind} />}
       <Hero
         art={playlist.artwork ?? tracks[0]?.artwork}
         kind={t("playlist")}
@@ -413,6 +461,7 @@ export function PlaylistPage({ id }: { id: string }) {
         ctx={ctx}
         onMore={(e) => openMenu(e, playlistMenu(playlist, async () => shown, reload), { title: playlist.title, sub: playlist.owner, art: playlist.artwork })}
         right={
+          !phone &&
           tracks.length > 1 && (
             <>
               <PlaylistFind value={find} onChange={setFind} />
@@ -509,7 +558,10 @@ export function PodcastPage({ id }: { id: string }) {
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
   // Episodes newest first (the provider's order) or oldest first, remembered per show.
   const oldestFirst = useOldestFirst(id);
-  usePageTitle(data?.playlist.title, () => data && P.playTracks(orderEpisodes(data.tracks, oldestFirst), 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }));
+  usePageTitle(data?.playlist.title, () => data && P.playTracks(orderEpisodes(data.tracks, oldestFirst), 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
+    art: data?.playlist.artwork,
+    ctxId: id,
+  });
   const following = useApp((s) => s.saved.podcasts.some((p) => p.id === id));
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
