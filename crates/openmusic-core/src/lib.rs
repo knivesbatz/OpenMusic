@@ -12,6 +12,7 @@ pub mod error;
 pub mod lastfm;
 pub mod local;
 pub mod lyrics;
+mod migrate;
 pub mod model;
 pub mod safe_mode;
 pub mod names;

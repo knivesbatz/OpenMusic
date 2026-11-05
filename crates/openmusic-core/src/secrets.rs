@@ -1,7 +1,8 @@
 //! Credentials. On desktop they live in the OS credential store (Windows Credential Manager via
 //! `keyring`), namespaced by the app identifier so YTSpot and PLEXSpot never see each other's
 //! tokens. Android has no keyring backend, so there they are kept in a file in the app's private
-//! storage, which other apps cannot read. Nothing secret goes to SQLite.
+//! storage, which other apps cannot read. Nothing secret goes to SQLite. The one-time PLEXSpot
+//! import (migrate.rs) reads the old app's entries through a second `Secrets` for its identifier.
 
 use crate::error::{Error, Result};
 
@@ -101,7 +102,6 @@ impl Secrets {
     /// Windows credentials hold at most 2560 bytes, so larger values (cookie jars, server lists)
     /// are split across chunks, with their count stored under `name`.
     pub fn set_large(&self, name: &str, value: &str) -> Result<()> {
-        let _g = LARGE.lock().unwrap_or_else(|e| e.into_inner());
         set_large(self, name, value)
     }
 
@@ -110,7 +110,6 @@ impl Secrets {
     }
 
     pub fn delete_large(&self, name: &str) -> Result<()> {
-        let _g = LARGE.lock().unwrap_or_else(|e| e.into_inner());
         delete_large(self, name)
     }
 }
@@ -118,7 +117,9 @@ impl Secrets {
 /// Large values are written one at a time (a cookie refresh and a sign-in must not interleave).
 static LARGE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-trait Store {
+/// The operations the large-value helpers (and the PLEXSpot import in migrate.rs, which copies
+/// between two credential stores) need. Tests use an in-memory map.
+pub(crate) trait Store {
     fn get(&self, name: &str) -> Result<Option<String>>;
     fn set(&self, name: &str, value: &str) -> Result<()>;
     fn delete(&self, name: &str) -> Result<()>;
@@ -157,7 +158,8 @@ fn chunk_name(name: &str, generation: Option<&str>, i: usize) -> String {
 /// they are all stored, then removes the old ones. Interrupted at any point (the app closed, a
 /// failed write), the stored value is the old one or the new one, never nothing: losing it would
 /// sign the user out.
-fn set_large(store: &impl Store, name: &str, value: &str) -> Result<()> {
+pub(crate) fn set_large(store: &impl Store, name: &str, value: &str) -> Result<()> {
+    let _g = LARGE.lock().unwrap_or_else(|e| e.into_inner());
     const CHUNK: usize = 1200;
     let chars: Vec<char> = value.chars().collect();
     let chunks: Vec<String> = chars.chunks(CHUNK / 2).map(|c| c.iter().collect()).collect();
@@ -175,7 +177,7 @@ fn set_large(store: &impl Store, name: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-fn get_large(store: &impl Store, name: &str) -> Result<Option<String>> {
+pub(crate) fn get_large(store: &impl Store, name: &str) -> Result<Option<String>> {
     let Some(head) = store.get(name)? else { return Ok(None) };
     let Some((n, generation)) = parse_head(&head) else { return Ok(Some(head)) };
     let mut out = String::new();
@@ -188,7 +190,8 @@ fn get_large(store: &impl Store, name: &str) -> Result<Option<String>> {
     Ok(Some(out))
 }
 
-fn delete_large(store: &impl Store, name: &str) -> Result<()> {
+pub(crate) fn delete_large(store: &impl Store, name: &str) -> Result<()> {
+    let _g = LARGE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((n, generation)) = store.get(name)?.as_deref().and_then(parse_head) {
         for i in 0..n {
             store.delete(&chunk_name(name, generation, i))?;
