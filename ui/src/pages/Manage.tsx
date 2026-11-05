@@ -12,12 +12,15 @@ import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
 import * as P from "../player/engine";
-import { isMobileApp, openProfilePicker, refreshLibrary, setLocalOnly, useApp } from "../store/app";
+import { isMobileApp, openProfilePicker, refreshLibrary, setService, useApp } from "../store/app";
 import { signOut } from "../store/profile";
+import { serviceName, useOn } from "../store/providers";
+import { useProviderSignIn } from "../store/signin";
+import { ServerList } from "./Login";
 import { useSettings, type NormalizeLevel, type Quality } from "../store/settings";
 import { toast } from "../store/ui";
 import { SyncPlaylists } from "../components/SyncPlaylists";
-import type { DownloadInfo, LastFmStatus, ScanReport, Track } from "../types";
+import type { DownloadInfo, LastFmStatus, Provider, ScanReport, Track } from "../types";
 import { cls, fmtBytes } from "../util";
 import { CardShelf } from "./Browse";
 
@@ -131,7 +134,10 @@ export function LocalPage() {
 
 export function DownloadsPage() {
   const t = useT();
-  const caps = useApp((s) => s.info?.capabilities);
+  // Downloads are a Plex feature; files already downloaded stay manageable with Plex off.
+  const plexOn = useOn("plex");
+  const ytOn = useOn("youtube");
+  const anyDownloaded = useApp((s) => s.downloaded.size > 0);
   const [list, setList] = useState<DownloadInfo[] | null>(null);
   const [usage, setUsage] = useState<{ downloadsBytes: number } | null>(null);
   const load = () => {
@@ -151,7 +157,13 @@ export function DownloadsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list?.some((d) => d.status === "downloading" || d.status === "queued")]);
-  if (!caps?.downloads) return <div className="page"><h1>{t("downloads")}</h1><p className="muted">{t("downloadsUnsupported")}</p></div>;
+  if (!plexOn && (list ? !list.length : !anyDownloaded))
+    return (
+      <div className="page">
+        <h1>{t("downloads")}</h1>
+        <p className="muted">{ytOn ? t("downloadsUnsupported") : t("needsService", { service: serviceName("plex") })}</p>
+      </div>
+    );
   if (!list) return <Loading />;
   const done = list.filter((d) => d.status === "done").map((d) => d.track);
   const statusKey: Record<DownloadInfo["status"], Key> = { queued: "statusQueued", downloading: "statusDownloading", done: "statusDone", failed: "statusFailed", cancelled: "statusCancelled" };
@@ -159,6 +171,7 @@ export function DownloadsPage() {
     <div className="page">
       <h1>{t("downloads")}</h1>
       {usage && <p className="muted small">{t("downloadsUsage", { size: fmtBytes(usage.downloadsBytes) })}</p>}
+      {!plexOn && <p className="muted small">{t("downloadsPlexOff")}</p>}
       {!list.length && <p className="muted">{t("downloadsEmpty")}</p>}
       {done.length > 0 && (
         <div className="action-bar">
@@ -182,8 +195,8 @@ export function DownloadsPage() {
                 </div>
               )}
             </div>
-            {(d.status === "failed" || d.status === "cancelled") && (
-              <button className="pill ghost small" onClick={() => api.downloadTracks([d.track]).then(load)}>
+            {(d.status === "failed" || d.status === "cancelled") && plexOn && (
+              <button className="pill ghost small" onClick={() => api.downloadTracks([d.track]).then(load, (e) => toast(errorMessage(e)))}>
                 {t("retry")}
               </button>
             )}
@@ -214,9 +227,11 @@ const TUNEMYMUSIC = "https://www.tunemymusic.com/transfer";
  */
 export function ImportPage() {
   const t = useT();
-  const flavor = useApp((s) => s.info?.flavor);
+  const ytOn = useOn("youtube");
+  const plexOn = useOn("plex");
   const [syncing, setSyncing] = useState(false);
-  const dest = flavor === "plex" ? "Plex" : "YouTube Music";
+  // Soundiiz writes to each service that is on (YouTube Music when none is).
+  const dest = ytOn && plexOn ? t("transferDestBoth") : plexOn ? serviceName("plex") : serviceName("youtube");
   const steps: Key[] = ["transferStep1", "transferStep2", "transferStep3", "transferStep4"];
   return (
     <div className="page import">
@@ -244,7 +259,8 @@ export function ImportPage() {
           {syncing ? t("loading") : t("sync")}
         </button>
       </div>
-      <p className="muted small">{flavor === "plex" ? t("transferNotePlex") : t("transferNoteYt")}</p>
+      {(ytOn || !plexOn) && <p className="muted small">{t("transferNoteYt")}</p>}
+      {plexOn && <p className="muted small">{t("transferNotePlex")}</p>}
 
       <h2>{t("tmmTitle")}</h2>
       <p className="muted">{t("tmmIntro")}</p>
@@ -266,13 +282,109 @@ export function ImportPage() {
   );
 }
 
+/**
+ * Settings → Services: one card per provider with its switch (`data-service`, flipped by the
+ * self-test, so turning a service off never asks anything and never signs out), the account, and
+ * Sign in / Sign out. Plex also has its server and Home users; YouTube its channels.
+ */
+function ServiceCard({ provider }: { provider: Provider }) {
+  const t = useT();
+  const on = useOn(provider);
+  const auth = useApp((x) => x.auth?.[provider]);
+  const flow = useProviderSignIn(provider, "settings");
+  const plex = provider === "plex";
+  const name = serviceName(provider);
+  const signedIn = !!auth?.signedIn;
+  const ready = signedIn && !auth?.needsServer;
+  const status = ready
+    ? auth?.account
+      ? t("connectedAs", { name: auth.account })
+      : name
+    : signedIn
+      ? t("chooseServer")
+      : plex
+        ? t("notSignedIn")
+        : t("ytAnonymous");
+  const servers = flow.here ? flow.servers : null;
+  return (
+    <div className="service">
+      <label className="setting">
+        <div className="grow">
+          <div>{name}</div>
+          <div className="muted small">{status}</div>
+          {plex && ready && auth?.server && <div className="muted small">{t("server", { name: auth.server, conn: auth.serverConnection ?? "" })}</div>}
+        </div>
+        {/* Plex has nothing to show without an account: it turns on by signing in. */}
+        <input
+          type="checkbox"
+          role="switch"
+          className="switch"
+          data-service={provider}
+          aria-label={name}
+          checked={on}
+          disabled={!on && plex && !ready}
+          onChange={(e) => void setService(provider, e.target.checked)}
+        />
+      </label>
+      {servers ? (
+        <div className="form">
+          <p className="muted small">{t("chooseServer")}</p>
+          <ServerList servers={servers} busy={flow.busy} onPick={flow.pickServer} />
+          <button className="link small" disabled={flow.busy} onClick={flow.cancel}>
+            {t("cancel")}
+          </button>
+        </div>
+      ) : flow.busy && flow.here ? (
+        <div className="row gap">
+          <span className="muted small">
+            {t("waitingApproval")}
+            {flow.code ? ` PIN: ${flow.code}` : ""}
+          </span>
+          <button className="pill ghost small" onClick={flow.cancel}>
+            {t("cancel")}
+          </button>
+        </div>
+      ) : (
+        <div className="row gap">
+          {!signedIn && (
+            <button className="pill primary small" data-testid={`signin-${provider}`} disabled={!inTauri || flow.busy} onClick={flow.start}>
+              {t("signIn")}
+            </button>
+          )}
+          {plex && signedIn && (
+            <button className={cls("pill small", ready ? "ghost" : "primary")} onClick={flow.changeServer}>
+              {ready ? t("changeServer") : t("choosePlexServer")}
+            </button>
+          )}
+          {ready && (
+            <button className="pill ghost small" disabled={!on} title={on ? undefined : t("needsService", { service: name })} onClick={() => openProfilePicker(provider)}>
+              {t("switchProfile")}
+            </button>
+          )}
+          {signedIn && (
+            <button className="pill ghost small" onClick={() => void signOut(provider)}>
+              {t("signOut")}
+            </button>
+          )}
+        </div>
+      )}
+      {flow.here && flow.error && (
+        <p className="error small" role="alert">
+          {flow.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const t = useT();
   const s = useSettings();
   const info = useApp((x) => x.info);
-  const auth = useApp((x) => x.auth);
-  const caps = info?.capabilities;
-  const yt = info?.flavor === "youtube";
+  const ytOn = useOn("youtube");
+  const plexOn = useOn("plex");
+  // Only Plex streams at a chosen quality (YouTube picks its own).
+  const quality = plexOn && !!info?.providers.plex.qualityControl;
   const usage = useAsync(() => (inTauri ? api.storageUsage() : Promise.resolve(null)), []);
   const [lfm, setLfm] = useState<LastFmStatus | null>(null);
   const [keys, setKeys] = useState({ key: "", secret: "" });
@@ -300,31 +412,11 @@ export function SettingsPage() {
     <div className="page settings">
       <h1>{t("settings")}</h1>
 
-      <section>
-        <h2>{t("account")}</h2>
-        {auth?.signedIn ? (
-          <>
-            {auth.account && <p>{t("connectedAs", { name: auth.account })}</p>}
-            {auth.server && <p className="muted small">{t("server", { name: auth.server, conn: auth.serverConnection ?? "" })}</p>}
-            <div className="row gap">
-              {!yt && (
-                <button className="pill ghost small" onClick={() => useApp.setState({ auth: { ...auth, needsServer: true } })}>
-                  {t("changeServer")}
-                </button>
-              )}
-              <button className="pill ghost small" onClick={openProfilePicker}>
-                {t("switchProfile")}
-              </button>
-              <button className="pill ghost small" onClick={signOut}>
-                {t("signOut")}
-              </button>
-            </div>
-          </>
-        ) : (
-          <button className="pill primary small" onClick={() => setLocalOnly(false)}>
-            {t("signIn")}
-          </button>
-        )}
+      <section className="services">
+        <h2>{t("servicesSection")}</h2>
+        <p className="muted small">{t("servicesHint")}</p>
+        <ServiceCard provider="youtube" />
+        <ServiceCard provider="plex" />
       </section>
 
       <section>
@@ -366,15 +458,17 @@ export function SettingsPage() {
 
       <section>
         <h2>{t("playback")}</h2>
-        <label className={cls("setting", !caps?.qualityControl && "disabled")}>
+        <label className={cls("setting", !quality && "disabled")}>
           <div className="grow">
             <div>{t("audioQuality")}</div>
-            <div className="muted small">{caps?.qualityControl ? t("qualityAutoHintPlex") : t("qualityProviderHint")}</div>
+            <div className="muted small">
+              {quality ? t(ytOn ? "qualityPlexOnly" : "qualityAutoHintPlex") : ytOn ? t("qualityProviderHint") : t("needsService", { service: serviceName("plex") })}
+            </div>
           </div>
           <Select<Quality>
             label={t("audioQuality")}
-            value={caps?.qualityControl ? s.quality : "auto"}
-            disabled={!caps?.qualityControl}
+            value={quality ? s.quality : "auto"}
+            disabled={!quality}
             onChange={(v) => s.set({ quality: v })}
             options={[
               { value: "auto", label: t("qualityAuto") },
@@ -387,14 +481,18 @@ export function SettingsPage() {
         <label className="setting">
           <div className="grow">
             <div>{t("crossfade")}: {s.crossfade} s</div>
-            {yt && <div className="muted small">{t("crossfadeYouTube")}</div>}
+            {ytOn && <div className="muted small">{t(plexOn ? "crossfadeMixed" : "crossfadeYouTube")}</div>}
           </div>
           <input type="range" className="slider wide" min={0} max={12} step={1} value={s.crossfade} style={{ ["--pct" as string]: (s.crossfade / 12) * 100 + "%" }} onChange={(e) => s.set({ crossfade: Number(e.target.value) })} aria-label={t("crossfade")} />
         </label>
         <Toggle k="gapless" label={t("gapless")} hint={t("gaplessHint")} />
         <Toggle k="automix" label={t("automix")} hint={t("automixHint")} />
         <Toggle k="autoplaySimilar" label={t("autoplay")} hint={t("autoplayHint")} />
-        <Toggle k="normalizeVolume" label={t("normalizeVolume")} hint={t(yt ? "normalizeVolumeHintYouTube" : "normalizeVolumeHint")} />
+        <Toggle
+          k="normalizeVolume"
+          label={t("normalizeVolume")}
+          hint={t(ytOn && plexOn ? "normalizeVolumeHintBoth" : ytOn ? "normalizeVolumeHintYouTube" : "normalizeVolumeHint")}
+        />
         {s.normalizeVolume && (
           <label className="setting">
             <div className="grow">
@@ -419,7 +517,7 @@ export function SettingsPage() {
         <section>
           <h2>{t("window")}</h2>
           <Toggle k="closeToTray" label={t("closeToTray")} hint={t("closeToTrayHint")} />
-          {info?.capabilities.discordPresence && <Toggle k="discordPresence" label={t("discordPresence")} hint={t("discordPresenceHint")} />}
+          {info?.discordPresence && <Toggle k="discordPresence" label={t("discordPresence")} hint={t("discordPresenceHint")} />}
           {inTauri && info?.platform === "windows" && <Toggle k="shareAudio" label={t("shareAudio")} hint={t("shareAudioHint")} />}
         </section>
       )}

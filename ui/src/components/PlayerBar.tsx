@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { sleepSubmenu, trackMenu, useSleep } from "../actions";
+import { canLikeTrack, sleepSubmenu, trackMenu, useSleep } from "../actions";
 import { api, artUrl, inTauri } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
@@ -10,7 +10,7 @@ import { useDisplayTrack } from "../store/songmeta";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
 import { cls, fmtTime, isTouch } from "../util";
-import { Art, ArtistName, TitleText } from "./common";
+import { Art, ArtistName, TitleText, useProvidersKey } from "./common";
 import { likeOrOpen, openSavedIn } from "./SavedIn";
 import * as I from "./Icons";
 
@@ -134,10 +134,10 @@ export function Volume() {
 export function SaveButton() {
   const t = useT();
   const track = usePlayer((s) => s.queue.items[s.queue.index]?.track);
-  const caps = useApp((s) => s.info?.capabilities);
+  useProvidersKey();
   const liked = useApp((s) => (track ? s.liked.has(track.id) : false));
   if (!track) return null;
-  if (caps?.favorites && track.source !== "local")
+  if (canLikeTrack(track))
     return (
       <span className="save-group">
         <button className={cls("icon-btn", liked && "on")} aria-pressed={liked} aria-label={liked ? t("savedIn") : t("like")} title={liked ? t("savedIn") : t("like")} onClick={(e) => likeOrOpen(e, track)}>
@@ -176,7 +176,7 @@ export function PlayerBar() {
 
   useEffect(() => {
     if (tr) document.title = `${tr.title} • ${tr.artist}`;
-    else document.title = useApp.getState().info?.name ?? "OpenMusic";
+    else document.title = useApp.getState().info?.name ?? "OpenSpot";
   }, [tr]);
 
   return (
@@ -287,10 +287,10 @@ function SleepButton() {
 export function PhoneSaveButton({ size = 24 }: { size?: number }) {
   const t = useT();
   const track = usePlayer((s) => s.queue.items[s.queue.index]?.track);
-  const caps = useApp((s) => s.info?.capabilities);
+  useProvidersKey();
   const liked = useApp((s) => (track ? s.liked.has(track.id) : false));
   if (!track) return null;
-  const canLike = caps?.favorites && track.source !== "local";
+  const canLike = canLikeTrack(track);
   return (
     <button
       className={cls("icon-btn save-circle", liked && "on")}

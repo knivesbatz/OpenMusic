@@ -1,8 +1,9 @@
 // Artist, album and playlist pages.
-import { useMemo, useState } from "react";
-import { albumMenu, canChangeCover, changeCover, downloadTracks, playlistMenu, toggleSaved, trackHead, trackMenu } from "../actions";
-import { api, artUrl, errorMessage } from "../api";
-import { Art, ArtistName, ErrorBox, Loading, PlayFab, TitleText, useAsync, usePageTitle, usePhoneLayout } from "../components/common";
+import { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { albumMenu, canChangeCover, changeCover, downloadTracks, likedMenu, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
+import { api, artUrl, errorMessage, inTauri } from "../api";
+import { Art, ArtistName, ErrorBox, Loading, PlayFab, ProviderNotes, TitleText, useAsync, usePageTitle, usePhoneLayout, useProvidersKey } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT } from "../i18n";
@@ -16,6 +17,7 @@ import { useSettings } from "../store/settings";
 import { useMe } from "../store/profile";
 import { navigate, openMenu, toast } from "../store/ui";
 import type { Album, Artist, PlayContext, Track } from "../types";
+import { partErrors } from "../searchMerge";
 import { cls, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
 
@@ -82,7 +84,7 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
   const t = useT();
   const playingHere = usePlayer((s) => s.playing && s.context?.id === ctx.id);
   const shuffle = usePlayer((s) => s.shuffle);
-  const caps = useApp((s) => s.info?.capabilities);
+  useProvidersKey();
   return (
     <div className="action-bar">
       {playingHere ? (
@@ -95,7 +97,8 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
       <button className={cls("icon-btn lg ab-shuffle", shuffle && "on")} aria-pressed={shuffle} aria-label={t("shuffle")} title={t("shuffle")} onClick={() => P.setShuffle(!shuffle)}>
         <I.IShuffle size={26} />
       </button>
-      {caps?.downloads && tracks.some((x) => x.source === "plex") && (
+      {/* Downloads are Plex's: only for lists with Plex songs, while Plex is on. */}
+      {plexDownloads() && tracks.some((x) => x.source === "plex") && (
         <button className="icon-btn lg" aria-label={t("download")} title={t("download")} onClick={() => downloadTracks(tracks)}>
           <I.IDownload size={26} />
         </button>
@@ -397,6 +400,7 @@ export function PlaylistPage({ id }: { id: string }) {
   const t = useT();
   const phone = usePhoneLayout();
   const me = useMe();
+  const accounts = useApp((s) => s.auth);
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
   usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
     art: data?.playlist.artwork ?? data?.tracks[0]?.artwork,
@@ -419,8 +423,10 @@ export function PlaylistPage({ id }: { id: string }) {
   const sorted = sort.key !== "custom";
   const ctx: PlayContext = { kind: "playlist", id, title: playlist.title, artwork: playlist.artwork };
   const editable = playlist.local;
-  // Your own playlists show your profile picture by your name, like Spotify.
-  const mine = playlist.local || (!!me.name && playlist.owner === me.name);
+  // Your own playlists show your profile picture by your name, like Spotify: app playlists, and a
+  // service's playlists owned by your account there.
+  const service = providerOfId(id);
+  const mine = playlist.local || (!!playlist.owner && (playlist.owner === me.name || (!!service && playlist.owner === accounts?.[service]?.account)));
   const ownerPhoto = mine ? artUrl(me.photo, 64) : undefined;
 
   async function reorder(order: number[]) {
@@ -636,6 +642,95 @@ export function EpisodesPage() {
         </div>
       </header>
       {eps.length ? eps.map((ep, i) => <EpisodeRow key={ep.id} ep={ep} onPlay={() => P.playTracks(eps, i, ctx)} />) : <p className="muted pad">{t("yourEpisodesEmpty")}</p>}
+    </div>
+  );
+}
+
+/** Liked Songs: the songs you liked on YouTube Music and the tracks you rated on Plex, on one
+ * page. Laid out like a playlist (Find in playlist, Sort, the pinned bar). */
+export function LikedPage() {
+  const t = useT();
+  const phone = usePhoneLayout();
+  const me = useMe();
+  const services = useProvidersKey();
+  const [refresh, setRefresh] = useState(0);
+  const { data, error, loading, reload } = useAsync(() => (inTauri ? api.likedTracks(refresh > 0) : Promise.resolve({ tracks: [], stale: false })), [services, refresh]);
+  // A service's part that arrived after the page stopped waiting for it.
+  useEffect(() => {
+    if (!inTauri) return;
+    const un = listen("liked-changed", reload);
+    return () => void un.then((f) => f());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const tracks = data?.tracks ?? [];
+  const title = t("likedSongs");
+  const ctx: PlayContext = { kind: "playlist", id: "liked", title };
+  usePageTitle(title, () => data && P.playTracks(tracks, 0, ctx), { ctxId: "liked" });
+  const sort = usePlaylistSort("liked");
+  const compact = useSettings((s) => s.compactTracks);
+  const [find, setFind] = useState<string | null>(null);
+  const rows = useMemo(() => {
+    const sorted = sortTracks(tracks, sort);
+    const q = (find ?? "").trim().toLowerCase();
+    if (!q) return sorted;
+    return sorted.filter(({ track: x }) => [x.title, x.artist, x.album].some((v) => v?.toLowerCase().includes(q)));
+  }, [tracks, sort, find]);
+  if (loading && !data) return <Loading />;
+  if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={() => setRefresh((n) => n + 1)} />;
+  const shown = rows.map((r) => r.track);
+  const ownerPhoto = artUrl(me.photo, 64);
+  return (
+    <div className="page detail">
+      {phone && tracks.length > 1 && <PhoneFindBar id="liked" tracks={tracks} value={find} onChange={setFind} />}
+      <header className="hero">
+        <div className="art hero-art grad-liked" aria-hidden="true">
+          <I.IHeartFill size={96} />
+        </div>
+        <div className="hero-text">
+          <span className="small">{t("playlist")}</span>
+          <h1>{title}</h1>
+          <div className="hero-meta">
+            {me.name && (
+              <span className="hero-owner">
+                {ownerPhoto ? (
+                  <img className="avatar" src={ownerPhoto} alt="" />
+                ) : (
+                  <span className="avatar" aria-hidden="true">
+                    {me.name.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <strong>{me.name}</strong>
+              </span>
+            )}
+            <span className="hero-stats">
+              {t("songsCount", { n: tracks.length })} • {fmtLong(t, totalDuration(tracks))}
+            </span>
+          </div>
+        </div>
+      </header>
+      <ActionBar
+        tracks={shown}
+        ctx={ctx}
+        onMore={(e) => openMenu(e, likedMenu(shown), { title, sub: me.name || undefined })}
+        right={
+          !phone &&
+          tracks.length > 1 && (
+            <>
+              <PlaylistFind value={find} onChange={setFind} />
+              <SortButton id="liked" tracks={tracks} />
+            </>
+          )
+        }
+      />
+      {data.stale && !partErrors(data).length && <p className="muted small pad">{t("offline")}</p>}
+      <ProviderNotes errors={partErrors(data)} />
+      {tracks.length > 0 && !shown.length ? (
+        <p className="muted pad">{t("noMatches")}</p>
+      ) : tracks.length ? (
+        <TrackList tracks={shown} context={ctx} showArt={!compact} />
+      ) : (
+        <p className="muted pad">{t("empty")}</p>
+      )}
     </div>
   );
 }

@@ -137,6 +137,19 @@ export class YouTubeOutput {
     this.ready = null;
   }
 
+  /**
+   * Load the IFrame API and build the player ahead of the first YouTube song (e.g. while a Plex
+   * song plays). A failure (offline) leaves nothing behind, so the song itself tries again.
+   */
+  async warm(): Promise<void> {
+    if (this.ready && this.madePrivate !== privateHost) return;
+    try {
+      await this.init();
+    } catch {
+      if (!this.player) this.ready = null;
+    }
+  }
+
   async load(videoId: string, startAt: number, autoplay: boolean, volume: number) {
     // The song playing now keeps its player; the private session applies from the next one.
     if (this.ready && this.madePrivate !== privateHost) this.reset();

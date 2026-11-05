@@ -1,14 +1,13 @@
-//! Discord Rich Presence: "Listening to YTSpot/PLEXSpot" with the song, artist, artwork and a
-//! progress bar, through the local Discord client's IPC socket. Nothing to set up for users: the
-//! Discord application ids are baked in at build time (`DISCORD_CLIENT_ID_YTSPOT`,
-//! `DISCORD_CLIENT_ID_PLEXSPOT`, or one shared `DISCORD_CLIENT_ID`), and when Discord isn't
-//! running the worker quietly retries now and then.
+//! Discord Rich Presence: "Listening to OpenSpot" with the song, artist, artwork and a progress
+//! bar, through the local Discord client's IPC socket. Nothing to set up for users: the Discord
+//! application id is baked in at build time (`DISCORD_CLIENT_ID_OPENSPOT`, else the 1.x
+//! `DISCORD_CLIENT_ID_YTSPOT`, else a shared `DISCORD_CLIENT_ID`), and when Discord isn't running
+//! the worker quietly retries now and then.
 //!
 //! Artwork must be a public https URL. YouTube thumbnails already are; Plex and local artwork
 //! would need a server token, so those use the album cover from the public iTunes Search API
 //! (no key) and otherwise the app icon. Tokens never leave the app.
 
-use crate::state::Flavor;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -24,18 +23,19 @@ const OP_PONG: u32 = 4;
 /// How often to look for Discord again while something is playing and it isn't connected.
 const RETRY: Duration = Duration::from_secs(20);
 
-/// The baked-in Discord application id for this app, if the build had one.
-pub fn client_id(f: Flavor) -> Option<&'static str> {
-    let own = match f {
-        Flavor::YouTube => option_env!("DISCORD_CLIENT_ID_YTSPOT"),
-        Flavor::Plex => option_env!("DISCORD_CLIENT_ID_PLEXSPOT"),
-    };
-    own.or(option_env!("DISCORD_CLIENT_ID")).map(str::trim).filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+/// The baked-in Discord application id, if the build had one.
+pub fn client_id() -> Option<&'static str> {
+    pick_client_id([option_env!("DISCORD_CLIENT_ID_OPENSPOT"), option_env!("DISCORD_CLIENT_ID_YTSPOT"), option_env!("DISCORD_CLIENT_ID")])
+}
+
+/// The first usable (non-empty, all digits) id, in order of preference.
+fn pick_client_id(candidates: [Option<&'static str>; 3]) -> Option<&'static str> {
+    candidates.into_iter().flatten().map(str::trim).find(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// Whether presence can work in this build: desktop only (Discord has no IPC on phones).
-pub fn available(f: Flavor) -> bool {
-    cfg!(desktop) && client_id(f).is_some()
+pub fn available() -> bool {
+    cfg!(desktop) && client_id().is_some()
 }
 
 /// What to show. `None` clears the presence.
@@ -55,8 +55,8 @@ pub struct Presence {
 static WORKER: OnceLock<Mutex<Sender<Option<Presence>>>> = OnceLock::new();
 
 /// Show (or with `None` clear) the presence. Starts the worker thread on first use.
-pub fn set(f: Flavor, p: Option<Presence>) {
-    let Some(id) = client_id(f).filter(|_| cfg!(desktop)) else { return };
+pub fn set(p: Option<Presence>) {
+    let Some(id) = client_id().filter(|_| cfg!(desktop)) else { return };
     let tx = WORKER.get_or_init(|| {
         let (tx, rx) = mpsc::channel();
         let id = id.to_string();
@@ -283,17 +283,23 @@ pub async fn public_cover(http: &reqwest::Client, artist: &str, album: Option<&s
 }
 
 /// The app icon, for tracks with no public artwork.
-pub fn app_icon(f: Flavor) -> String {
-    let name = match f {
-        Flavor::YouTube => "ytspot",
-        Flavor::Plex => "plexspot",
-    };
-    format!("https://raw.githubusercontent.com/knivesbatz/OpenMusic/main/assets/icons/{name}.png")
+pub fn app_icon() -> String {
+    // ytspot.png and plexspot.png stay in the repository: 1.x clients still point at them.
+    "https://raw.githubusercontent.com/knivesbatz/OpenMusic/main/assets/icons/openspot.png".into()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn client_id_preference() {
+        assert_eq!(pick_client_id([Some("1"), Some("2"), Some("3")]), Some("1"));
+        assert_eq!(pick_client_id([None, Some(" 2 "), Some("3")]), Some("2"), "the YTSpot id is the fallback");
+        assert_eq!(pick_client_id([Some(""), Some("abc"), Some("3")]), Some("3"));
+        assert_eq!(pick_client_id([None, None, None]), None);
+        assert!(app_icon().ends_with("/openspot.png"));
+    }
 
     #[test]
     fn activity_fields_fit_discord_limits() {

@@ -169,6 +169,13 @@ p { margin: 0 0 8px; }
 .fab.big { width: 56px; height: 56px; }
 .badge { display: inline-block; background: #ffffff99; color: #000; border-radius: 2px; font-size: 0.625rem; font-weight: 700; padding: 0 4px; margin-right: 6px; line-height: 16px; vertical-align: 1px; }
 .badge-pill { background: #0006; color: var(--text); border-radius: 500px; padding: 4px 12px; font-size: 0.8125rem; font-weight: 700; }
+/* Where an item comes from (only while both services are on): a tiny glyph before the subtitle,
+   or after a song's title. */
+.src-badge { display: inline-flex; align-items: center; vertical-align: -1px; margin-right: 5px; flex: none; opacity: 0.9; }
+.src-badge.after { margin: 0 0 0 6px; }
+.src-badge.youtube { color: #ff5c52; }
+.src-badge.plex { color: #e9a92a; }
+.badge-pill + .src-badge { vertical-align: middle; }
 
 /* ---- art & cards -------------------------------------------------------------------------- */
 .art { background: var(--surface-3); border-radius: 4px; overflow: hidden; display: grid; place-items: center; color: var(--dim); aspect-ratio: 1; }

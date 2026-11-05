@@ -1,40 +1,56 @@
-# Installing and troubleshooting YTSpot and PLEXSpot
+# Installing and troubleshooting OpenSpot
 
 ## Requirements
 - Windows 10 (1803 or later) or Windows 11, 64-bit.
 - Microsoft Edge WebView2 Runtime. It ships with Windows 11 and current Windows 10; if it is missing,
   the installer downloads it (needs an internet connection during setup).
-- PLEXSpot: a Plex account and a Plex Media Server with a music library you can access.
-- YTSpot: a Google account. YouTube Music Premium is not required to browse or play.
+- For Plex: a Plex account and a Plex Media Server with a music library you can access.
+- For YouTube Music: a Google account, or none (anonymous browsing and playback). YouTube Music
+  Premium is not required.
+- Neither is needed for your own music files.
 
 ## Install
-1. Download `YTSpot_<version>_x64-setup.exe` and/or `PLEXSpot_<version>_x64-setup.exe` from the
-   [Releases](https://github.com/knivesbatz/OpenMusic/releases) page.
+1. Download `OpenSpot_<version>_x64-setup.exe` from the
+   [Releases](https://github.com/knivesbatz/OpenMusic/releases) page. (`YTSpot_*` and `PLEXSpot_*`
+   files there are copies of the same installer for 1.x apps that update themselves.)
 2. Run the installer. It installs for the current user only (no administrator rights needed) into
-   `%LOCALAPPDATA%\YTSpot` or `%LOCALAPPDATA%\PLEXSpot`, and adds Start menu shortcuts.
+   `%LOCALAPPDATA%\OpenSpot`, and adds Start menu and desktop shortcuts.
 3. The installers are not code-signed yet, so SmartScreen may show "Windows protected your PC". Choose
    **More info → Run anyway**.
 
-The two apps are independent: they can be installed side by side, and each has its own settings,
-library database, downloads and sign-in.
+Sign in to YouTube Music, Plex or both on first start ("Connect your music"), or later under
+Settings → Services. Each service has an on/off switch there.
 
 ## Upgrade
 Run the newer installer; it replaces the program files and keeps your data (playlists, settings,
-downloads, sign-in). CI installs the previous release and then the new one on a clean Windows runner
-for every build, launches the app and uninstalls it again.
+downloads, sign-in).
+
+**From YTSpot or PLEXSpot 1.x.** The 1.x apps update to OpenSpot on their own, or you can run the
+OpenSpot installer. It closes YTSpot and PLEXSpot, uninstalls them (their Start menu and desktop
+shortcuts go too), and moves "Launch at startup" to OpenSpot. It never deletes their data: OpenSpot
+uses YTSpot's data as it is and, on first start, imports PLEXSpot's library, downloads, settings and
+Plex sign-in once. PLEXSpot's old data folder is kept as a backup. Pin OpenSpot to the taskbar again
+if you had pinned an old app.
+
+CI installs YTSpot and PLEXSpot 1.6.1 and then the new build on a clean Windows runner for every build,
+checks that the old apps are gone and their data kept, launches OpenSpot and uninstalls it again.
 
 ## Uninstall
-Settings → Apps → Installed apps → YTSpot/PLEXSpot → Uninstall (or run `uninstall.exe` in the
-install folder). Your data is kept in case you reinstall; delete it by hand if you want a clean slate
-(see below).
+Settings → Apps → Installed apps → OpenSpot → Uninstall (or run `uninstall.exe` in the install
+folder). Your data is kept in case you reinstall, unless you tick "Delete app data" (which also removes
+PLEXSpot's old data folders). To start completely fresh, see below.
 
 ## Where data lives
 | What | Location |
 |---|---|
-| Library database (app playlists, history, hidden playlists, saved albums/artists, settings) | `%APPDATA%\app.openmusic.ytspot\library.db` / `%APPDATA%\app.openmusic.plexspot\library.db` |
-| Offline downloads (PLEXSpot) | `%APPDATA%\app.openmusic.plexspot\downloads` |
-| Artwork cache | `%LOCALAPPDATA%\app.openmusic.<app>\art` (bounded; Settings → Storage → Clear cache) |
-| Sign-in tokens and cookies, Last.fm keys | Windows Credential Manager → Windows Credentials, entries named `app.openmusic.<app>` |
+| Library database (app playlists, history, hidden playlists, saved albums/artists, settings) | `%APPDATA%\app.openmusic.ytspot\library.db` |
+| Offline downloads (Plex) | `%APPDATA%\app.openmusic.ytspot\downloads` |
+| Artwork cache | `%LOCALAPPDATA%\app.openmusic.ytspot\art` (bounded; Settings → Storage → Clear cache) |
+| Sign-in tokens and cookies, Last.fm keys | Windows Credential Manager → Windows Credentials, entries named `app.openmusic.ytspot` |
+| PLEXSpot 1.x data (imported once, kept as a backup) | `%APPDATA%\app.openmusic.plexspot` |
+
+The folder names still say `ytspot`: OpenSpot keeps YTSpot's internal identifier, so YTSpot users
+upgrade in place.
 
 "Clear cache" removes artwork and metadata caches only. It never deletes app playlists, downloads or
 your local music files.
@@ -48,21 +64,23 @@ B back/close, X queue, Y full screen, LB/RB previous/next, LT/RT seek ±10 s, St
 
 ## Troubleshooting
 
-**PLEXSpot can't reach the server.** The app tests all of the server's connections at once and uses
+**OpenSpot can't reach the Plex server.** The app tests all of the server's connections at once and uses
 the best one that answers: local network first, then remote, then Plex relay. Check that the server is online in Plex Web, and that remote access is enabled if you're not
-on the same network. Settings → Account → Change server re-runs the connection test.
+on the same network. Changing the server on the Plex card in Settings → Services re-runs the connection test.
 
 **"Your session expired. Please sign in again."** Plex tokens and YouTube cookies can be revoked (for
-example after a password change). Sign in again from the prompt or Settings → Account.
+example after a password change). Sign in to that service again from the prompt or Settings → Services. The other service keeps
+working meanwhile.
 
 **A YouTube track is skipped with "the owner does not allow playback in other apps".** Some videos
 can't be played outside YouTube's own apps (embed restriction, errors 101/150). The app skips them.
 
-**A YouTube song switches instead of crossfading.** YTSpot blends YouTube songs with two YouTube
-players. If YouTube pauses one player when the other starts, that transition becomes a quick switch.
+**A song switches instead of crossfading.** OpenSpot blends YouTube songs with two YouTube players.
+If YouTube pauses one player when the other starts, that transition becomes a quick switch. Songs
+from different services (YouTube Music next to Plex or local files) never blend.
 
-**Audio quality setting is greyed out in YTSpot.** YouTube picks the stream quality itself; third-party
-players can't choose it.
+**Audio quality applies to Plex only.** YouTube picks the stream quality itself; third-party players
+can't choose it.
 
 **Moving playlists from Spotify.** Use Your Library → Transfer playlists (or the transfer button in the
 top bar). It walks you through Soundiiz, which copies Spotify playlists to YouTube Music or to your
@@ -73,19 +91,23 @@ Plex server; press Sync now afterwards.
 sent later. Settings → Last.fm shows how many are waiting.
 
 **The app closed unexpectedly.** Native crashes and UI errors are recorded in
-`%APPDATA%\app.openmusic.<app>\crash.log`; please attach it when reporting the problem.
+`%APPDATA%\app.openmusic.ytspot\crash.log`; please attach it when reporting the problem.
 
-**PLEXSpot shows someone else's library.** Switch Plex Home user under Settings → Account → Switch
-profile (or click your name in the top bar). Protected users need their PIN.
+**Plex shows someone else's library.** Switch Plex Home user on the Plex card in Settings → Services
+(or click your name in the top bar → Switch profile). Protected users need their PIN.
 
-**YTSpot shows the wrong library.** If your Google account has several YouTube channels, pick the right
-one under Settings → Account → Switch profile (or click your name in the top bar).
+**YouTube Music shows the wrong library.** If your Google account has several YouTube channels, pick
+the right one on the YouTube Music card in Settings → Services (or click your name in the top bar →
+Switch profile).
+
+**Plex or YouTube Music content is missing.** Check that its switch is on in Settings → Services.
 
 **Controller does nothing.** Press any button once while the app is focused; browsers only expose a
 gamepad after its first input.
 
-**Start fresh.** Uninstall, delete the two `app.openmusic.<app>` folders above, and remove the
-`app.openmusic.<app>` entries from Credential Manager.
+**Start fresh.** Uninstall, delete the `app.openmusic.ytspot` (and any `app.openmusic.plexspot`)
+folders in `%APPDATA%` and `%LOCALAPPDATA%`, and remove the entries with those names from Credential
+Manager.
 
 ## Building from source
 See the Commands section of [CLAUDE.md](../CLAUDE.md). Installers are built by

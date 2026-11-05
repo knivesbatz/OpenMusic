@@ -1,7 +1,8 @@
-// In-app self-test for CI (`YTSpot.exe --self-test`): clicks through the screens that crashed for
-// users (every Settings switch, dropdown and slider, scrolling, mini player, fullscreen) in the real
-// WebView2 + Rust app, logging each step before and after. If the app hangs or dies, the last
-// "start" line in selftest.log names the culprit. Mirrors e2e/smoke.mjs, which runs on a mock.
+// In-app self-test for CI (`OpenSpot.exe --self-test`): clicks through the screens that crashed for
+// users (the Services switches, every Settings switch, dropdown and slider, scrolling, mini player,
+// fullscreen) in the real WebView2 + Rust app, logging each step before and after. If the app
+// hangs or dies, the last "start" line in selftest.log names the culprit; a step that couldn't do
+// its job logs a "fail" line, which fails CI. Mirrors e2e/smoke.mjs, which runs on a mock.
 import { api } from "./api";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -42,23 +43,57 @@ function setRange(r: HTMLInputElement, v: string) {
 
 const escape = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
+/** A dialog, profile picker or sign-in prompt opened by itself. */
+const dialogOpen = () => !!document.querySelector('.modal-bg, [role="dialog"], [role="alertdialog"]');
+
 export async function runSelfTest() {
   await log("self-test begins");
   await sleep(4000);
-  await step("continue with local files only", () => $$("button").find((b) => b.textContent?.includes("Continue with local files only"))?.click());
-  await sleep(1000);
-  await step("open settings", () => accountMenu("Settings"));
-  await sleep(1500);
+  // A fresh install starts on "Connect your music": skip to local files (no account in CI).
+  if (document.querySelector('[data-testid="connect-local"]')) {
+    await step("connect page: skip to local files", () => click('[data-testid="connect-local"]'));
+    await sleep(1000);
+  }
+  await step("open settings", async () => {
+    await accountMenu("Settings");
+    await sleep(1500);
+    if (!document.querySelector(".page.settings")) throw new Error("Settings page not reached");
+  });
 
-  const switches = $$('input[role="switch"]').length;
-  for (let i = 0; i < switches; i++) {
-    const s = $$('input[role="switch"]')[i] as HTMLInputElement | undefined;
-    if (!s || s.disabled) continue;
+  // The Services switches first, each on its own: on, then back off. Turning a service off must
+  // never ask anything or sign out.
+  for (const el of $$('input[role="switch"][data-service]') as HTMLInputElement[]) {
+    const name = el.dataset.service ?? "?";
+    if (el.disabled) {
+      await log(`skip service ${name} (needs a sign-in)`);
+      continue;
+    }
+    await step(`service ${name}`, async () => {
+      const was = el.checked;
+      el.scrollIntoView({ block: "center" });
+      el.click();
+      await sleep(1500);
+      if (!el.isConnected) throw new Error("the switch disappeared");
+      el.click();
+      await sleep(800);
+      if (dialogOpen()) {
+        escape();
+        throw new Error("a dialog opened");
+      }
+      if (el.checked !== was) throw new Error("the switch didn't go back");
+    });
+  }
+
+  // Every other switch: held by reference, so switches appearing or moving can't shift which one
+  // the second click lands on.
+  const switches = $$('input[role="switch"]:not([data-service])') as HTMLInputElement[];
+  for (const [i, s] of switches.entries()) {
+    if (!s.isConnected || s.disabled) continue;
     await step(`switch ${i} (${labelOf(s)})`, async () => {
       s.scrollIntoView({ block: "center" });
       s.click();
       await sleep(300);
-      ($$('input[role="switch"]')[i] as HTMLInputElement | undefined)?.click();
+      if (s.isConnected) s.click();
     });
   }
 

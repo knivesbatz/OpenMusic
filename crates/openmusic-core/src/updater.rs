@@ -14,6 +14,10 @@ use crate::error::{Error, Result};
 
 const LATEST: &str = "https://api.github.com/repos/knivesbatz/OpenMusic/releases/latest";
 
+/// Release assets of this app start with this (`OpenSpot_2.0.0_x64-setup.exe`). The release also
+/// carries `YTSpot_…` / `PLEXSpot_…` copies for 1.x apps, which look for their own names.
+pub const ASSET_PREFIX: &str = "OpenSpot_";
+
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
@@ -52,10 +56,10 @@ fn new_in_section(body: &str) -> Option<String> {
     Some(after_heading[..end].trim().chars().take(1500).collect())
 }
 
-pub async fn check(http: &reqwest::Client, product: &str) -> Result<UpdateInfo> {
+pub async fn check(http: &reqwest::Client) -> Result<UpdateInfo> {
     let v: Value = http
         .get(LATEST)
-        .header("User-Agent", concat!("OpenMusic/", env!("CARGO_PKG_VERSION")))
+        .header("User-Agent", concat!("OpenSpot/", env!("CARGO_PKG_VERSION")))
         .header("Accept", "application/vnd.github+json")
         .timeout(std::time::Duration::from_secs(15))
         .send()
@@ -73,12 +77,7 @@ pub async fn check(http: &reqwest::Client, product: &str) -> Result<UpdateInfo> 
     } else {
         "_x64-setup.exe"
     };
-    let url = v.get("assets").and_then(|a| a.as_array()).and_then(|assets| {
-        assets.iter().find_map(|a| {
-            let name = a.get("name")?.as_str()?;
-            (name.starts_with(&format!("{product}_")) && name.ends_with(suffix)).then(|| a.get("browser_download_url")?.as_str().map(str::to_string))?
-        })
-    });
+    let url = v.get("assets").and_then(|a| a.as_array()).and_then(|assets| pick_asset(assets, suffix));
     let available = is_newer(tag, &current) && url.is_some();
     Ok(UpdateInfo {
         available,
@@ -87,6 +86,14 @@ pub async fn check(http: &reqwest::Client, product: &str) -> Result<UpdateInfo> 
         url,
         notes: v.get("body").and_then(|b| b.as_str()).and_then(new_in_section),
         ready: PENDING.lock().map(|p| p.is_some()).unwrap_or(false),
+    })
+}
+
+/// This app's package for the platform (`suffix`) among a release's assets.
+fn pick_asset(assets: &[Value], suffix: &str) -> Option<String> {
+    assets.iter().find_map(|a| {
+        let name = a.get("name")?.as_str()?;
+        (name.starts_with(ASSET_PREFIX) && name.ends_with(suffix)).then(|| a.get("browser_download_url")?.as_str().map(str::to_string))?
     })
 }
 
@@ -157,7 +164,7 @@ mod mac {
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    /// `/Applications/YTSpot.app` from `/Applications/YTSpot.app/Contents/MacOS/YTSpot`.
+    /// `/Applications/OpenSpot.app` from `/Applications/OpenSpot.app/Contents/MacOS/OpenSpot`.
     fn current_bundle() -> Result<PathBuf> {
         let exe = std::env::current_exe()?.canonicalize()?;
         exe.ancestors()
@@ -234,6 +241,15 @@ mod tests {
         dmg[n - 512..n - 508].copy_from_slice(b"koly");
         assert!(looks_like_package(&dmg, true));
         assert!(!looks_like_package(b"<html>Not Found</html>", false));
+    }
+
+    #[test]
+    fn picks_the_openspot_asset() {
+        let a = |name: &str| serde_json::json!({ "name": name, "browser_download_url": format!("https://x/{name}") });
+        let assets = vec![a("YTSpot_2.0.0_x64-setup.exe"), a("PLEXSpot_2.0.0_x64-setup.exe"), a("OpenSpot_2.0.0_universal.dmg"), a("OpenSpot_2.0.0_x64-setup.exe")];
+        assert_eq!(pick_asset(&assets, "_x64-setup.exe").as_deref(), Some("https://x/OpenSpot_2.0.0_x64-setup.exe"));
+        assert_eq!(pick_asset(&assets, "_universal.dmg").as_deref(), Some("https://x/OpenSpot_2.0.0_universal.dmg"));
+        assert_eq!(pick_asset(&assets, "_android-arm64.apk"), None);
     }
 
     #[test]

@@ -356,3 +356,15 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Phone library: one layout (the 1.5.0 one) with the old Playlists · Artists · Albums underlined tabs
   instead of chips (tap again = everything); Classic Your Library setting removed; Create tab removed
   (user's call). e2e 53/53
+
+## 2.0.0 — OpenSpot
+- ✅ One app (OpenSpot) for YouTube Music + Plex: Provider per id, Settings → Services switches,
+  per-provider sign-in/auth/errors/cache, fan-out home/library/liked with per-provider errors,
+  per-provider search merged in the UI (searchMerge.ts), source badges when both are on
+- ✅ Migration: identifier stays app.openmusic.ytspot (YTSpot upgrades in place); migrate.rs imports
+  PLEXSpot's data dir/DB/files/secrets once on desktop; NSIS hooks retire the old apps; macOS
+  bundle rename; legacy YTSpot_/PLEXSpot_ alias assets on every 2.x release
+- 🟡 Not verified against real accounts or on Windows/macOS/Android devices: provider flows, the
+  NSIS hooks (first run in CI), keychain import prompts, mixed-queue playback in the background on
+  Android
+- 🟡 Discord: rename the YTSpot Discord application to "OpenSpot" (or set DISCORD_CLIENT_ID_OPENSPOT)

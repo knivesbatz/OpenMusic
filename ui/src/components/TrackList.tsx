@@ -1,7 +1,7 @@
 // Virtualized track table used by albums, playlists, artist pages, search, local files and liked.
 import { createContext, memo, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { trackHead, trackMenu, type TrackMenuOpts } from "../actions";
+import { canLikeTrack, providerOfId, trackHead, trackMenu, type TrackMenuOpts } from "../actions";
 import { useT } from "../i18n";
 import { usePlayer } from "../player/engine";
 import * as P from "../player/engine";
@@ -9,10 +9,11 @@ import { select } from "../player/queue";
 import { useApp } from "../store/app";
 import { useDisplayTrack } from "../store/songmeta";
 import { navigate, openMenu } from "../store/ui";
-import type { PlayContext, Track } from "../types";
-import { cls, fmtMs, isTouch } from "../util";
-import { Art, ArtistName, TitleText } from "./common";
+import type { PlayContext, Provider, Track } from "../types";
+import { cls, fmtMs, isTouch, serviceLabel } from "../util";
+import { Art, ArtistName, TitleText, useDownloaded, useProvidersKey } from "./common";
 import { likeOrOpen } from "./SavedIn";
+import { SourceBadge } from "./SourceBadge";
 import { IClock, IHeart, IHeartFill, IMore, IPlay } from "./Icons";
 
 /** The main view's scroll container; lists virtualize against it. */
@@ -170,23 +171,39 @@ interface RowProps {
   onDrop: (e: React.DragEvent) => void;
 }
 
+/** A row's service and whether it can play: its service is on (Plex: signed in with a server) or
+ * it was downloaded; dimmed too while its service is unreachable. */
+function useRowState(track: Track): { provider: Provider | null; unplayable: boolean; dim: boolean } {
+  const provider = providerOfId(track.id) ?? (track.source === "local" ? null : track.source);
+  const on = useApp((s) => (provider ? !!s.services?.[provider] : true));
+  const plexReady = useApp((s) => provider !== "plex" || (!!s.auth?.plex?.signedIn && !s.auth.plex.needsServer));
+  const offline = useApp((s) => (provider ? s.online?.[provider] === false : false));
+  const downloaded = useDownloaded(track.id);
+  const unplayable = !!provider && !(on && plexReady) && !downloaded;
+  return { provider, unplayable, dim: unplayable || (offline && !downloaded) };
+}
+
 const Row = memo(function Row(p: RowProps) {
   const t = useT();
   const tr = useDisplayTrack(p.track);
   const isCurrent = usePlayer((s) => s.queue.items[s.queue.index]?.track.id === tr.id);
   const playingHere = usePlayer((s) => s.playing) && isCurrent;
-  const offline = useApp((s) => s.online) === false && tr.source !== "local";
+  const row = useRowState(p.track);
+  // A song whose service is off can't be started from here (the player skips it too).
+  const play = row.unplayable ? () => {} : p.onPlay;
   return (
     <div
       role="row"
       tabIndex={0}
       aria-selected={p.selected}
-      className={cls("tl-row", p.selected && "selected", isCurrent && "current", !p.showAlbum && "no-album", p.dragOver && "drop-before", p.dropAfter && "drop-after", offline && "dim")}
+      aria-disabled={row.unplayable || undefined}
+      title={row.unplayable && row.provider ? t("rowServiceOff", { service: serviceLabel(row.provider) }) : undefined}
+      className={cls("tl-row", p.selected && "selected", isCurrent && "current", !p.showAlbum && "no-album", p.dragOver && "drop-before", p.dropAfter && "drop-after", row.dim && "dim")}
       style={{ transform: `translateY(${p.top}px)` }}
-      onClick={(e) => (isTouch() ? p.onPlay() : p.onSelect(e))}
-      onDoubleClick={p.onPlay}
+      onClick={(e) => (isTouch() ? play() : p.onSelect(e))}
+      onDoubleClick={play}
       onKeyDown={(e) => {
-        if (e.key === "Enter") p.onPlay();
+        if (e.key === "Enter") play();
         if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
           const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
           p.onContext({ clientX: r.left + 40, clientY: r.bottom, preventDefault: () => e.preventDefault(), stopPropagation: () => {} } as React.MouseEvent);
@@ -208,15 +225,18 @@ const Row = memo(function Row(p: RowProps) {
         ) : (
           <span className="n">{p.numbered ? (tr.trackNumber && !p.showArt ? tr.trackNumber : p.index + 1) : ""}</span>
         )}
-        <button className="icon-btn play-hover" aria-label={t("play")} onClick={(e) => (e.stopPropagation(), p.onPlay())}>
-          <IPlay size={14} />
-        </button>
+        {!row.unplayable && (
+          <button className="icon-btn play-hover" aria-label={t("play")} onClick={(e) => (e.stopPropagation(), p.onPlay())}>
+            <IPlay size={14} />
+          </button>
+        )}
       </span>
       <span className="tl-title">
         {p.showArt && <Art src={tr.artwork} size={80} className="sm" />}
         <span className="tl-text">
           <span className="name">
             <TitleText text={tr.title} />
+            <SourceBadge id={tr.id} after />
           </span>
           <span className="sub">
             {tr.explicit && <span className="badge">{t("explicit")}</span>}
@@ -255,8 +275,9 @@ const Row = memo(function Row(p: RowProps) {
 function LikeHeart({ track }: { track: Track }) {
   const t = useT();
   const liked = useApp((s) => s.liked.has(track.id));
-  const can = useApp((s) => !!s.info?.capabilities.favorites) && track.source !== "local";
-  if (!can) return null;
+  useProvidersKey();
+  // Per song: its own service keeps likes (signed in, switched on).
+  if (!canLikeTrack(track)) return null;
   return (
     <button
       className={cls("icon-btn like", liked && "on")}

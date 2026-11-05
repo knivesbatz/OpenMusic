@@ -12,8 +12,10 @@ import { loadCustomProfile } from "./store/profile";
 import { isTouch } from "./util";
 import { startBroadcast } from "./player/bridge";
 import { initAudioShare } from "./player/audioShare";
-import { boot } from "./store/app";
+import { boot, registerCacheReset } from "./store/app";
 import { useSettings } from "./store/settings";
+import { gateSongMeta, resetSongMetaMisses } from "./store/songmeta";
+import { ytOn } from "./store/providers";
 // Figtree (SIL OFL), bundled so text looks the same on Windows and Android, offline too. The
 // closest open typeface to Spotify's geometric sans; Japanese falls back to the system fonts.
 import "@fontsource-variable/figtree";
@@ -60,7 +62,7 @@ async function start() {
     try {
       const info = await api.appInfo();
       setArtBase(info.artBase);
-      if (!isPip) useApp.setState({ info });
+      if (!isPip) useApp.setState({ info, services: { ...info.services } });
     } catch {
       /* boot() reports it */
     }
@@ -72,7 +74,13 @@ async function start() {
     </StrictMode>,
   );
   if (isPip) return;
+  // YouTube song metadata is looked up only while YouTube is on, and misses are retried after a
+  // service is switched.
+  gateSongMeta(ytOn);
+  registerCacheReset(resetSongMetaMisses);
   await boot().catch((e) => console.error("boot failed", e));
+  // Show the app even when startup failed half-way (the Connect page or an empty library).
+  if (!useApp.getState().ready) useApp.setState({ ready: true });
   await restore();
   initMediaSession();
   initRemoteControls();

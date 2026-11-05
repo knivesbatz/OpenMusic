@@ -1,3 +1,5 @@
+import type { Provider } from "./types";
+
 export function fmtTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) sec = 0;
   const s = Math.floor(sec % 60);
@@ -47,3 +49,9 @@ export function spaceTogglesPlayback(e: KeyboardEvent): boolean {
   if (e.key !== " " || e.ctrlKey || e.metaKey || e.altKey) return false;
   return !isTextField(e.target instanceof Element ? e.target : null);
 }
+
+/** A service's name as shown in the UI (a product name: the same in every language). */
+export const serviceLabel = (p: Provider) => (p === "youtube" ? "YouTube Music" : "Plex");
+
+/** YouTube Music's own Liked Music playlist: shown as Liked Songs, never in playlist lists. */
+export const isYtLiked = (id: string) => /^yt:(VL)?LM$/.test(id);

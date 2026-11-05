@@ -95,6 +95,8 @@ export interface SearchResults {
   playlists: Playlist[];
   podcasts: Podcast[];
   episodes: Track[];
+  /** Providers whose part failed (set on results merged from several providers). */
+  errors?: ProviderError[];
 }
 
 export interface ArtistPage {
@@ -129,6 +131,8 @@ export interface Library {
   podcasts: Podcast[];
   /** "Your Episodes" (saved in the app). */
   episodes?: Track[];
+  /** Merged library: providers whose part failed (their part is the last one cached, if any). */
+  errors?: ProviderError[];
 }
 
 export type Stream =
@@ -147,11 +151,32 @@ export interface Capabilities {
   discordPresence?: boolean;
 }
 
+/** A streaming service OpenSpot can use. Items carry it in their id prefix: `yt:` / `plex:`. */
+export type Provider = "youtube" | "plex";
+export const PROVIDERS: Provider[] = ["youtube", "plex"];
+
+/** The Settings → Services switches. Off hides a service everywhere but keeps its sign-in. */
+export interface Services {
+  youtube: boolean;
+  plex: boolean;
+}
+
+/** One provider's part of a merged (fan-out) result that failed: the rest still shows. */
+export interface ProviderError {
+  provider: Provider;
+  /** "authExpired" | "offline" | "timeout" | "disabled" | "notSignedIn" | "network" | … */
+  code: string;
+  message?: string;
+}
+
 export interface AppInfo {
-  flavor: "youtube" | "plex";
   name: string;
   version: string;
-  capabilities: Capabilities;
+  /** What each provider can do; the UI combines them with `services` (store/providers.ts caps()). */
+  providers: Record<Provider, Capabilities>;
+  services: Services;
+  /** Discord Rich Presence is built in (desktop builds with a Discord application id). */
+  discordPresence?: boolean;
   /** Local artwork server base URL; absent when it failed to start. */
   artBase?: string | null;
   /** "windows", "macos", "linux", "android", "ios". */
@@ -198,8 +223,19 @@ export interface HomeData {
   contexts: PlayContext[];
   topTracks: Track[];
   stale: boolean;
-  error?: ApiError | null;
+  /** Providers whose part failed or timed out (their shelves are missing or from the cache). */
+  errors?: ProviderError[];
 }
+
+/** The combined Liked Songs page (`liked_tracks`): YouTube's liked songs, then Plex's rated tracks. */
+export interface LikedTracks {
+  tracks: Track[];
+  stale: boolean;
+  errors?: ProviderError[];
+}
+
+/** Sign-in state of every provider (`auth_status`). */
+export type AuthAll = Record<Provider, AuthStatus>;
 
 export interface AuthStatus {
   signedIn: boolean;
@@ -219,6 +255,8 @@ export interface PlexServer {
 export interface ApiError {
   code: string;
   message: string;
+  /** Which provider refused (authExpired, disabled); absent for errors of no provider. */
+  provider?: Provider;
 }
 
 export interface Lyrics {

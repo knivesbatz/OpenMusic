@@ -1,9 +1,10 @@
-// Profile picker. YTSpot: which YouTube channel (personal or brand account) the library comes
-// from. PLEXSpot: which Plex Home user is listening (PIN for protected users).
+// Profile picker, one per provider. YouTube Music: which YouTube channel (personal or brand
+// account) the library comes from. Plex: which Plex Home user is listening (PIN for protected users).
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../api";
 import { useT } from "../i18n";
 import { closeProfilePicker, refreshLibrary, refreshPlaylists, useApp } from "../store/app";
+import type { Provider } from "../types";
 import { cls } from "../util";
 import { Art, Loading } from "./common";
 
@@ -17,9 +18,9 @@ interface Profile {
   pick: (pin: string | null) => Promise<void>;
 }
 
-export function ProfilePicker() {
+export function ProfilePicker({ provider }: { provider: Provider }) {
   const t = useT();
-  const flavor = useApp((s) => s.info?.flavor);
+  const plex = provider === "plex";
   const [list, setList] = useState<Profile[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,33 +28,32 @@ export function ProfilePicker() {
   const [pin, setPin] = useState("");
 
   useEffect(() => {
-    const load =
-      flavor === "plex"
-        ? api.plexHomeUsers().then((users) =>
-            users.map<Profile>((u) => ({
-              key: u.uuid,
-              name: u.title,
-              sub: u.admin ? t("profileAdmin") : "",
-              photo: u.thumb,
-              selected: u.selected,
-              protected: u.protected,
-              pick: (p) => api.plexSwitchUser(u.uuid, p),
-            })),
-          )
-        : api.ytAccounts().then((accounts) =>
-            accounts.map<Profile>((a) => ({
-              key: a.pageId ?? "primary",
-              name: a.name,
-              sub: a.handle ?? (a.pageId ? "" : t("primaryAccount")),
-              photo: a.photo,
-              selected: a.selected,
-              protected: false,
-              pick: () => api.ytSelectAccount(a.pageId ?? null, a.name),
-            })),
-          );
+    const load = plex
+      ? api.plexHomeUsers().then((users) =>
+          users.map<Profile>((u) => ({
+            key: u.uuid,
+            name: u.title,
+            sub: u.admin ? t("profileAdmin") : "",
+            photo: u.thumb,
+            selected: u.selected,
+            protected: u.protected,
+            pick: (p) => api.plexSwitchUser(u.uuid, p),
+          })),
+        )
+      : api.ytAccounts().then((accounts) =>
+          accounts.map<Profile>((a) => ({
+            key: a.pageId ?? "primary",
+            name: a.name,
+            sub: a.handle ?? (a.pageId ? "" : t("primaryAccount")),
+            photo: a.photo,
+            selected: a.selected,
+            protected: false,
+            pick: () => api.ytSelectAccount(a.pageId ?? null, a.name),
+          })),
+        );
     load.then(setList, (e) => setError(errorMessage(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flavor]);
+  }, [provider]);
 
   async function pick(p: Profile, pinValue: string | null) {
     if (p.protected && pinValue === null) {
@@ -65,8 +65,8 @@ export function ProfilePicker() {
     setError(null);
     try {
       await p.pick(pinValue);
-      await api.kvSet(flavor === "plex" ? "plex.profileChosen" : "yt.profileChosen", true);
-      useApp.setState((s) => ({ auth: s.auth ? { ...s.auth, account: p.name } : s.auth, library: null }));
+      await api.kvSet(plex ? "plex.profileChosen" : "yt.profileChosen", true);
+      useApp.setState((s) => ({ auth: s.auth ? { ...s.auth, [provider]: { ...s.auth[provider], account: p.name } } : s.auth, library: null }));
       closeProfilePicker();
       refreshLibrary(true);
       refreshPlaylists();
@@ -80,7 +80,7 @@ export function ProfilePicker() {
     <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && closeProfilePicker()} onKeyDown={(e) => e.key === "Escape" && closeProfilePicker()}>
       <div className="dialog profiles" role="dialog" aria-modal="true" aria-labelledby="profiles-title">
         <h2 id="profiles-title">{t("chooseProfile")}</h2>
-        <p>{flavor === "plex" ? t("chooseProfileHintPlex") : t("chooseProfileHint")}</p>
+        <p>{plex ? t("chooseProfileHintPlex") : t("chooseProfileHint")}</p>
         {!list && !error && <Loading />}
         {error && (
           <p className="error" role="alert">
