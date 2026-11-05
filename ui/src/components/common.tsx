@@ -1,16 +1,22 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
-import { artUrl } from "../api";
-import { useT } from "../i18n";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { create } from "zustand";
+import { api, artUrl, inTauri } from "../api";
+import { useT, type Key } from "../i18n";
 import { displayText } from "../romaji";
-import { isMobileApp } from "../store/app";
+import { isMobileApp, useApp } from "../store/app";
+import { caps } from "../store/providers";
+import { signedInTo } from "../actions";
 import { useArtistAlias } from "../store/names";
 import { useTitleTranslation } from "../store/translate";
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi } from "../store/ui";
-import type { MediaItem, Track } from "../types";
+import type { Capabilities, MediaItem, ProviderError, Track } from "../types";
+import { PROVIDERS } from "../types";
 import { useDisplayTrack } from "../store/songmeta";
-import { cls, isTouch } from "../util";
+import { cls, isTouch, serviceLabel } from "../util";
 import { IMusic, IPlay } from "./Icons";
+import { SourceBadge } from "./SourceBadge";
 
 export const Art = memo(function Art({
   src,
@@ -73,7 +79,8 @@ export function openItem(item: MediaItem) {
       return navigate({ name: "artist", id: item.id });
     case "playlist":
     case "podcast":
-      return navigate({ name: "playlist", id: item.id });
+      // Liked Songs (played from its page) has a page of its own.
+      return navigate(item.id === "liked" ? { name: "liked" } : { name: "playlist", id: item.id });
     case "track":
       return item.albumId ? navigate({ name: "album", id: item.albumId }) : undefined;
   }
@@ -117,6 +124,7 @@ export const Card = memo(function Card({
         {item.type === "artist" ? <ArtistName name={title} /> : <TitleText text={title} />}
       </div>
       <div className="card-sub">
+        <SourceBadge id={item.id} />
         <JpText text={itemSubtitle(item, t)} />
       </div>
     </div>
@@ -313,4 +321,79 @@ export function usePhoneLayout() {
     return () => m.removeEventListener("change", on);
   }, []);
   return isMobileApp() || (narrow && isTouch());
+}
+
+// ---- services ------------------------------------------------------------------------------------
+
+/**
+ * Changes whenever a service is switched on or off, signs in or out, or the app info arrives:
+ * components that ask the (non-reactive) per-service helpers re-render with it, and pages use it
+ * as an effect dependency to fetch again.
+ */
+export function useProvidersKey(): string {
+  const services = useApp((s) => s.services);
+  const auth = useApp((s) => s.auth);
+  const info = useApp((s) => s.info);
+  return useMemo(
+    () => PROVIDERS.map((p) => `${services?.[p] ? 1 : 0}${signedInTo(p) ? 1 : 0}`).join("") + (info ? "" : "-"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [services, auth, info],
+  );
+}
+
+/** What the services that are on can do (podcasts, downloads…), re-rendering when they change. */
+export function useCaps(): Capabilities {
+  useProvidersKey();
+  return caps();
+}
+
+const NOTE: Record<string, Key> = { offline: "noteOffline", timeout: "noteTimeout", authExpired: "noteAuthExpired", notSignedIn: "noteNotSignedIn" };
+
+/** Small notes on a merged page (Home, Search, Your Library) for each service whose part failed:
+ * the other service's part still shows. Services that were switched off since are left out. */
+export function ProviderNotes({ errors }: { errors: ProviderError[] | null | undefined }) {
+  const t = useT();
+  const services = useApp((s) => s.services);
+  const seen = new Set<string>();
+  const shown = (errors ?? []).filter(
+    (e) => (e.provider === "youtube" || e.provider === "plex") && services?.[e.provider] && e.code !== "disabled" && !seen.has(e.provider) && (seen.add(e.provider), true),
+  );
+  if (!shown.length) return null;
+  return (
+    <>
+      {shown.map((e) => (
+        <p key={e.provider} className="muted small provider-note" role="status" data-provider={e.provider}>
+          {t(NOTE[e.code] ?? "noteFailed", { service: serviceLabel(e.provider) })}
+        </p>
+      ))}
+    </>
+  );
+}
+
+/** Plex downloads on this device (finished ones play from disk, also while Plex is off). */
+const useDownloadState = create<{ done: Set<string>; any: boolean }>(() => ({ done: new Set(), any: false }));
+let downloadsWatched = false;
+function loadDownloads() {
+  api.downloadList().then(
+    (l) => useDownloadState.setState({ done: new Set(l.filter((d) => d.status === "done").map((d) => d.track.id)), any: l.length > 0 }),
+    () => {},
+  );
+}
+function watchDownloads() {
+  if (downloadsWatched || !inTauri) return;
+  downloadsWatched = true;
+  loadDownloads();
+  listen("downloads-changed", loadDownloads).catch(() => {});
+}
+
+/** Whether there is anything in Downloads (the entry stays while Plex is off). */
+export function useHasDownloads(): boolean {
+  useEffect(watchDownloads, []);
+  return useDownloadState((s) => s.any);
+}
+
+/** Whether this track was downloaded and plays from disk. */
+export function useDownloaded(id: string): boolean {
+  useEffect(watchDownloads, []);
+  return useDownloadState((s) => s.done.has(id));
 }

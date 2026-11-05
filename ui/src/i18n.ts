@@ -4,6 +4,18 @@ const en = {
   // ---- OpenSpot: state, sign-in and Settings (builder A adds keys below) ----
   // ---- end A ----
   // ---- OpenSpot: pages and components (builder B adds keys below) ----
+  menuServices: "Services…",
+  accountOf: "{service} account",
+  switchProfileOf: "Switch profile: {service}",
+  signOutOfService: "Sign out of {service}",
+  signOutOfServiceBody: "You'll need to sign in to {service} again to use your account there. App playlists and downloads stay on this device.",
+  noteOffline: "{service} can't be reached right now. Showing the rest.",
+  noteTimeout: "{service} took too long to answer. Showing the rest.",
+  noteAuthExpired: "{service}: your session expired. Sign in again in Settings → Services.",
+  noteNotSignedIn: "Sign in to {service} in Settings → Services to see it here.",
+  noteFailed: "{service} couldn't be loaded. Showing the rest.",
+  fromService: "From {service}",
+  rowServiceOff: "{service} is off or not signed in",
   // ---- end B ----
   home: "Home",
   search: "Search",
@@ -152,9 +164,9 @@ const en = {
   signOut: "Sign out",
   signInPlex: "Sign in with Plex",
   signInYouTube: "Sign in with Google",
-  signInPlexHint: "A browser window opens where you approve PLEXSpot. This page continues automatically.",
+  signInPlexHint: "A browser window opens where you approve OpenSpot. This page continues automatically.",
   signInYouTubeHint:
-    "Sign in to your Google account in the window that opens. YTSpot uses your YouTube Music session to read your library.",
+    "Sign in to your Google account in the window that opens. OpenSpot uses your YouTube Music session to read your library.",
   waitingApproval: "Waiting for approval…",
   chooseServer: "Choose a Plex server",
   connecting: "Connecting…",
@@ -198,7 +210,7 @@ const en = {
   discordPresenceHint: "Shares the song, artist and artwork on your Discord profile while music plays. Works when the Discord app is open. If only you can see it: in Discord, User Settings → Activity Privacy → turn on \"Share my activity\", and in the server, Privacy Settings → Activity Status on (your status mustn't be Invisible).",
   privacy: "Privacy",
   privateSession: "Private session",
-  privateSessionHint: "While it's on, nothing you play is recorded: no listening history or Recently played, no Last.fm scrobbles, no Plex play counts, nothing on Discord, and YTSpot keeps songs out of your YouTube history. Stays on until you turn it off.",
+  privateSessionHint: "While it's on, nothing you play is recorded: no listening history or Recently played, no Last.fm scrobbles, no Plex play counts, nothing on Discord, and OpenSpot keeps songs out of your YouTube history. Stays on until you turn it off.",
   privateSessionOn: "Private session on: what you play isn't recorded",
   privateSessionOff: "Private session off",
   privateSessionEnd: "End private session",
@@ -507,6 +519,18 @@ const ja: Record<Key, string> = {
   // ---- OpenSpot: state, sign-in and Settings (builder A adds keys below) ----
   // ---- end A ----
   // ---- OpenSpot: pages and components (builder B adds keys below) ----
+  menuServices: "サービス…",
+  accountOf: "{service}アカウント",
+  switchProfileOf: "プロフィールを切り替え: {service}",
+  signOutOfService: "{service}からサインアウト",
+  signOutOfServiceBody: "{service}のアカウントを使うには、もう一度サインインが必要です。アプリのプレイリストとダウンロードはこのデバイスに残ります。",
+  noteOffline: "{service}に今は接続できません。ほかの結果を表示しています。",
+  noteTimeout: "{service}の応答に時間がかかりすぎました。ほかの結果を表示しています。",
+  noteAuthExpired: "{service}: セッションの有効期限が切れました。設定 → サービスからもう一度サインインしてください。",
+  noteNotSignedIn: "ここに表示するには、設定 → サービスで{service}にサインインしてください。",
+  noteFailed: "{service}を読み込めませんでした。ほかの結果を表示しています。",
+  fromService: "{service}から",
+  rowServiceOff: "{service}がオフか、サインインしていません",
   // ---- end B ----
   home: "ホーム",
   search: "検索",
@@ -655,9 +679,9 @@ const ja: Record<Key, string> = {
   signOut: "サインアウト",
   signInPlex: "Plexでサインイン",
   signInYouTube: "Googleでサインイン",
-  signInPlexHint: "ブラウザが開くので、PLEXSpotを承認してください。このページは自動的に続行します。",
+  signInPlexHint: "ブラウザが開くので、OpenSpotを承認してください。このページは自動的に続行します。",
   signInYouTubeHint:
-    "開いたウィンドウでGoogleアカウントにサインインしてください。YTSpotはYouTube Musicのセッションを使ってライブラリを読み込みます。",
+    "開いたウィンドウでGoogleアカウントにサインインしてください。OpenSpotはYouTube Musicのセッションを使ってライブラリを読み込みます。",
   waitingApproval: "承認を待っています…",
   chooseServer: "Plexサーバーを選択",
   connecting: "接続中…",
@@ -701,7 +725,7 @@ const ja: Record<Key, string> = {
   discordPresenceHint: "再生中、曲名・アーティスト・アートワークをDiscordのプロフィールに表示します。Discordアプリが起動している必要があります。自分にしか見えない場合は、Discordのユーザー設定 → アクティビティのプライバシー →「アクティビティを共有する」をオンにし、サーバーのプライバシー設定でも「アクティビティステータス」をオンにしてください（ステータスが「オンライン状態を隠す」だと表示されません）。",
   privacy: "プライバシー",
   privateSession: "プライベートセッション",
-  privateSessionHint: "オンの間は再生した曲が記録されません。再生履歴・最近再生した項目、Last.fmのScrobble、Plexの再生回数、Discordへの表示がなくなり、YTSpotではYouTubeの再生履歴にも残りません。オフにするまで続きます。",
+  privateSessionHint: "オンの間は再生した曲が記録されません。再生履歴・最近再生した項目、Last.fmのScrobble、Plexの再生回数、Discordへの表示がなくなり、YouTubeの再生履歴にも残りません。オフにするまで続きます。",
   privateSessionOn: "プライベートセッション中：再生した曲は記録されません",
   privateSessionOff: "プライベートセッションを終了しました",
   privateSessionEnd: "プライベートセッションを終了",

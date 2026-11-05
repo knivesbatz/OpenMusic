@@ -2,14 +2,18 @@
 // playlists you have and how many artists you follow, your top artists this month, your public
 // playlists and the artists you played recently.
 import { useEffect, useState } from "react";
+import { providerOfId, signedInTo, visibleId } from "../actions";
 import { api, errorMessage, inTauri } from "../api";
-import { Art, Card, ErrorBox, Loading, Shelf, useAsync, usePageTitle } from "../components/common";
+import { Art, Card, ErrorBox, Loading, Shelf, useAsync, usePageTitle, useProvidersKey } from "../components/common";
 import * as I from "../components/Icons";
 import { useT } from "../i18n";
 import { openProfilePicker, refreshLibrary, refreshSaved, useApp } from "../store/app";
 import { loadProfile, pickPhoto, saveCustomProfile, useMe, useProfile } from "../store/profile";
+import { isOn } from "../store/providers";
 import { navigate, openMenu, toast, useUi, type MenuItem } from "../store/ui";
-import type { Artist, MediaItem, Playlist } from "../types";
+import type { Artist, MediaItem, Playlist, Provider } from "../types";
+import { PROVIDERS } from "../types";
+import { isYtLiked, serviceLabel } from "../util";
 import { cardMenu, Grid, playItem } from "./Browse";
 import { Hero } from "./Detail";
 
@@ -17,28 +21,39 @@ type Section = "top" | "recent" | "playlists";
 
 const dedupe = <T extends { id: string }>(xs: T[]) => xs.filter((x, i) => xs.findIndex((y) => y.id === x.id) === i);
 
-/** Your playlists other people can see. YouTube: the channel's public playlists. Elsewhere
- * (Plex has no public playlists, or the channel couldn't be read): the playlists you own. */
+/** Your playlists other people can see. YouTube (the profile is the channel's): the channel's
+ * public playlists. Otherwise (Plex has no public playlists, or the channel couldn't be read): the
+ * playlists you own: the app's, Plex's (a server's playlists are yours) and YouTube playlists of
+ * your channel. */
 function usePlaylists(): { list: Playlist[]; isPublic: boolean } {
   const info = useProfile((s) => s.info);
   const lib = useApp((s) => s.library);
   const appPls = useApp((s) => s.playlists);
+  const auth = useApp((s) => s.auth);
   const me = useMe();
+  useProvidersKey();
   if (info?.publicPlaylists) return { list: info.publicPlaylists, isPublic: true };
-  const plex = useApp.getState().info?.flavor === "plex";
-  const own = dedupe([...appPls, ...(lib?.playlists ?? [])]).filter(
-    (p) => !/^yt:(VL)?LM$/.test(p.id) && (p.local || plex || !p.owner || p.owner === me.name || p.owner === info?.name),
-  );
+  const ytName = auth?.youtube?.account;
+  const own = dedupe([...appPls, ...(lib?.playlists ?? [])]).filter((p) => {
+    if (isYtLiked(p.id) || !visibleId(p.id)) return false;
+    const service = providerOfId(p.id);
+    if (p.local || service === "plex" || !p.owner) return true;
+    return p.owner === me.name || p.owner === info?.name || (!!ytName && p.owner === ytName);
+  });
   return { list: own, isPublic: false };
 }
 
-/** Artists you follow: the same list as Your Library → Artists. */
+/** Artists you follow: the same list as Your Library → Artists (saved in the app, plus YouTube
+ * Music's library; Plex's artists are the whole server, so only saved ones count). */
 function useFollowing(): Artist[] {
   const saved = useApp((s) => s.saved.artists);
   const lib = useApp((s) => s.library);
-  const yt = useApp((s) => s.info?.flavor === "youtube");
-  return dedupe([...saved, ...(yt ? lib?.artists ?? [] : [])]);
+  useProvidersKey();
+  return dedupe([...saved, ...(lib?.artists ?? []).filter((a) => providerOfId(a.id) === "youtube")]).filter((a) => visibleId(a.id));
 }
+
+/** Services with a profile to switch: on and signed in (YouTube channels, Plex Home users). */
+const profileServices = (): Provider[] => PROVIDERS.filter((p) => isOn(p) && signedInTo(p));
 
 function useHistoryArtists(kind: "top" | "recent", limit: number) {
   return useAsync(() => (inTauri ? api.profileArtists(kind, limit) : Promise.resolve([] as Artist[])), [kind, limit]);
@@ -77,7 +92,11 @@ function ProfileMain() {
         onClick: () => navigator.clipboard.writeText(url).then(() => toast(t("copied")), (err) => toast(errorMessage(err))),
       });
     }
-    items.push({ label: t("switchProfile"), icon: I.IUser, onClick: openProfilePicker });
+    // "Switch profile": one entry per service (a submenu while both have an account).
+    const svc = profileServices();
+    if (svc.length === 1) items.push({ label: t("switchProfile"), icon: I.IUser, onClick: () => openProfilePicker(svc[0]) });
+    else if (svc.length > 1)
+      items.push({ label: t("switchProfile"), icon: I.IUser, submenu: svc.map((p) => ({ label: serviceLabel(p), onClick: () => openProfilePicker(p) })) });
     openMenu(e, items);
   };
 
