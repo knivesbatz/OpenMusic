@@ -334,6 +334,19 @@ export function Toasts() {
       {toasts.map((x) => (
         <div key={x.id} className="toast">
           {x.text}
+          {/* The toast row ignores the pointer; its button doesn't. */}
+          {x.action && (
+            <button
+              className="link"
+              style={{ pointerEvents: "auto", marginLeft: 12, color: "inherit", fontWeight: 700, textDecoration: "underline" }}
+              onClick={() => {
+                useUi.setState((s) => ({ toasts: s.toasts.filter((t) => t.id !== x.id) }));
+                x.action!.onClick();
+              }}
+            >
+              {x.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>

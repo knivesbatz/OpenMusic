@@ -167,7 +167,8 @@ await test("YouTube: settings toggles and Japanese text modes", async (p) => {
     await p.click('button[aria-label="Japanese text"]');
     await p.click(`.menu button:has-text("${mode}")`);
   }
-  for (const s of await p.locator('input[role="switch"]:not(:disabled)').all()) {
+  // Every switch but the Services ones (tested on their own below).
+  for (const s of await p.locator('input[role="switch"]:not(:disabled):not([data-service])').all()) {
     await s.click();
     await s.click();
   }
@@ -1068,7 +1069,7 @@ await test("Updates: a new version found at startup downloads and installs while
     const d = window.__MOCK__;
     window.__KV = {};
     d.kv_set = (a) => ((window.__KV[a.key] = a.value), null);
-    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_x64-setup.exe", ready: false };
+    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/OpenSpot_9.9.9_x64-setup.exe", ready: false };
     d.update_download = null;
     d.update_restart = null;
   },
@@ -1084,13 +1085,13 @@ await test("Updates: a version already tried at a recent start isn't installed a
   init: () => {
     const d = window.__MOCK__;
     d.kv_get = (a) => (a.key === "update.autoInstall" ? { version: "9.9.9", at: Date.now() - 60_000 } : null);
-    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_x64-setup.exe", ready: false };
+    d.update_check = { available: true, current: "1.4.0", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/OpenSpot_9.9.9_x64-setup.exe", ready: false };
     d.update_download = null;
     d.update_restart = null;
   },
 });
 
-await test("YTSpot: your own playlist can be deleted from YouTube, after a confirmation", async (p) => {
+await test("YouTube: your own playlist can be deleted from YouTube, after a confirmation", async (p) => {
   const lib = p.locator(".lib-list");
   const row = lib.locator(".side-item", { hasText: "My mix" });
   await row.waitFor();
@@ -1124,7 +1125,7 @@ await test("YTSpot: your own playlist can be deleted from YouTube, after a confi
 
 await test("Android: a new version found at startup is downloaded and installed by the app", async (p) => {
   await p.waitForFunction(() => window.__INSTALL?.length === 1, null, { timeout: 12000 });
-  assert.equal(await p.evaluate(() => window.__INSTALL[0]), "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk");
+  assert.equal(await p.evaluate(() => window.__INSTALL[0]), "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/OpenSpot_9.9.9_android-arm64.apk");
   assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("plugin:opener|open_url"))));
 }, {
   init: () => {
@@ -1132,7 +1133,7 @@ await test("Android: a new version found at startup is downloaded and installed 
     d.app_info = { ...d.app_info, platform: "android" };
     window.__INSTALL = [];
     window.OpenMusicMedia = { update() {}, installUpdate: (url) => (window.__INSTALL.push(url), true) };
-    d.update_check = { available: true, current: "1.4.1", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk", ready: false };
+    d.update_check = { available: true, current: "1.4.1", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/OpenSpot_9.9.9_android-arm64.apk", ready: false };
   },
 });
 
@@ -1176,6 +1177,351 @@ await test("Phone: library tabs, Find in playlist + Sort sheet, pinned bar with 
     d.app_info = { ...d.app_info, platform: "android" };
   },
 });
+
+// ---- OpenSpot: two services ---------------------------------------------------------------------
+
+/** Settings → Services switch of one provider. */
+const serviceSwitch = (p, provider) => p.locator(`input[role="switch"][data-service="${provider}"]`);
+/** Type a search (cleared first, so the same query is asked again). */
+async function search(p, q) {
+  await p.fill("#global-search", "");
+  await p.fill("#global-search", q);
+}
+const badges = (p, source) => p.locator(source ? `.src-badge[data-source="${source}"]` : ".src-badge");
+
+await test("Services: switching Plex off hides it everywhere and forgets its search results; back on brings it back", async (p) => {
+  // Both on: Plex and YouTube shelves on Home.
+  await p.locator(".shelf .card", { hasText: "Night Drive" }).first().waitFor();
+  await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
+  await search(p, "aster");
+  await p.waitForSelector(".top-result .top-name:has-text('Aster Vale')");
+  await p.locator('.top-songs .src-badge[data-source="plex"]').first().waitFor();
+  await p.locator(".lib-list .side-item", { hasText: "autumn" }).waitFor();
+  await p.fill("#global-search", "");
+  await p.click(".browse-btn");
+  await p.waitForSelector(".browse-tile:has-text('Jazz')");
+  // Off: no question, no sign-out, the sign-in is kept.
+  await openSettings(p);
+  await serviceSwitch(p, "plex").click();
+  assert.equal(await serviceSwitch(p, "plex").isChecked(), false);
+  await p.waitForTimeout(300);
+  assert.equal(await p.locator(".dialog, .modal-bg").count(), 0, "a dialog opened");
+  assert.deepEqual(await p.evaluate(() => window.__STATE__.services), { youtube: true, plex: false });
+  assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("sign_out"))), "signed out");
+  assert.equal(await p.evaluate(() => window.__STATE__.auth.plex.signedIn), true);
+  // Sidebar: Plex's playlists are gone, YouTube's and the app's stay.
+  await p.waitForFunction(() => ![...document.querySelectorAll(".lib-list .side-item .name")].some((n) => n.textContent === "autumn"));
+  await p.locator(".lib-list .side-item", { hasText: "My YouTube mix" }).waitFor();
+  await p.locator(".lib-list .side-item", { hasText: "Road trip" }).waitFor();
+  // Home: only YouTube's shelves, without source badges (one service).
+  await p.click('button[aria-label="Home"]');
+  await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
+  assert.equal(await p.locator(".shelf .card", { hasText: "Night Drive" }).count(), 0, "Plex shelf still on Home");
+  assert.equal(await badges(p).count(), 0, "badges with one service");
+  // The same search again: YouTube's answer only, not the one cached with Plex.
+  await search(p, "aster");
+  await p.waitForSelector(".top-result .top-name:has-text('Luna Park')");
+  const songs = await p.locator(".page .tl-row:not(.tl-head) .name").allTextContents();
+  assert.ok(songs.length > 0 && !songs.some((n) => ["Slow Lights", "Halfway Home", "Paper Planes"].includes(n.trim())), `Plex songs still in the results: ${songs}`);
+  assert.equal(await p.locator(".page .card", { hasText: "Aster Vale" }).count(), 0, "Plex artist still in the results");
+  assert.equal(await badges(p).count(), 0);
+  // Browse all: YouTube's moods only, no group headings.
+  await p.fill("#global-search", "");
+  await p.click(".browse-btn");
+  await p.waitForSelector(".browse-tile:has-text('Feel good')");
+  assert.equal(await p.locator(".browse-tile", { hasText: "Jazz" }).count(), 0, "Plex genres still in Browse all");
+  assert.equal(await p.locator("h2.browse-group").count(), 0);
+  // Back on: Plex is back in search, with badges.
+  await openSettings(p);
+  await serviceSwitch(p, "plex").click();
+  await p.waitForFunction(() => window.__STATE__.services.plex);
+  await search(p, "aster");
+  await p.waitForSelector(".top-result .top-name:has-text('Aster Vale')");
+  await badges(p, "plex").first().waitFor();
+  await badges(p, "youtube").first().waitFor();
+  await p.click(".lib-list .side-item >> text=autumn");
+});
+
+await test("Combined search: each section mixes both services, and every row and card shows its source", async (p) => {
+  await search(p, "aster");
+  await p.waitForSelector(".top-result .top-name:has-text('Aster Vale')");
+  // The Top result is the best title match (Plex's artist), with its badge.
+  await p.locator('.top-result .src-badge[data-source="plex"]').waitFor();
+  // Songs: Plex's, YouTube's and the local file, each with its own mark.
+  await p.locator('.top-songs .tl-row .src-badge[data-source="youtube"]').first().waitFor();
+  assert.ok((await p.locator('.top-songs .tl-row .src-badge[data-source="plex"]').count()) > 0);
+  await p.locator(".top-songs .tl-row .name", { hasText: "home demo" }).waitFor();
+  // Artists and albums interleave the two services.
+  const artists = p.locator(".shelf", { has: p.locator("h2", { hasText: /^Artists$/ }) });
+  const sources = await artists.locator(".card .src-badge").evaluateAll((els) => els.map((e) => e.dataset.source));
+  assert.deepEqual(sources.slice(0, 4), ["plex", "youtube", "plex", "youtube"]);
+  // A filter chip asks both services for the full list.
+  await p.click('.chips button:has-text("Albums")');
+  await p.locator(".grid .card", { hasText: "Blue Hour" }).waitFor();
+  await p.locator(".grid .card", { hasText: "Night Drive" }).waitFor();
+  // Podcasts come from YouTube Music only; the chip is there because YouTube is on.
+  await p.click('.chips button:has-text("Podcasts")');
+  await p.locator(".grid .card", { hasText: "Conspiracy Theories" }).waitFor();
+});
+
+await test("Only YouTube Music on looks like YTSpot 1.6.1: no source badges, no Browse group headings, no Plex", async (p) => {
+  await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
+  assert.equal(await badges(p).count(), 0, "badges on Home or the sidebar");
+  assert.equal(await p.locator(".shelf .card", { hasText: "Night Drive" }).count(), 0);
+  await search(p, "aster");
+  await p.waitForSelector(".top-result .top-name");
+  await p.locator(".top-songs .tl-row").first().waitFor();
+  assert.equal(await badges(p).count(), 0, "badges in search");
+  assert.equal(await p.evaluate(() => window.__CALLS__.filter((c) => c === "search").length), 2, "asked YouTube and local files");
+  await p.fill("#global-search", "");
+  await p.click(".browse-btn");
+  await p.waitForSelector(".browse-tile:has-text('Feel good')");
+  assert.equal(await p.locator("h2.browse-group").count(), 0);
+  // No Plex-only entries (Downloads) in the sidebar; podcasts are there.
+  assert.equal(await p.locator('.sidebar .side-cat:has-text("Downloads")').count(), 0);
+  await p.locator('.sidebar .side-cat:has-text("Podcasts")').waitFor();
+  // The avatar menu reads as before: one account, Log out.
+  await p.click(".topbar .avatar-btn");
+  const items = (await p.locator(".menu > button").allTextContents()).map((x) => x.trim());
+  assert.ok(items.includes("Log out") && items.includes("Account") && !items.includes("Services…"), items.join(", "));
+}, { scenario: "youtube" });
+
+await test("Account menu with both services: Account and Switch profile per service; Plex signs out in Settings and YouTube stays", async (p) => {
+  await p.click(".topbar .avatar-btn");
+  const items = (await p.locator(".menu > button").allTextContents()).map((x) => x.trim());
+  assert.ok(items.includes("Services…") && !items.includes("Log out"), items.join(", "));
+  await p.hover('.menu button:has-text("Account")');
+  assert.deepEqual((await p.locator(".menu.sub button").allTextContents()).map((x) => x.trim()), ["YouTube Music", "Plex"]);
+  await p.click('.menu > button:has-text("Services…")');
+  await p.waitForSelector(".page.settings section.services");
+  // Sign out of Plex only, after a confirmation that names it.
+  const plexCard = p.locator(".services .service", { has: serviceSwitch(p, "plex") });
+  await plexCard.locator("button", { hasText: "Sign out" }).click();
+  await p.waitForSelector(".dialog");
+  assert.ok((await p.locator(".dialog").textContent()).includes("Plex"));
+  await p.click('.dialog button:has-text("Sign out")');
+  await p.waitForFunction(() => window.__STATE__.auth.plex.signedIn === false);
+  // Plex is off and offers Sign in; YouTube is untouched; the app stays open.
+  await plexCard.locator('[data-testid="signin-plex"]').waitFor();
+  await p.waitForFunction(() => !document.querySelector('input[data-service="plex"]').checked);
+  assert.equal(await serviceSwitch(p, "youtube").isChecked(), true);
+  assert.equal(await p.evaluate(() => window.__STATE__.auth.youtube.signedIn), true);
+  assert.equal(await p.locator(".login").count(), 0);
+  await p.waitForFunction(() => ![...document.querySelectorAll(".lib-list .side-item .name")].some((n) => n.textContent === "autumn"));
+});
+
+await test("One service's session expiring never signs you out: the other's shelves stay, with a note and a Sign in", async (p) => {
+  // Home: Plex's part failed with authExpired (the core could not repair it); YouTube's arrived.
+  await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
+  await p.locator('.provider-note[data-provider="plex"]').waitFor();
+  assert.ok((await p.locator('.provider-note[data-provider="plex"]').textContent()).includes("Plex"));
+  assert.equal(await p.locator(".page .error-box, .page [role=alert]").count(), 0, "an error box instead of the shelves");
+  await p.locator('.toast:has-text("Plex: your session expired")').waitFor();
+  assert.equal(await p.locator(".login").count(), 0, "bounced to the Connect page");
+  // Then YouTube's session expires too (an auth-expired event): still no Connect page.
+  await p.evaluate(() => window.__EMIT__("auth-expired", { provider: "youtube" }));
+  await p.locator('.toast:has-text("YouTube Music: your session expired")').waitFor();
+  assert.equal(await p.locator(".login").count(), 0);
+  await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
+  // Both switches stay on.
+  assert.deepEqual(await p.evaluate(() => window.__STATE__.services), { youtube: true, plex: true });
+  // The Plex toast's Sign in starts a Plex sign-in in Settings → Services (YouTube stays as it is).
+  await p.click('.toast:has-text("Plex: your session expired") button:has-text("Sign in")');
+  await p.waitForSelector(".page.settings section.services");
+  await p.locator(".services .service", { hasText: "PIN: ABCD" }).waitFor();
+  assert.ok(await p.evaluate(() => window.__CALLS__.includes("plex_pin_start")));
+  assert.equal(await serviceSwitch(p, "youtube").isChecked(), true);
+}, { init: () => {
+  const d = window.__MOCK__;
+  const base = d.home;
+  d.home = () => {
+    const h = base();
+    h.shelves = h.shelves.filter((s) => s.items.every((i) => i.id.startsWith("yt:")));
+    h.errors = [{ provider: "plex", code: "authExpired", message: "Plex session expired" }];
+    return h;
+  };
+} });
+
+await test("A fresh install shows Connect your music; Skip — local files only opens the app and survives a reload", async (p) => {
+  assert.equal((await p.locator(".login h1").textContent()).trim(), "Connect your music");
+  for (const id of ["connect-youtube", "connect-plex", "connect-anonymous", "connect-local"]) await p.locator(`[data-testid="${id}"]`).waitFor();
+  await p.click('[data-testid="connect-local"]');
+  await p.waitForSelector(".sidebar");
+  assert.equal(await p.evaluate(() => window.__STATE__.kv.localOnly), true);
+  // Nothing of a service shows; app playlists do.
+  await p.locator(".lib-list .side-item", { hasText: "Road trip" }).waitFor();
+  assert.equal(await p.locator(".lib-list .side-item", { hasText: "My YouTube mix" }).count(), 0);
+  await p.reload();
+  await p.waitForSelector(".sidebar");
+  assert.equal(await p.locator(".login").count(), 0, "the Connect page came back after a reload");
+  // Settings: both services off; Plex turns on by signing in, YouTube can be switched on.
+  await openSettings(p);
+  assert.equal(await serviceSwitch(p, "youtube").isChecked(), false);
+  assert.equal(await serviceSwitch(p, "plex").isChecked(), false);
+  assert.equal(await serviceSwitch(p, "plex").isDisabled(), true);
+  await p.locator('[data-testid="signin-plex"]').waitFor();
+}, { scenario: "fresh", ready: '[data-testid="connect-local"]' });
+
+await test("Connect your music: YouTube Music without an account turns YouTube on and opens the app", async (p) => {
+  await p.click('[data-testid="connect-anonymous"]');
+  await p.waitForSelector(".sidebar");
+  assert.deepEqual(await p.evaluate(() => window.__STATE__.services), { youtube: true, plex: false });
+  await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
+}, { scenario: "fresh", ready: '[data-testid="connect-local"]', init: () => {
+  // Nobody signed in: YouTube answers anonymously.
+  window.__STATE__.auth.youtube.signedIn = false;
+} });
+
+await test("Liked Songs combines YouTube's liked songs and Plex's; with YouTube off, Plex's only", async (p) => {
+  // YouTube's Liked Music is the Liked Songs page, never a playlist row.
+  await p.locator(".lib-list .side-item", { hasText: "My YouTube mix" }).waitFor();
+  assert.equal(await p.locator(".lib-list .side-item", { hasText: "Liked Music" }).count(), 0);
+  await p.click('.sidebar .side-cat:has-text("Liked Songs")');
+  await p.waitForSelector(".page h1:has-text('Liked Songs')");
+  const names = async () => (await p.locator(".page .tl-row:not(.tl-head) .name").allTextContents()).map((x) => x.trim());
+  await p.waitForFunction(() => document.querySelectorAll(".page .tl-row:not(.tl-head)").length === 5);
+  assert.deepEqual((await names()).sort(), ["Cassette Heart", "Ferry Lights", "Glasshouse", "Orbit", "Undertow"]);
+  assert.equal(await p.locator('.page .tl-row .src-badge[data-source="youtube"]').count(), 3);
+  assert.equal(await p.locator('.page .tl-row .src-badge[data-source="plex"]').count(), 2);
+  await openSettings(p);
+  await serviceSwitch(p, "youtube").click();
+  await p.waitForFunction(() => !window.__STATE__.services.youtube);
+  await p.click('.sidebar .side-cat:has-text("Liked Songs")');
+  await p.waitForFunction(() => document.querySelectorAll(".page .tl-row:not(.tl-head)").length === 2);
+  assert.deepEqual((await names()).sort(), ["Glasshouse", "Undertow"]);
+  assert.equal(await badges(p).count(), 0);
+});
+
+await test("Japanese: the Settings → Services section", async (p) => {
+  await openSettings(p);
+  await p.click('button[aria-label="Language"]');
+  await p.click('.menu button:has-text("日本語")');
+  await p.waitForSelector(".page.settings section.services h2:has-text('サービス')");
+  const section = p.locator(".page.settings section.services");
+  assert.equal(await section.locator(".service").count(), 2);
+  assert.equal(await section.locator('button:has-text("サインアウト")').count(), 2);
+  assert.ok((await section.textContent()).includes("サインイン中"), await section.textContent());
+});
+
+await test("Japanese: Connect your music on a fresh install", async (p) => {
+  await p.waitForSelector(".login h1:has-text('音楽を接続')");
+  await p.locator('[data-testid="connect-local"]:has-text("ローカルファイルのみ")').waitFor();
+  await p.locator('[data-testid="connect-anonymous"]:has-text("アカウントなし")').waitFor();
+}, { scenario: "fresh", ready: '[data-testid="connect-local"]', init: () => (window.__MOCK__.settings_get = { language: "ja" }) });
+
+await test("Plex sign-in from Settings while YouTube is on: PIN, then the server list in the Plex card; the app stays put", async (p) => {
+  await openSettings(p);
+  await p.click('[data-testid="signin-plex"]');
+  const card = p.locator(".services .service", { has: serviceSwitch(p, "plex") });
+  await card.locator(".server", { hasText: "Home server" }).waitFor();
+  assert.ok(await p.evaluate(() => window.__CALLS__.includes("plugin:opener|open_url")), "plex.tv opened");
+  await card.locator(".server", { hasText: "Home server" }).click();
+  await p.waitForFunction(() => document.querySelector('input[data-service="plex"]')?.checked);
+  // Still in Settings (no Connect page, no jump), YouTube untouched, Plex's playlists arrive.
+  assert.equal(await p.locator(".page.settings").count(), 1);
+  assert.equal(await p.locator(".login").count(), 0);
+  assert.equal(await serviceSwitch(p, "youtube").isChecked(), true);
+  await p.locator(".lib-list .side-item", { hasText: "autumn" }).waitFor();
+  assert.deepEqual(await p.evaluate(() => window.__SELECTED), ["srv1"]);
+}, { scenario: "youtube", init: () => {
+  const d = window.__MOCK__;
+  const st = window.__STATE__;
+  window.__SELECTED = [];
+  d.plex_pin_poll = () => ((st.auth.plex = { signedIn: true, account: "demo", server: null, serverConnection: null, needsServer: true }), true);
+  d.plex_servers = [{ name: "Home server", clientIdentifier: "srv1", owned: true, connections: [{ uri: "http://192.168.1.5:32400", local: true, relay: false }] }];
+  // As the core does: a chosen server turns Plex on.
+  d.plex_select_server = (a) => {
+    window.__SELECTED.push(a.clientIdentifier);
+    st.auth.plex = { signedIn: true, account: "demo", server: "Home server", serverConnection: "local", needsServer: false };
+    st.services.plex = true;
+    setTimeout(() => (window.__EMIT__("services-changed", st.services), window.__EMIT__("auth-changed", { provider: "plex" })), 0);
+    return "Home server";
+  };
+} });
+
+await test("Android: a Plex sign-in that left for plex.tv resumes in Settings when the app comes back", async (p) => {
+  await p.waitForSelector(".page.settings section.services");
+  await p.locator(".services .service", { hasText: "PIN: WXYZ" }).waitFor();
+  assert.equal(await p.evaluate(() => localStorage.getItem("plex.pendingPin")), null, "the pending PIN is used once");
+}, { scenario: "youtube", init: () => {
+  if (!sessionStorage.getItem("resumed")) {
+    sessionStorage.setItem("resumed", "1");
+    localStorage.setItem("plex.pendingPin", JSON.stringify({ id: 7, code: "WXYZ", origin: "settings" }));
+  }
+} });
+
+/** Init for the mixed-queue tests: a fake YouTube IFrame player, 1.5-second tones as Plex streams,
+ * and a queue that goes Plex, YouTube, Plex, YouTube. */
+const mixedQueue = () => {
+  window.__YT_LOADS = [];
+  window.YT = {
+    PlayerState: { ENDED: 0, PLAYING: 1, PAUSED: 2 },
+    Player: class {
+      constructor(el, opts) {
+        this.ev = opts.events;
+        this.t0 = 0;
+        this.timers = [];
+        setTimeout(() => this.ev.onReady(), 10);
+      }
+      run() {
+        this.clear();
+        this.t0 = Date.now();
+        this.timers.push(setTimeout(() => this.ev.onStateChange({ data: 1 }), 30), setTimeout(() => this.ev.onStateChange({ data: 0 }), 1500));
+      }
+      clear() { this.timers.forEach(clearTimeout); this.timers = []; }
+      loadVideoById(o) { window.__YT_LOADS.push(o.videoId); this.run(); }
+      cueVideoById(o) { this.cued = o.videoId; }
+      playVideo() { if (this.cued) window.__YT_LOADS.push(this.cued), (this.cued = null); this.run(); }
+      pauseVideo() { this.clear(); this.ev.onStateChange({ data: 2 }); }
+      stopVideo() { this.clear(); }
+      seekTo() {}
+      setVolume() {}
+      getCurrentTime() { return this.t0 ? (Date.now() - this.t0) / 1000 : 0; }
+      getDuration() { return 1.5; }
+      destroy() { this.clear(); }
+    },
+  };
+  const rate = 8000, n = Math.round(rate * 1.5), buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const w = (o, str) => [...str].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + n, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true);
+  v.setUint16(34, 8, true); w(36, "data"); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + Math.round(20 * Math.sin(i / 8)));
+  const wav = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  const d = window.__MOCK__;
+  const f = window.__FIX__;
+  d.resolve_stream = (a) => (a.track.id.startsWith("yt:") ? { kind: "youtube", videoId: a.track.streamKey } : { kind: "url", url: wav, quality: "test", offline: false });
+  d.settings_get = { crossfade: 0, volume: 0.5, gapless: false };
+  const list = [f.tracks[0], f.ytTracks[0], f.tracks[1], f.ytTracks[1]].map((t) => ({ ...t, durationMs: 1500 }));
+  d.queue_load = { tracks: list.map((t) => ({ t, m: false })), index: 0, context: null, position: 0, shuffle: false, repeat: "off" };
+};
+const nowPlaying = (p) => p.evaluate(() => document.querySelector(".pb-meta .name")?.textContent?.trim());
+
+await test("Mixed queue: a Plex song, then a YouTube song, then Plex again play one after another", async (p) => {
+  assert.equal(await nowPlaying(p), "Slow Lights");
+  await p.click('.playerbar button[aria-label="Play"]');
+  const seen = ["Slow Lights"];
+  const deadline = Date.now() + 20000;
+  while (seen.length < 4 && Date.now() < deadline) {
+    const n = await nowPlaying(p);
+    if (n && n !== seen.at(-1)) seen.push(n);
+    await p.waitForTimeout(100);
+  }
+  assert.deepEqual(seen, ["Slow Lights", "Ferry Lights", "Halfway Home", "Orbit"]);
+  assert.deepEqual(await p.evaluate(() => window.__YT_LOADS), ["vid0", "vid1"]);
+}, { init: mixedQueue });
+
+await test("Mixed queue with YouTube off: its songs are skipped, the Plex ones play", async (p) => {
+  assert.equal(await nowPlaying(p), "Slow Lights");
+  await p.click('.playerbar button[aria-label="Next"]');
+  await p.waitForFunction(() => document.querySelector(".pb-meta .name")?.textContent?.trim() !== "Slow Lights");
+  assert.equal(await nowPlaying(p), "Halfway Home");
+  assert.deepEqual(await p.evaluate(() => window.__YT_LOADS), []);
+  // Back skips it too.
+  await p.click('.playerbar button[aria-label="Previous"]');
+  await p.click('.playerbar button[aria-label="Previous"]');
+  await p.waitForFunction(() => document.querySelector(".pb-meta .name")?.textContent?.trim() === "Slow Lights");
+}, { scenario: "plex", init: mixedQueue });
 
 await browser.close();
 server.httpServer.close();

@@ -224,6 +224,9 @@
         : [{ title: "albums", items: albums.slice(0, 6).map((x) => ({ type: "album", ...x })) }, { title: "artists", items: artists.slice(0, 4).map((x) => ({ type: "artist", ...x })) }],
     saved_in: (a) => ({ appPlaylists: ["app:1"], remote: a && a.track && a.track.id.startsWith("yt:") ? [{ id: "yt:VLPLmine", title: "My YouTube mix", contains: false }] : [] }),
     yt_accounts: [{ name: "maya", selected: true, pageId: null }],
+    // A Plex sign-in waits for the PIN (never approved here).
+    plex_pin_start: { id: 1, code: "ABCD", authUrl: "https://app.plex.tv/auth#?code=ABCD" },
+    plex_pin_poll: false,
     plex_home_users: [],
     localized_artist_names: {},
     // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.
