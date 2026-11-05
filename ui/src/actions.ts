@@ -6,14 +6,80 @@ import { api, errorMessage, inTauri } from "./api";
 import { translate, type Key } from "./i18n";
 import * as P from "./player/engine";
 import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
+import { loadProfile, openExternal, useProfile } from "./store/profile";
+import { capsOf, isOn, sourceOf } from "./store/providers";
 import { useSettings } from "./store/settings";
 import { confirmDialog, formDialog, navigate, promptDialog, toast, useUi, type MenuHead, type MenuItem } from "./store/ui";
-import type { Album, Artist, Playlist, Podcast, Track, YtPrivacy } from "./types";
+import type { Album, Artist, Playlist, Podcast, Provider, Track, YtPrivacy } from "./types";
+import { PROVIDERS } from "./types";
+import { serviceLabel } from "./util";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 import * as I from "./components/Icons";
 import { displayTrack } from "./store/songmeta";
 
 const t = (k: Key, v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
+
+// ---- services ------------------------------------------------------------------------------------
+// Every "can I do this here?" question is asked per item: its id says which service it belongs to.
+
+/** The service an item belongs to (YouTube Music or Plex); null for local files and app playlists. */
+export function providerOfId(id: string | null | undefined): Provider | null {
+  const s = sourceOf(id);
+  return s === "youtube" || s === "plex" ? s : null;
+}
+
+/** Signed in to the service (for Plex: with a server chosen). Says nothing about its switch. */
+export function signedInTo(p: Provider): boolean {
+  const a = useApp.getState().auth?.[p];
+  return !!a?.signedIn && !a.needsServer;
+}
+
+/** The service can answer: on, and for Plex signed in with a server (YouTube also works without
+ * an account). */
+export const usableProvider = (p: Provider) => isOn(p) && (p === "youtube" || signedInTo("plex"));
+
+/** The services that can answer right now, YouTube first. */
+export const usableProviders = (): Provider[] => PROVIDERS.filter(usableProvider);
+
+/** Shown in the app: local files and app playlists always, a service's items while it is on. */
+export function visibleId(id: string | null | undefined): boolean {
+  const p = providerOfId(id);
+  return !p || isOn(p);
+}
+
+/** The service keeps likes for this account: on, signed in, with favorites. */
+export const likesOn = (p: Provider) => isOn(p) && signedInTo(p) && !!capsOf(p).favorites;
+
+/** Liked Songs exists: some service that is on keeps likes (YouTube's liked songs, Plex ratings). */
+export const likedSongsAvailable = () => PROVIDERS.some(likesOn);
+
+/** Plex downloads can be started (Plex on with a server; the files play from disk afterwards). */
+export const plexDownloads = () => usableProvider("plex") && !!capsOf("plex").downloads;
+
+/** Account settings on the service's own site. */
+export function accountUrlOf(p: Provider): string {
+  return p === "plex" ? "https://app.plex.tv/desktop/#!/settings/account" : "https://myaccount.google.com/";
+}
+
+export const openAccount = (p: Provider) => openExternal(accountUrlOf(p));
+
+/** Sign out of one service, after asking (naming it). Plex switches itself off; YouTube stays on
+ * without an account. The other service and the app's own data are untouched. */
+export async function signOutOf(p: Provider) {
+  const service = serviceLabel(p);
+  if (!(await confirmDialog({ title: t("signOutOfService", { service }), body: t("signOutOfServiceBody", { service }), confirm: t("signOut") }))) return;
+  try {
+    await api.signOut(p);
+  } catch (e) {
+    return toast(errorMessage(e));
+  }
+  await api.kvSet(p === "plex" ? "plex.profileChosen" : "yt.profileChosen", false).catch(() => {});
+  useProfile.setState({ info: null });
+  const auth = await api.authStatus().catch(() => null);
+  if (auth) useApp.setState({ auth });
+  loadProfile(true);
+  refreshLibrary(true);
+}
 
 export async function createPlaylist(tracks: Track[] = []): Promise<Playlist | null> {
   const name = await promptDialog({
@@ -72,9 +138,16 @@ export async function toggleLike(track: Track) {
 
 // ---- Liked Songs (one song or many, like Spotify) ------------------------------------------------
 
-const likeable = (tracks: Track[]) => tracks.filter((x) => x.source !== "local" && !x.episode);
-/** Whether any of these songs can go into Liked Songs on this provider. */
-export const canLike = (tracks: Track[]) => !!useApp.getState().info?.capabilities.favorites && likeable(tracks).length > 0;
+/** The song's own service keeps likes for this account (the heart on a row or the player). */
+export function canLikeTrack(x: Track): boolean {
+  const p = providerOfId(x.id) ?? (x.source === "local" ? null : x.source);
+  return !!p && likesOn(p);
+}
+
+/** Songs that can go into Liked Songs, in bulk (never local files or episodes). */
+const likeable = (tracks: Track[]) => tracks.filter((x) => !x.episode && canLikeTrack(x));
+/** Whether any of these songs can go into Liked Songs (each on its own service). */
+export const canLike = (tracks: Track[]) => likeable(tracks).length > 0;
 
 /** Add songs to (or remove them from) Liked Songs: a selection, an album or a whole playlist. */
 export async function likeTracks(tracks: Track[], on: boolean) {
@@ -115,14 +188,17 @@ function likeItems(tracks: Track[]): MenuItem[] {
 }
 
 /** "Add all to Liked Songs" for an album or playlist whose songs load on click. */
-function likeAllItem(tracks: () => Promise<Track[]>): MenuItem[] {
-  if (!useApp.getState().info?.capabilities.favorites) return [];
+function likeAllItem(tracks: () => Promise<Track[]>, id: string): MenuItem[] {
+  // App playlists can hold songs of either service; a service's own album or playlist needs it.
+  const p = providerOfId(id);
+  if (p ? !likesOn(p) : !likedSongsAvailable()) return [];
   return [{ label: t("saveAllToLiked"), icon: I.IHeart, onClick: async () => likeTracks(await tracks(), true) }];
 }
 
+/** Download songs for offline play: Plex songs only (YouTube Music has no downloads for other
+ * apps); the rest of a mixed list is left out. */
 export async function downloadTracks(tracks: Track[]) {
-  const caps = useApp.getState().info?.capabilities;
-  if (!caps?.downloads) return toast(t("downloadsUnsupported"));
+  if (!plexDownloads()) return toast(t("downloadsUnsupported"));
   const eligible = tracks.filter((x) => x.source === "plex");
   if (!eligible.length) return;
   if (eligible.length > 50 && !(await confirmDialog({ title: t("download"), body: t("downloadLargeWarn", { n: eligible.length }), confirm: t("download") })))
@@ -216,22 +292,21 @@ export const trackHead = (track: Track): MenuHead => {
 export function trackMenu(track: Track, o: TrackMenuOpts = {}): MenuItem[] {
   const sel = o.selection && o.selection.length > 1 ? o.selection : [track];
   const multi = sel.length > 1;
-  const caps = useApp.getState().info?.capabilities;
   const items: MenuItem[] = [
     { label: t("addToPlaylist"), icon: I.IPlus, submenu: playlistSubmenu(sel) },
   ];
   if (o.onRemoveFromPlaylist) items.push({ label: o.removeLabel ?? t("removeFromPlaylist"), icon: I.ITrash, onClick: o.onRemoveFromPlaylist });
   if (o.queueUid) items.push({ label: multi ? t("removeSelected", { n: sel.length }) : t("removeFromQueue"), icon: I.IMinusCircle, onClick: () => P.removeFromQueue([o.queueUid!]) });
-  if (caps?.favorites) items.push(...likeItems(sel));
+  items.push(...likeItems(sel));
   items.push({ label: t("addToQueue"), icon: I.IQueueAdd, onClick: () => (P.addToQueue(sel), toast(t("addedToQueue"))) });
   items.push({ label: t("playNext"), icon: I.IPlayNext, onClick: () => P.addNext(sel) });
   items.push({ label: t("sleepTimer"), icon: I.IMoon, submenu: sleepSubmenu() });
   items.push({ label: "", separator: true });
-  if (!multi && track.source === "youtube") items.push({ label: t("goToRadio"), icon: I.IRadio, onClick: () => startRadio(track) });
+  if (!multi && track.source === "youtube" && isOn("youtube")) items.push({ label: t("goToRadio"), icon: I.IRadio, onClick: () => startRadio(track) });
   if (!multi && track.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: track.artistId! }) });
   if (!multi && track.albumId) items.push({ label: t("goToAlbum"), icon: I.IDisc, onClick: () => navigate({ name: "album", id: track.albumId! }) });
   if (!multi) items.push({ label: t("viewCredits"), icon: I.IInfo, onClick: () => useUi.setState({ info: track }) });
-  if (caps?.downloads && sel.some((x) => x.source === "plex")) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(sel) });
+  if (plexDownloads() && sel.some((x) => x.source === "plex")) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(sel) });
   if (!multi) items.push({ label: t("share"), icon: I.IShare, submenu: shareSubmenu(track) });
   return items;
 }
@@ -278,8 +353,7 @@ function moveToFolderSubmenu(pl: Playlist): MenuItem[] {
 
 /** Whether the app can give this playlist its own cover: app playlists, and YouTube playlists
  * (an in-app cover only; YouTube keeps its thumbnail). */
-export const canChangeCover = (pl: Playlist) =>
-  pl.local || (useApp.getState().info?.flavor === "youtube" && pl.id.startsWith("yt:") && !pl.id.startsWith("yt:MPSP"));
+export const canChangeCover = (pl: Playlist) => pl.local || (pl.id.startsWith("yt:") && !pl.id.startsWith("yt:MPSP") && isOn("youtube"));
 
 /** Pick an image (file picker; works on desktop and Android), crop it square, shrink it and
  * store it as the playlist's cover. */
@@ -318,12 +392,14 @@ async function setCover(pl: Playlist, image: number[] | null) {
 }
 
 export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCoverChanged?: () => void): MenuItem[] {
-  const flavor = useApp.getState().info?.flavor;
+  // Decided per playlist: YouTube actions on yt: playlists, downloads where Plex songs can be.
+  const source = sourceOf(pl.id);
+  const yt = source === "youtube";
   const items: MenuItem[] = [];
   if (tracks) {
     items.push({ label: t("addToQueue"), icon: I.IQueueAdd, onClick: async () => P.addToQueue(await tracks()) });
-    items.push(...likeAllItem(tracks));
-    if (useApp.getState().info?.capabilities.downloads)
+    items.push(...likeAllItem(tracks, pl.id));
+    if (plexDownloads() && (pl.local || source === "plex"))
       items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
   }
   items.push({ label: t("moveToFolder"), icon: I.IFolder, submenu: moveToFolderSubmenu(pl) });
@@ -344,13 +420,13 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCo
       ],
     });
   }
-  if (pl.local && flavor === "youtube" && useApp.getState().auth?.signedIn)
-    items.push({ label: t("copyToYt"), icon: I.ICloudUp, onClick: () => copyToYouTube(pl) });
-  const ytId = !pl.local && flavor === "youtube" ? ytPlaylistId(pl.id) : null;
-  if (pl.local || flavor === "youtube") items.push({ label: "", separator: true });
+  const ytAccount = isOn("youtube") && signedInTo("youtube");
+  if (pl.local && ytAccount) items.push({ label: t("copyToYt"), icon: I.ICloudUp, onClick: () => copyToYouTube(pl) });
+  const ytId = !pl.local && yt ? ytPlaylistId(pl.id) : null;
+  if (pl.local || yt) items.push({ label: "", separator: true });
   if (pl.local) items.push({ label: t("delete"), icon: I.ITrash, danger: true, onClick: () => deletePlaylist(pl) });
-  else if (flavor === "youtube") {
-    if (ytId && useApp.getState().auth?.signedIn) items.push({ label: t("deleteFromYt"), icon: I.ITrash, danger: true, onClick: () => deleteFromYouTube(pl) });
+  else if (yt) {
+    if (ytId && ytAccount) items.push({ label: t("deleteFromYt"), icon: I.ITrash, danger: true, onClick: () => deleteFromYouTube(pl) });
     items.push({ label: t("hidePlaylist"), icon: I.IEyeOff, danger: true, onClick: () => hidePlaylist(pl) });
   }
   return items;
@@ -385,7 +461,7 @@ async function exportPlaylist(pl: Playlist, tracks: Track[], kind: "txt" | "csv"
 let copying = false;
 
 /**
- * YTSpot: copy an app playlist to the user's YouTube account as a new playlist. Songs from
+ * Copy an app playlist to the user's YouTube account as a new playlist. Songs from
  * elsewhere are matched on YouTube Music by the app; the ones it can't find are listed after.
  */
 export async function copyToYouTube(pl: Playlist) {
@@ -465,12 +541,29 @@ export function podcastMenu(p: Podcast): MenuItem[] {
 export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuItem[] {
   const items: MenuItem[] = [
     { label: isSaved(album.id) ? t("removeFromLibrary") : t("saveToLibrary"), icon: isSaved(album.id) ? I.IChecked : I.IAddCircle, onClick: () => toggleSaved({ kind: "album", v: album }) },
-    ...likeAllItem(tracks),
+    ...likeAllItem(tracks, album.id),
     { label: t("addToQueue"), icon: I.IQueueAdd, onClick: async () => P.addToQueue(await tracks()) },
     { label: t("addToPlaylist"), icon: I.IPlus, onClick: async () => createPlaylist(await tracks()) },
   ];
   if (album.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: album.artistId! }) });
-  if (useApp.getState().info?.capabilities.downloads) items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
+  if (sourceOf(album.id) === "plex" && plexDownloads()) items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
+  return items;
+}
+
+/** The ••• menu of Liked Songs (songs of every service, not a playlist of its own). */
+export function likedMenu(tracks: Track[]): MenuItem[] {
+  const pl: Playlist = { id: "liked", title: t("likedSongs"), local: false };
+  const items: MenuItem[] = [{ label: t("addToQueue"), icon: I.IQueueAdd, onClick: () => P.addToQueue(tracks) }];
+  if (plexDownloads() && tracks.some((x) => x.source === "plex")) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(tracks) });
+  items.push({
+    label: t("exportPlaylist"),
+    icon: I.IShare,
+    submenu: [
+      { label: t("exportTxt"), icon: I.IFile, onClick: () => exportPlaylist(pl, tracks, "txt") },
+      { label: t("exportCsv"), icon: I.IFile, onClick: () => exportPlaylist(pl, tracks, "csv") },
+      { label: t("copyAsText"), icon: I.ICopy, onClick: () => copy(playlistText(tracks)) },
+    ],
+  });
   return items;
 }
 
@@ -502,7 +595,8 @@ export function ytPlaylistId(id: string): string | null {
   return m ? m[1] : null;
 }
 
-/** YTSpot: delete one of your own playlists from your YouTube account, after asking. */
+/** Delete one of your own playlists from your YouTube account, after asking (yt: playlists only;
+ * the core checks that the page lets you edit it). */
 export async function deleteFromYouTube(pl: Playlist) {
   if (!(await confirmDialog({ title: t("deleteFromYtTitle"), body: t("deleteFromYtBody", { name: pl.title }), confirm: t("delete"), danger: true }))) return;
   try {
@@ -516,7 +610,7 @@ export async function deleteFromYouTube(pl: Playlist) {
   }
 }
 
-/** YTSpot: hide a remote playlist inside the app forever. Never touches the YouTube account. */
+/** Hide a YouTube playlist inside the app forever. Never touches the YouTube account. */
 export async function hidePlaylist(pl: Playlist) {
   if (!(await confirmDialog({ title: t("hideWarnTitle"), body: t("hideWarnBody", { name: pl.title }), confirm: t("hide"), danger: true }))) return;
   try {

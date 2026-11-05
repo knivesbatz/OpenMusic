@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createPlaylist, folderMenu, newFolder, playlistMenu } from "../actions";
+import { createPlaylist, folderMenu, likedSongsAvailable, newFolder, playlistMenu, visibleId } from "../actions";
 import { api } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
@@ -8,15 +8,14 @@ import { arrange, folderKey, markSeen, moveEntry, putInFolder, setSort, setView,
 import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi, type Route } from "../store/ui";
 import type { Playlist } from "../types";
-import { cls, isTouch } from "../util";
-import { Art } from "./common";
+import { cls, isTouch, isYtLiked } from "../util";
+import { Art, useCaps, useHasDownloads, useProvidersKey } from "./common";
 import * as I from "./Icons";
+import { SourceBadge } from "./SourceBadge";
+import { useOn } from "../store/providers";
 
 type Entry = { k: "playlist"; v: Playlist; depth?: number; folderId?: string } | { k: "folder"; v: Folder };
 type Category = { key: string; label: string; route: Route; icon: React.ReactNode };
-
-/** A provider's own "liked songs" playlist (YouTube Music's LM), shown as the Liked Songs category. */
-const isLikedPlaylist = (p: Playlist) => /^yt:(VL)?LM$/.test(p.id);
 
 export function Sidebar() {
   const t = useT();
@@ -24,18 +23,24 @@ export function Sidebar() {
   const setSettings = useSettings((s) => s.set);
   const lib = useApp((s) => s.library);
   const appPls = useApp((s) => s.playlists);
-  const caps = useApp((s) => s.info?.capabilities);
+  const caps = useCaps();
+  const services = useProvidersKey();
+  const hasDownloads = useHasDownloads();
+  const plexIsOn = useOn("plex");
   const cur = useUi((s) => s.stack[s.pos]);
   const org = useFolders();
   const [drag, setDrag] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ key: string; mode: "before" | "after" | "into" } | null>(null);
 
-  const allPlaylists = useMemo(() => {
+  // App playlists and the library's, without YouTube's Liked Music (that's Liked Songs) and
+  // without those of a service that is off.
+  const playlists = useMemo(() => {
     const seen = new Set<string>();
-    return [...appPls, ...(lib?.playlists ?? [])].filter((p) => !seen.has(p.id) && (seen.add(p.id), true));
-  }, [appPls, lib]);
-  const liked = allPlaylists.find(isLikedPlaylist);
-  const playlists = useMemo(() => allPlaylists.filter((p) => !isLikedPlaylist(p)), [allPlaylists]);
+    return [...appPls, ...(lib?.playlists ?? [])].filter((p) => !isYtLiked(p.id) && visibleId(p.id) && !seen.has(p.id) && (seen.add(p.id), true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appPls, lib, services]);
+  // Liked Songs: YouTube's liked songs and Plex's rated tracks, on one page.
+  const liked = likedSongsAvailable();
   /** Top-level keys (playlists and folders) in display order. */
   const topKeys = useMemo(() => arrange(org, playlists), [org, playlists]);
   useEffect(() => markSeen(playlists.map((p) => p.id)), [playlists, org.loaded]);
@@ -65,17 +70,17 @@ export function Sidebar() {
     { key: "new", label: t("whatsNew"), route: { name: "new" }, icon: <I.IBell size={20} /> },
     { key: "recent", label: t("recentlyPlayed"), route: { name: "library", tab: "recent" }, icon: <I.IClock size={20} /> },
     { key: "history", label: t("listeningHistory"), route: { name: "history" }, icon: <I.IHistory size={20} /> },
-    ...(liked ? [{ key: "liked", label: t("likedSongs"), route: { name: "playlist", id: liked.id } as Route, icon: <I.IHeart size={20} /> }] : []),
+    ...(liked ? [{ key: "liked", label: t("likedSongs"), route: { name: "liked" } as Route, icon: <I.IHeart size={20} /> }] : []),
     { key: "albums", label: t("albums"), route: { name: "library", tab: "albums" }, icon: <I.IMusic size={20} /> },
     { key: "artists", label: t("artists"), route: { name: "library", tab: "artists" }, icon: <I.IMic size={20} /> },
-    ...(caps?.podcasts
+    ...(caps.podcasts
       ? [
           { key: "podcasts", label: t("podcasts"), route: { name: "library", tab: "podcasts" } as Route, icon: <I.IBookmark size={20} /> },
           { key: "episodes", label: t("yourEpisodes"), route: { name: "episodes" } as Route, icon: <I.IPlay size={20} /> },
         ]
       : []),
     { key: "local", label: t("localFiles"), route: { name: "local" }, icon: <I.IFolder size={20} /> },
-    ...(caps?.downloads ? [{ key: "downloads", label: t("downloads"), route: { name: "downloads" } as Route, icon: <I.IDownload size={20} /> }] : []),
+    ...(plexIsOn || hasDownloads ? [{ key: "downloads", label: t("downloads"), route: { name: "downloads" } as Route, icon: <I.IDownload size={20} /> }] : []),
   ];
 
   const canDrag = org.sort === "custom";
@@ -248,6 +253,7 @@ export function Sidebar() {
                 collapsed={collapsed}
                 title={e.v.title}
                 sub={sub(e.v, t)}
+                badgeId={e.v.id}
                 view={view}
                 icon={<Art src={e.v.artwork} size={gridView ? 240 : 96} className="sm" />}
                 onClick={() => navigate({ name: "playlist", id: e.v.id })}
@@ -277,6 +283,8 @@ function SideItem(p: {
   collapsed: boolean;
   title: string;
   sub: string;
+  /** The item's id, for its source badge (both services on). */
+  badgeId?: string;
   icon: React.ReactNode;
   onClick: () => void;
   onContext?: (e: React.MouseEvent) => void;
@@ -312,7 +320,10 @@ function SideItem(p: {
         <div className={cls("side-text", p.view === "compact" && "inline")}>
           <span className="name">{p.title}</span>
           {/* Compact (Spotify): "Road trip • Playlist" on one line. */}
-          <span className="sub">{p.view === "compact" ? `• ${p.sub.split(" • ")[0]}` : p.sub}</span>
+          <span className="sub">
+            <SourceBadge id={p.badgeId} />
+            {p.view === "compact" ? `• ${p.sub.split(" • ")[0]}` : p.sub}
+          </span>
         </div>
       )}
     </div>

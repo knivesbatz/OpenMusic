@@ -1,21 +1,41 @@
 // Home, Search and the Library grid.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, playlistMenu, podcastMenu, trackMenu } from "../actions";
-import { api, artUrl, errorMessage, inTauri } from "../api";
-import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, itemSubtitle, openItem, useAsync, usePageTitle, usePhoneLayout } from "../components/common";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { albumMenu, artistMenu, likedSongsAvailable, playlistMenu, podcastMenu, providerOfId, trackMenu, usableProvider, visibleId } from "../actions";
+import { api, artUrl, errorCode, errorMessage, inTauri } from "../api";
+import {
+  Art,
+  Card,
+  ErrorBox,
+  Loading,
+  PlayFab,
+  ProviderNotes,
+  Shelf,
+  itemSubtitle,
+  openItem,
+  useAsync,
+  useCaps,
+  useHasDownloads,
+  usePageTitle,
+  usePhoneLayout,
+  useProvidersKey,
+} from "../components/common";
+import { SourceBadge } from "../components/SourceBadge";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { shelfTitle, translate, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
+import { capsOf, useBothOn, useOn } from "../store/providers";
 import { useMe } from "../store/profile";
 import { sortAlbums, sortArtists } from "../store/librarySort";
 import { setSort, setView, useFolders } from "../store/folders";
 import { useSettings } from "../store/settings";
 import { confirmDialog, navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
 import { useDisplayTrack } from "../store/songmeta";
-import type { BrowseCategory, HistoryEntry, HomeData, MediaItem, PlayContext, Playlist, SearchResults, Track } from "../types";
-import { cls } from "../util";
+import type { BrowseCategory, HistoryEntry, HomeData, Library, MediaItem, PlayContext, Playlist, Provider, ProviderError, SearchResults, Track } from "../types";
+import { PROVIDERS } from "../types";
+import { emptyResults, isEmptyResults, mergeSearch, partErrors, type SearchParts } from "../searchMerge";
+import { cls, isYtLiked, serviceLabel } from "../util";
 
 /** Play any card: tracks play directly, collections are fetched first. */
 export async function playItem(item: MediaItem) {
@@ -24,6 +44,10 @@ export async function playItem(item: MediaItem) {
     if (item.type === "album") {
       const a = await api.album(item.id);
       return P.playTracks(a.tracks, 0, { kind: "album", id: item.id, title: a.album.title, artwork: a.album.artwork });
+    }
+    if (item.type === "playlist" && item.id === "liked") {
+      const l = await api.likedTracks(false);
+      return P.playTracks(l.tracks, 0, { kind: "playlist", id: "liked", title: item.title });
     }
     if (item.type === "playlist" || item.type === "podcast") {
       const p = await api.playlist(item.id);
@@ -49,10 +73,21 @@ export function cardMenu(e: React.MouseEvent, item: MediaItem) {
 
 const homeCache: { data: HomeData | null } = { data: null };
 
+// What the UI keeps from the services that were on is forgotten when the switches or sign-ins
+// change: Home, search results and Browse all are fetched again for the new set of services.
+useApp.subscribe((s, prev) => {
+  if (s.services === prev.services && s.auth === prev.auth) return;
+  homeCache.data = null;
+  searchCache.clear();
+  categoryCache.list = null;
+  tileArt.clear();
+});
+
 export function Home() {
   const t = useT();
   const lang = useSettings((s) => s.language);
-  const info = useApp((s) => s.info);
+  const caps = useCaps();
+  const services = useProvidersKey();
   const lib = useApp((s) => s.library);
   const appPls = useApp((s) => s.playlists);
   const [data, setData] = useState<HomeData | null>(homeCache.data);
@@ -62,19 +97,24 @@ export function Home() {
   const phone = usePhoneLayout();
   const htpc = useSettings((s) => s.htpc);
 
+  // Shelves of every service that is on (the core merges them: Plex first, then YouTube). A
+  // service that failed is named in `errors` and gets a small note; the rest still shows.
   const load = (refresh: boolean) => {
     if (!inTauri) return setData({ shelves: [], recent: [], contexts: [], topTracks: [], stale: false });
     setError(null);
     api.home(refresh).then(
       (d) => {
-        homeCache.data = d;
+        // A partial answer isn't kept for later visits: the failed part is asked again.
+        homeCache.data = partErrors(d).length ? null : d;
         setData(d);
-        if (d.error) setError(d.error.message);
       },
       (e) => setError(errorMessage(e)),
     );
   };
-  useEffect(() => load(false), []);
+  // Again when a service is switched on or off, or signs in or out.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => load(false), [services]);
+  const errors = partErrors(data);
 
   const h = new Date().getHours();
   const greeting = h < 12 ? t("goodMorning") : h < 18 ? t("goodAfternoon") : t("goodEvening");
@@ -84,18 +124,23 @@ export function Home() {
     const out: { id: string; title: string; artwork?: string | null; ctx: PlayContext }[] = [];
     const seen = new Set<string>();
     for (const c of data?.contexts ?? []) {
-      if (seen.has(c.id)) continue;
+      if (seen.has(c.id) || !visibleId(c.id)) continue;
       seen.add(c.id);
       out.push({ id: c.id, title: c.title, artwork: c.artwork, ctx: c });
     }
     for (const p of [...appPls, ...(lib?.playlists ?? [])]) {
       if (out.length >= 8) break;
-      if (seen.has(p.id)) continue;
+      if (seen.has(p.id) || !visibleId(p.id)) continue;
       seen.add(p.id);
       out.push({ id: p.id, title: p.title, artwork: p.artwork, ctx: { kind: "playlist", id: p.id, title: p.title, artwork: p.artwork } });
     }
     return out.slice(0, 8);
-  }, [data, appPls, lib]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, appPls, lib, services]);
+  // Songs of a service that is off are left out (they can't play).
+  const recent = (data?.recent ?? []).filter((x) => visibleId(x.id));
+  const topTracks = (data?.topTracks ?? []).filter((x) => visibleId(x.id));
+  const topArtists = (lib?.artists ?? []).filter((a) => visibleId(a.id));
 
   if (!data && !error) return <Loading />;
 
@@ -106,7 +151,7 @@ export function Home() {
   });
 
   const openCtx = (c: PlayContext) =>
-    navigate(c.kind === "album" ? { name: "album", id: c.id } : c.kind === "artist" ? { name: "artist", id: c.id } : { name: "playlist", id: c.id });
+    navigate(c.kind === "album" ? { name: "album", id: c.id } : c.kind === "artist" ? { name: "artist", id: c.id } : c.id === "liked" ? { name: "liked" } : { name: "playlist", id: c.id });
   const playCtx = (c: PlayContext) =>
     playItem(c.kind === "album" ? ({ type: "album", id: c.id, title: c.title, artist: "" } as MediaItem) : c.kind === "artist" ? ({ type: "artist", id: c.id, name: c.title } as MediaItem) : ({ type: "playlist", id: c.id, title: c.title, local: c.id.startsWith("app:") } as MediaItem));
 
@@ -126,7 +171,7 @@ export function Home() {
         />
       )}
       {/* Phones show these chips in the top bar, next to your picture. */}
-      {info?.capabilities.podcasts && !phone && (
+      {caps.podcasts && !phone && (
         <div className="chips">
           {(["all", "music", "podcasts"] as const).map((f) => (
             <button key={f} className={cls("chip", filter === f && "on")} aria-pressed={filter === f} onClick={() => setFilter(f)}>
@@ -136,7 +181,8 @@ export function Home() {
         </div>
       )}
       {!phone && <h1 className="greeting">{greeting}</h1>}
-      {data?.stale && <p className="muted small">{t("offline")}</p>}
+      {data?.stale && !errors.length && <p className="muted small">{t("offline")}</p>}
+      <ProviderNotes errors={errors} />
       {error && <ErrorBox message={error} onRetry={() => load(true)} />}
       {filter !== "podcasts" && shortcuts.length > 0 && (
         <div className="shortcuts">
@@ -149,17 +195,17 @@ export function Home() {
           ))}
         </div>
       )}
-      {filter !== "podcasts" && (data?.recent.length ?? 0) > 0 && (
+      {filter !== "podcasts" && recent.length > 0 && (
         <Shelf title={t("recentlyPlayed")}>
-          {dedupeAlbums(data!.recent).map((tr) => (
+          {dedupeAlbums(recent).map((tr) => (
             <Card key={tr.id} item={{ type: "track", ...tr }} onPlay={() => P.playTracks([tr], 0, null)} onContext={(e) => cardMenu(e, { type: "track", ...tr })} />
           ))}
         </Shelf>
       )}
-      {filter !== "podcasts" && (data?.topTracks.length ?? 0) > 0 && (
+      {filter !== "podcasts" && topTracks.length > 0 && (
         <Shelf title={t("yourTopTracks")}>
-          {data!.topTracks.map((tr, i) => (
-            <Card key={tr.id} item={{ type: "track", ...tr }} onPlay={() => P.playTracks(data!.topTracks, i, { kind: "top", id: "top", title: t("yourTopTracks") })} onContext={(e) => cardMenu(e, { type: "track", ...tr })} />
+          {topTracks.map((tr, i) => (
+            <Card key={tr.id} item={{ type: "track", ...tr }} onPlay={() => P.playTracks(topTracks, i, { kind: "top", id: "top", title: t("yourTopTracks") })} onContext={(e) => cardMenu(e, { type: "track", ...tr })} />
           ))}
         </Shelf>
       )}
@@ -170,14 +216,14 @@ export function Home() {
           ))}
         </Shelf>
       ))}
-      {filter !== "podcasts" && lib && lib.artists.length > 0 && (
+      {filter !== "podcasts" && topArtists.length > 0 && (
         <Shelf title={t("yourTopArtists")} onShowAll={() => navigate({ name: "library", tab: "artists" })}>
-          {lib.artists.slice(0, 12).map((a) => (
+          {topArtists.slice(0, 12).map((a) => (
             <Card key={a.id} item={{ type: "artist", ...a }} onPlay={() => playItem({ type: "artist", ...a })} onContext={(e) => cardMenu(e, { type: "artist", ...a })} />
           ))}
         </Shelf>
       )}
-      {!error && !shortcuts.length && !shelves.length && !data?.recent.length && <p className="muted center">{t("homeEmpty")}</p>}
+      {!error && !errors.length && !shortcuts.length && !shelves.length && !recent.length && <p className="muted center">{t("homeEmpty")}</p>}
     </div>
   );
 }
@@ -243,74 +289,124 @@ function dedupeAlbums(tracks: Track[]): Track[] {
 
 // ---- search ----------------------------------------------------------------------------------
 
-const searchCache = new Map<string, SearchResults>();
+/** Finished searches (every part answered, none failed), by kind, services and query. */
+const searchCache = new Map<string, SearchParts>();
 type SFilter = "all" | "songs" | "artists" | "albums" | "playlists" | "podcasts" | "episodes";
+type SearchSource = Provider | "local";
+
+/** Who to ask: each service that can answer (for podcasts and episodes only those that have
+ * them), then local files with app playlists. */
+function searchSources(kind: SFilter | null): SearchSource[] {
+  const pod = kind === "podcasts" || kind === "episodes";
+  const out: SearchSource[] = PROVIDERS.filter((p) => usableProvider(p) && (!pod || capsOf(p).podcasts));
+  if (!pod) out.push("local");
+  return out;
+}
+
+interface SearchState {
+  key: string;
+  parts: SearchParts;
+  /** Sources whose request failed. */
+  failed: { source: SearchSource; code: string; message: string }[];
+  /** Sources still on their way. */
+  pending: number;
+  /** The services asked. */
+  providers: Provider[];
+}
+
+/** Failures of the services (not local files), for the notes. */
+const providerErrors = (s: SearchState): ProviderError[] =>
+  s.failed.flatMap((f) => (f.source === "local" ? [] : [{ provider: f.source, code: f.code, message: f.message }]));
+
+/**
+ * One search, asked of every source at once after typing pauses. Each answer shows as it arrives,
+ * so YouTube's results never wait for a slow Plex server. `kind` asks for the full list of one
+ * type (a filter chip).
+ */
+function useSearch(query: string, kind: SFilter | null, enabled: boolean): SearchState | null {
+  const services = useProvidersKey();
+  const key = `${kind ?? "all"}\u0000${services}\u0000${query.toLowerCase()}`;
+  const [state, setState] = useState<SearchState | null>(null);
+  useEffect(() => {
+    if (!enabled || !query) return;
+    const sources = searchSources(kind);
+    const providers = sources.filter((s): s is Provider => s !== "local");
+    const cached = searchCache.get(key);
+    if (cached || !sources.length) return setState({ key, parts: cached ?? {}, failed: [], pending: 0, providers });
+    let live = true;
+    setState({ key, parts: {}, failed: [], pending: sources.length, providers });
+    // Debounced; answers for an older query are dropped.
+    const timer = setTimeout(() => {
+      if (!inTauri) return setState({ key, parts: {}, failed: [], pending: 0, providers });
+      const parts: SearchParts = {};
+      const failed: SearchState["failed"] = [];
+      let left = sources.length;
+      for (const src of sources) {
+        const provider = src === "local" ? null : src;
+        (kind ? api.searchKind(query, kind, provider) : api.search(query, provider))
+          .then(
+            (r) => void (parts[src] = r),
+            (e) => void failed.push({ source: src, code: errorCode(e) ?? "network", message: errorMessage(e) }),
+          )
+          .finally(() => {
+            left--;
+            if (!live) return;
+            // Only complete answers are kept: a part that failed is asked again next time.
+            if (!left && !failed.length && !Object.values(parts).some((r) => partErrors(r).length)) {
+              searchCache.set(key, { ...parts });
+              if (searchCache.size > 60) searchCache.delete(searchCache.keys().next().value!);
+            }
+            setState({ key, parts: { ...parts }, failed: [...failed], pending: left, providers });
+          });
+      }
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, enabled]);
+  return enabled && state?.key === key ? state : null;
+}
+
+/** Merge what has arrived; null before the first answer. Also says whether every service asked
+ * failed with nothing else to show (then an error box, as with one service before). */
+function useMerged(query: string, s: SearchState | null): { res: SearchResults | null; errors: ProviderError[]; failure: string | null } {
+  return useMemo(() => {
+    if (!s) return { res: null, errors: [], failure: null };
+    const errors = providerErrors(s);
+    const arrived = Object.keys(s.parts).length > 0;
+    const res = arrived ? mergeSearch(query, s.parts, errors) : null;
+    const allFailed = s.providers.length > 0 && s.providers.every((p) => s.failed.some((f) => f.source === p));
+    const nothing = !res || isEmptyResults(res);
+    const failure = s.pending === 0 && (allFailed || (!arrived && s.failed.length > 0)) && nothing ? s.failed[0]?.message ?? null : null;
+    return { res, errors: [...errors, ...Object.values(s.parts).flatMap((r) => partErrors(r))], failure };
+  }, [s, query]);
+}
 
 export function Search({ q }: { q: string }) {
   const t = useT();
-  const caps = useApp((s) => s.info?.capabilities);
-  const [res, setRes] = useState<SearchResults | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const caps = useCaps();
   const [filter, setFilter] = useState<SFilter>("all");
-  const tok = useRef(0);
   const query = q.trim();
-
-  useEffect(() => {
-    setError(null);
-    if (!query) return setRes(null);
-    const cached = searchCache.get(query.toLowerCase());
-    if (cached) {
-      setRes(cached);
-      setLoading(false);
-      return;
-    }
-    const my = ++tok.current;
-    setLoading(true);
-    // Debounced: one request after typing pauses, stale responses are dropped.
-    const timer = setTimeout(() => {
-      if (!inTauri) return setLoading(false);
-      api.search(query).then(
-        (r) => {
-          searchCache.set(query.toLowerCase(), r);
-          if (searchCache.size > 60) searchCache.delete(searchCache.keys().next().value!);
-          if (my === tok.current) (setRes(r), setLoading(false));
-        },
-        (e) => my === tok.current && (setError(errorMessage(e)), setLoading(false)),
-      );
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query]);
-
-  // A filter chip loads the full list for that type (not just the overview's first few).
-  const [kindRes, setKindRes] = useState<{ key: string; res: SearchResults } | null>(null);
-  const [kindLoading, setKindLoading] = useState(false);
-  const kindTok = useRef(0);
-  useEffect(() => {
-    if (!query || filter === "all" || !inTauri) return;
-    const key = filter + "\u0000" + query.toLowerCase();
-    const cached = searchCache.get(key);
-    if (cached) return setKindRes({ key, res: cached });
-    const my = ++kindTok.current;
-    setKindLoading(true);
-    const timer = setTimeout(() => {
-      api.searchKind(query, filter).then(
-        (r) => {
-          searchCache.set(key, r);
-          if (my === kindTok.current) (setKindRes({ key, res: r }), setKindLoading(false));
-        },
-        (e) => my === kindTok.current && (setError(errorMessage(e)), setKindLoading(false)),
-      );
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query, filter]);
+  const all = useSearch(query, null, !!query);
+  const kind = useSearch(query, filter === "all" ? null : filter, !!query && filter !== "all");
+  const overview = useMerged(query, all);
+  const full = useMerged(query, kind);
+  // While a new query is on its way, the last results stay on screen.
+  const last = useRef<SearchResults | null>(null);
+  if (overview.res) last.current = overview.res;
+  if (!query) last.current = null;
+  const loading = !all || all.pending > 0;
 
   if (!query) return <BrowseEmpty />;
-  const filters: SFilter[] = ["all", "songs", "artists", "albums", "playlists", ...(caps?.podcasts ? (["podcasts", "episodes"] as SFilter[]) : [])];
+  const filters: SFilter[] = ["all", "songs", "artists", "albums", "playlists", ...(caps.podcasts ? (["podcasts", "episodes"] as SFilter[]) : [])];
   const ctx: PlayContext = { kind: "search", id: query, title: query };
-  const r = res;
-  // Full list for the active filter once loaded; the overview's results meanwhile.
-  const fr = filter !== "all" && kindRes?.key === filter + "\u0000" + query.toLowerCase() ? kindRes.res : r;
+  const r = overview.res ?? (loading ? last.current : null) ?? (overview.failure ? null : loading ? null : emptyResults());
+  // Full list for the active filter as it arrives; the overview's results meanwhile.
+  const kindLoading = filter !== "all" && (!kind || kind.pending > 0);
+  const fr = filter !== "all" && full.res ? full.res : r;
+  const shown = filter === "all" || !kind || kind.pending > 0 ? overview : full;
   // Local files blend into the song list (they carry a "Local file" badge): up to 2 of the
   // overview's 4 spots, so they're visible without a separate section.
   const provider = r ? r.tracks.filter((x) => x.source !== "local") : [];
@@ -327,10 +423,8 @@ export function Search({ q }: { q: string }) {
         ))}
       </div>
       {loading && !r && <Loading />}
-      {error && <ErrorBox message={error} />}
-      {r && !loading && !r.tracks.length && !r.albums.length && !r.artists.length && !r.playlists.length && !r.podcasts.length && !r.episodes.length && (
-        <p className="center muted">{t("noResults", { q: query })}</p>
-      )}
+      {shown.failure ? <ErrorBox message={shown.failure} /> : <ProviderNotes errors={shown.errors} />}
+      {r && !loading && !overview.failure && isEmptyResults(r) && <p className="center muted">{t("noResults", { q: query })}</p>}
       {r && filter === "all" && (
         <>
           <div className="search-top">
@@ -342,6 +436,7 @@ export function Search({ q }: { q: string }) {
                   <div className="top-name">{r.top.type === "artist" ? r.top.name : r.top.title}</div>
                   <div className="muted">
                     <span className="badge-pill">{t(r.top.type === "track" ? "song" : r.top.type)}</span>
+                    <SourceBadge id={r.top.id} after />
                   </div>
                   <PlayFab big label={t("play")} onClick={(e) => (e.stopPropagation(), playItem(r.top!))} />
                 </div>
@@ -417,51 +512,65 @@ const tileArt = new Map<string, string | null>();
  * as colourful tiles with a cover, then shortcuts into your library. */
 function BrowseEmpty() {
   const t = useT();
-  const caps = useApp((s) => s.info?.capabilities);
-  const pls = useApp((s) => s.library?.playlists);
-  const signedIn = useApp((s) => !!s.auth?.signedIn);
+  const caps = useCaps();
+  const services = useProvidersKey();
+  const both = useBothOn();
+  const plexOn = useOn("plex");
+  const hasDownloads = useHasDownloads();
+  // Genres and moods come from the services that can answer (YouTube also without an account).
+  const usable = PROVIDERS.some(usableProvider);
   const [cats, setCats] = useState<BrowseCategory[] | null>(categoryCache.list);
   const [error, setError] = useState<string | null>(null);
   usePageTitle(t("browseAll"));
   useEffect(() => {
-    if (!inTauri || !signedIn || categoryCache.list) return;
+    if (!inTauri || !usable) return;
+    if (categoryCache.list) return setCats(categoryCache.list);
+    setCats(null);
+    setError(null);
     api.browseCategories(false).then(
       (l) => setCats((categoryCache.list = l)),
       (e) => setError(errorMessage(e)),
     );
-  }, [signedIn]);
-  const liked = pls?.find((p) => /^yt:(VL)?LM$/.test(p.id));
+  }, [usable, services]);
+  const liked = likedSongsAvailable();
   const tiles: { label: string; color: string; go: () => void; icon: React.ReactNode }[] = [
-    ...(liked ? [{ label: t("likedSongs"), color: "#5038a0", go: () => navigate({ name: "playlist", id: liked.id }), icon: <I.IHeartFill size={36} /> }] : []),
+    ...(liked ? [{ label: t("likedSongs"), color: "#5038a0", go: () => navigate({ name: "liked" }), icon: <I.IHeartFill size={36} /> }] : []),
     { label: t("whatsNew"), color: "#e13300", go: () => navigate({ name: "new" }), icon: <I.IBell size={36} /> },
     { label: t("recentlyPlayed"), color: "#1e3264", go: () => navigate({ name: "library", tab: "recent" }), icon: <I.IClock size={36} /> },
     { label: t("listeningHistory"), color: "#7358ff", go: () => navigate({ name: "history" }), icon: <I.IHistory size={36} /> },
     { label: t("playlists"), color: "#8d67ab", go: () => navigate({ name: "library", tab: "playlists" }), icon: <I.IQueue size={36} /> },
     { label: t("albums"), color: "#e8115b", go: () => navigate({ name: "library", tab: "albums" }), icon: <I.IMusic size={36} /> },
     { label: t("artists"), color: "#148a08", go: () => navigate({ name: "library", tab: "artists" }), icon: <I.IMic size={36} /> },
-    ...(caps?.podcasts
+    ...(caps.podcasts
       ? [
           { label: t("podcasts"), color: "#006450", go: () => navigate({ name: "library", tab: "podcasts" }), icon: <I.IBookmark size={36} /> },
           { label: t("yourEpisodes"), color: "#477d95", go: () => navigate({ name: "episodes" }), icon: <I.IPlay size={36} /> },
         ]
       : []),
     { label: t("localFiles"), color: "#ba5d07", go: () => navigate({ name: "local" }), icon: <I.IFolder size={36} /> },
-    ...(caps?.downloads ? [{ label: t("downloads"), color: "#27856a", go: () => navigate({ name: "downloads" }), icon: <I.IDownload size={36} /> }] : []),
+    ...(plexOn || hasDownloads ? [{ label: t("downloads"), color: "#27856a", go: () => navigate({ name: "downloads" }), icon: <I.IDownload size={36} /> }] : []),
   ];
+  // One group per service (YouTube Music's sections, moods and genres; Plex's genres), titled only
+  // while both are on.
+  const groups = PROVIDERS.map((p) => ({ p, list: (cats ?? []).filter((c) => providerOfId(c.id) === p) })).filter((g) => g.list.length > 0);
+  const retry = () => (setError(null), api.browseCategories(true).then((l) => setCats((categoryCache.list = l)), (e) => setError(errorMessage(e))));
   return (
     <div className="page browse-page">
       <h1>{t("browseAll")}</h1>
-      {signedIn &&
+      {usable &&
         (cats ? (
-          cats.length > 0 && (
-            <div className="browse-tiles">
-              {cats.map((c) => (
-                <CategoryTile key={c.id} cat={c} />
-              ))}
-            </div>
-          )
+          groups.map((g) => (
+            <Fragment key={g.p}>
+              {both && <h2 className="browse-group">{serviceLabel(g.p)}</h2>}
+              <div className="browse-tiles" data-provider={g.p}>
+                {g.list.map((c) => (
+                  <CategoryTile key={c.id} cat={c} />
+                ))}
+              </div>
+            </Fragment>
+          ))
         ) : error ? (
-          <ErrorBox message={error} onRetry={() => (setError(null), api.browseCategories(true).then((l) => setCats((categoryCache.list = l)), (e) => setError(errorMessage(e))))} />
+          <ErrorBox message={error} onRetry={retry} />
         ) : (
           <Loading />
         ))}
@@ -567,7 +676,8 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const err = useApp((s) => s.libraryError);
   const pls = useApp((s) => s.playlists);
   const saved = useApp((s) => s.saved);
-  const caps = useApp((s) => s.info?.capabilities);
+  const caps = useCaps();
+  useProvidersKey();
   const phone = usePhoneLayout();
   const [q, setQ] = useState("");
   const albumSort = useSettings((s) => s.albumSort);
@@ -577,19 +687,15 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   if (cur === "recent") return <RecentPage />;
   if (!lib && err) return <ErrorBox message={err} onRetry={() => refreshLibrary(true)} />;
 
-  const playlists = dedupe([...pls, ...(lib?.playlists ?? [])]);
-  const liked = playlists.find((p) => /^yt:(VL)?LM$/.test(p.id));
-  // Albums/Artists are what you saved. YouTube Music's library is the account's own saved
-  // collection, so it counts; Plex's "library" is the whole server, so it doesn't.
-  const ytLibrary = useApp.getState().info?.flavor === "youtube";
+  const c = libraryCollections(lib, pls, saved);
   const items: MediaItem[] =
     cur === "playlists"
-      ? playlists.filter((p) => p !== liked).map((p) => ({ type: "playlist" as const, ...p }))
+      ? c.playlists.map((p) => ({ type: "playlist" as const, ...p }))
       : cur === "albums"
-        ? sortAlbums(dedupe([...saved.albums, ...(ytLibrary ? lib?.albums ?? [] : [])]), albumSort).map((a) => ({ type: "album" as const, ...a }))
+        ? sortAlbums(c.albums, albumSort).map((a) => ({ type: "album" as const, ...a }))
         : cur === "artists"
-          ? sortArtists(dedupe([...saved.artists, ...(ytLibrary ? lib?.artists ?? [] : [])]), artistSort).map((a) => ({ type: "artist" as const, ...a }))
-          : dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])]).map((a) => ({ type: "podcast" as const, ...a }));
+          ? sortArtists(c.artists, artistSort).map((a) => ({ type: "artist" as const, ...a }))
+          : c.podcasts.map((a) => ({ type: "podcast" as const, ...a }));
   const needle = q.trim().toLowerCase();
   const shown = needle ? items.filter((it) => (it.type === "artist" ? it.name : it.title).toLowerCase().includes(needle)) : items;
   const go = (tb: LibraryTab) => navigate({ name: "library", tab: tb }, true);
@@ -610,42 +716,67 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
         </div>
         {tab == null && (
           <div className="chips">
-            {(["playlists", "albums", "artists", ...(caps?.podcasts ? ["podcasts"] : [])] as LibraryTab[]).map((f) => (
+            {(["playlists", "albums", "artists", ...(caps.podcasts ? ["podcasts"] : [])] as LibraryTab[]).map((f) => (
               <button key={f} className={cls("chip", cur === f && "on")} aria-pressed={cur === f} onClick={() => go(f)}>
                 {t(f as "playlists")}
               </button>
             ))}
           </div>
         )}
+        <ProviderNotes errors={partErrors(lib)} />
         {!lib && !err ? <Loading /> : shown.length ? <Grid items={shown} /> : <p className="muted">{t("empty")}</p>}
       </div>
     );
   }
 
-  return <PhoneLibrary tab={tab} playlists={playlists.filter((p) => p !== liked)} liked={liked} />;
+  return <PhoneLibrary tab={tab} c={c} />;
 }
+
+/**
+ * What Your Library lists, from the services that are on:
+ * - playlists: the app's, then the services' (YouTube's Liked Music is Liked Songs instead);
+ * - albums and artists: the ones saved in the app, plus YouTube Music's library (the account's
+ *   own collection). Plex's library is the whole server, so its albums and artists count only
+ *   once saved;
+ * - podcasts: followed in the app and YouTube's.
+ */
+function libraryCollections(lib: Library | null, appPls: Playlist[], saved: SavedState) {
+  const yt = <T extends { id: string }>(xs: T[] | undefined) => (xs ?? []).filter((x) => providerOfId(x.id) === "youtube");
+  const shown = <T extends { id: string }>(xs: T[]) => xs.filter((x) => visibleId(x.id));
+  return {
+    playlists: shown(dedupe([...appPls, ...(lib?.playlists ?? [])])).filter((p) => !isYtLiked(p.id)),
+    albums: shown(dedupe([...saved.albums, ...yt(lib?.albums)])),
+    artists: shown(dedupe([...saved.artists, ...yt(lib?.artists)])),
+    podcasts: shown(dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])])),
+  };
+}
+type SavedState = ReturnType<typeof useApp.getState>["saved"];
+type Collections = ReturnType<typeof libraryCollections>;
 
 type PhoneChip = "playlists" | "podcasts" | "albums" | "artists";
 
 /** Your Library on phones, as in Spotify's app: Playlists · Artists · Albums tabs (the older
  * underlined style), a sort row with the list/grid switch, then everything in one list: Liked
  * Songs and the app's own collections first. */
-function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: Playlist[]; liked?: Playlist }) {
+function PhoneLibrary({ tab, c }: { tab?: LibraryTab; c: Collections }) {
   const t = useT();
   const lib = useApp((s) => s.library);
   const err = useApp((s) => s.libraryError);
   const saved = useApp((s) => s.saved);
-  const caps = useApp((s) => s.info?.capabilities);
+  const likedCount = useApp((s) => s.liked.size);
+  const caps = useCaps();
+  const plexOn = useOn("plex");
+  const hasDownloads = useHasDownloads();
   const org = useFolders();
   const me = useMe();
   const chip: PhoneChip | null = tab === "playlists" || tab === "podcasts" || tab === "albums" || tab === "artists" ? tab : null;
-  const ytLibrary = useApp.getState().info?.flavor === "youtube";
-  const of = (c: PhoneChip) => !chip || chip === c;
+  const liked = likedSongsAvailable();
+  const of = (k: PhoneChip) => !chip || chip === k;
   const items: MediaItem[] = [
-    ...(of("playlists") ? playlists.map((p) => ({ type: "playlist" as const, ...p })) : []),
-    ...(of("podcasts") ? dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])]).map((a) => ({ type: "podcast" as const, ...a })) : []),
-    ...(of("albums") ? dedupe([...saved.albums, ...(ytLibrary ? lib?.albums ?? [] : [])]).map((a) => ({ type: "album" as const, ...a })) : []),
-    ...(of("artists") ? dedupe([...saved.artists, ...(ytLibrary ? lib?.artists ?? [] : [])]).map((a) => ({ type: "artist" as const, ...a })) : []),
+    ...(of("playlists") ? c.playlists.map((p) => ({ type: "playlist" as const, ...p })) : []),
+    ...(of("podcasts") ? c.podcasts.map((a) => ({ type: "podcast" as const, ...a })) : []),
+    ...(of("albums") ? c.albums.map((a) => ({ type: "album" as const, ...a })) : []),
+    ...(of("artists") ? c.artists.map((a) => ({ type: "artist" as const, ...a })) : []),
   ];
   const name = (it: MediaItem) => (it.type === "artist" ? it.name : it.title);
   const creator = (it: MediaItem) =>
@@ -667,10 +798,10 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
       ...(["recent", "added", "alpha", "creator"] as const).map((k) => ({ label: sortNames[k], checked: (org.sort === "custom" ? "recent" : org.sort) === k, onClick: () => setSort(k) })),
     ]);
   const pinned: { key: string; icon: React.ReactNode; title: string; sub?: string; pin?: boolean; go: () => void }[] = [
-    ...(liked && of("playlists") ? [{ key: "liked", icon: <div className="art grad-liked"><I.IHeartFill size={grid ? 40 : 24} /></div>, title: t("likedSongs"), pin: true, sub: [t("playlist"), me.name || (liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : null)].filter(Boolean).join(" • "), go: () => navigate({ name: "playlist", id: liked.id }) }] : []),
-    ...(caps?.podcasts && of("podcasts") ? [{ key: "episodes", icon: <div className="art grad-episodes"><I.IBookmark size={grid ? 40 : 24} /></div>, title: t("yourEpisodes"), pin: true, sub: [t("playlist"), t("episodesCount", { n: saved.episodes.length })].join(" • "), go: () => navigate({ name: "episodes" }) }] : []),
+    ...(liked && of("playlists") ? [{ key: "liked", icon: <div className="art grad-liked"><I.IHeartFill size={grid ? 40 : 24} /></div>, title: t("likedSongs"), pin: true, sub: [t("playlist"), me.name || (likedCount ? t("songsCount", { n: likedCount }) : null)].filter(Boolean).join(" • "), go: () => navigate({ name: "liked" }) }] : []),
+    ...(caps.podcasts && of("podcasts") ? [{ key: "episodes", icon: <div className="art grad-episodes"><I.IBookmark size={grid ? 40 : 24} /></div>, title: t("yourEpisodes"), pin: true, sub: [t("playlist"), t("episodesCount", { n: saved.episodes.length })].join(" • "), go: () => navigate({ name: "episodes" }) }] : []),
     ...(!chip ? [{ key: "local", icon: <div className="art grad-local"><I.IFolder size={grid ? 40 : 24} /></div>, title: t("localFiles"), go: () => navigate({ name: "local" }) }] : []),
-    ...(!chip && caps?.downloads ? [{ key: "downloads", icon: <div className="art grad-dl"><I.IDownload size={grid ? 40 : 24} /></div>, title: t("downloads"), go: () => navigate({ name: "downloads" }) }] : []),
+    ...(!chip && (plexOn || hasDownloads) ? [{ key: "downloads", icon: <div className="art grad-dl"><I.IDownload size={grid ? 40 : 24} /></div>, title: t("downloads"), go: () => navigate({ name: "downloads" }) }] : []),
   ];
   return (
     <div className="page lib-phone">
@@ -691,6 +822,7 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
           {grid ? <I.IViewList size={18} /> : <I.IViewGrid size={18} />}
         </button>
       </div>
+      <ProviderNotes errors={partErrors(lib)} />
       {!lib && err ? (
         <ErrorBox message={err} onRetry={() => refreshLibrary(true)} />
       ) : (
@@ -706,6 +838,7 @@ function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: 
                 key={it.type + it.id}
                 icon={<Art src={it.artwork} size={grid ? 240 : 128} round={it.type === "artist"} />}
                 title={name(it)}
+                badgeId={it.id}
                 // Spotify's rows: "Playlist • maya" (app playlists are yours).
                 sub={it.type === "playlist" ? [t("playlist"), it.local ? me.name : it.owner].filter(Boolean).join(" • ") : itemSubtitle(it, t)}
                 onClick={() => openItem(it)}
@@ -769,7 +902,7 @@ function LibrarySortButton({ tab }: { tab: "albums" | "artists" }) {
   );
 }
 
-function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; pin?: boolean; onClick: () => void; onContext?: (e: React.MouseEvent) => void }) {
+function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; pin?: boolean; badgeId?: string; onClick: () => void; onContext?: (e: React.MouseEvent) => void }) {
   return (
     <div className="lib-row" role="button" tabIndex={0} onClick={p.onClick} onKeyDown={(e) => e.key === "Enter" && p.onClick()} onContextMenu={p.onContext}>
       {p.icon}
@@ -778,6 +911,7 @@ function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; pin?: b
         {p.sub && (
           <span className="sub">
             {p.pin && <I.IPin size={14} className="lib-pin" />}
+            <SourceBadge id={p.badgeId} />
             {p.sub}
           </span>
         )}

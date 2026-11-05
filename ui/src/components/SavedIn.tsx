@@ -1,14 +1,15 @@
 // Spotify's "Saved in" panel: Liked Songs and every playlist with a check to add or remove the
-// song. YouTube playlists come from YouTube Music's own "Save to playlist" list.
+// song. YouTube playlists (for YouTube songs, while YouTube is on with an account) come from
+// YouTube Music's own "Save to playlist" list; Plex playlists are never written.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPlaylist, toggleLike } from "../actions";
+import { canLikeTrack, createPlaylist, toggleLike } from "../actions";
 import { api, errorMessage, inTauri } from "../api";
 import { useT } from "../i18n";
 import { refreshPlaylists, useApp } from "../store/app";
 import { toast, useUi } from "../store/ui";
 import type { Track } from "../types";
 import { cls } from "../util";
-import { Art } from "./common";
+import { Art, useProvidersKey } from "./common";
 import * as I from "./Icons";
 
 interface Remote {
@@ -39,7 +40,8 @@ export function SavedInPanel() {
   const open = useUi((s) => s.savedIn);
   const pls = useApp((s) => s.playlists);
   const liked = useApp((s) => (open ? s.liked.has(open.track.id) : false));
-  const canLike = useApp((s) => !!s.info?.capabilities.favorites) && open?.track.source !== "local";
+  useProvidersKey();
+  const canLike = !!open && canLikeTrack(open.track);
   const [inApp, setInApp] = useState<Set<string> | null>(null);
   const [remote, setRemote] = useState<Remote[]>([]);
   const [busy, setBusy] = useState<string | null>(null);

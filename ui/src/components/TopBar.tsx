@@ -1,17 +1,31 @@
-import { useEffect, useRef } from "react";
-import { createPlaylist } from "../actions";
+import { Fragment, useEffect, useRef } from "react";
+import { createPlaylist, openAccount, signedInTo, signOutOf } from "../actions";
 import { artUrl } from "../api";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
-import { openProfilePicker, setLocalOnly, useApp } from "../store/app";
-import { accountUrl, loadProfile, openExternal, signOut, SUPPORT_URL, useMe } from "../store/profile";
+import { openProfilePicker, useApp } from "../store/app";
+import { loadProfile, openExternal, SUPPORT_URL, useMe } from "../store/profile";
+import { isOn } from "../store/providers";
 import { useSettings } from "../store/settings";
 import { back, forward, navigate, openMenu, useUi, type MenuItem } from "../store/ui";
 import * as I from "./Icons";
-import { Art, usePhoneLayout } from "./common";
+import { Art, useCaps, usePhoneLayout, useProvidersKey } from "./common";
 import { useTitleBar } from "./TitleBar";
-import { cls } from "../util";
+import { cls, serviceLabel } from "../util";
+import { PROVIDERS, type Provider } from "../types";
+
+/** The offline pill: every service that is on is unreachable (one of two down shows notes on the
+ * pages instead). */
+function useAllOffline(): boolean {
+  return useApp((s) => {
+    const on = PROVIDERS.filter((p) => s.services?.[p]);
+    return on.length > 0 && on.every((p) => s.online?.[p] === false);
+  });
+}
+
+/** Services you're signed in to with their switch on: the avatar menu's account items. */
+const accounts = (): Provider[] => PROVIDERS.filter((p) => isOn(p) && signedInTo(p));
 
 /** Keeps `--topbar-h` at the bar's real height: sticky headers below it (a track list's column
  * header) stick right under it, whatever the bar holds (title bar mode, phones, the avatar). */
@@ -34,7 +48,7 @@ export function TopBar() {
   const pos = useUi((s) => s.pos);
   const len = useUi((s) => s.stack.length);
   const cur = useUi((s) => s.stack[s.pos]);
-  const online = useApp((s) => s.online);
+  const offline = useAllOffline();
   const titleBar = useTitleBar();
 
   const scrolled = useUi((s) => s.scrolled);
@@ -42,7 +56,7 @@ export function TopBar() {
   const showTitle = scrolled === 2 && pageTitle && cur.name !== "search";
   const phone = usePhoneLayout();
   const bar = useBarHeight();
-  const caps = useApp((s) => s.info?.capabilities);
+  const caps = useCaps();
   const homeFilter = useUi((s) => s.homeFilter);
   const playingHere = usePlayer((s) => s.playing && !!pageTitle?.ctxId && s.context?.id === pageTitle.ctxId);
 
@@ -54,7 +68,7 @@ export function TopBar() {
       return (
         <header ref={bar} className={cls("topbar phone-bar", scrolled > 0 && "solid")}>
           <AvatarButton phone />
-          {caps?.podcasts && (
+          {caps.podcasts && (
             <div className="chips phone-chips">
               {(["all", "music", "podcasts"] as const).map((f) => (
                 <button key={f} className={cls("chip", homeFilter === f && "on")} aria-pressed={homeFilter === f} onClick={() => useUi.setState({ homeFilter: f })}>
@@ -64,7 +78,7 @@ export function TopBar() {
             </div>
           )}
           <span className="grow" />
-          {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
+          {offline && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
         </header>
       );
     }
@@ -74,7 +88,7 @@ export function TopBar() {
           <AvatarButton phone />
           <h1 className="phone-h1">{t("library")}</h1>
           <span className="grow" />
-          {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
+          {offline && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
           <button className="icon-btn" aria-label={t("search")} title={t("search")} onClick={() => navigate({ name: "search" })}>
             <I.ISearch size={24} />
           </button>
@@ -118,7 +132,7 @@ export function TopBar() {
           <I.IBack size={18} />
         </button>
         <span className="phone-title">{showTitle ? pageTitle.title : ""}</span>
-        {!online ? <span className="offline-pill" role="status">{t("offlineShort")}</span> : <span className="bar-spacer" />}
+        {offline ? <span className="offline-pill" role="status">{t("offlineShort")}</span> : <span className="bar-spacer" />}
         {showTitle && pageTitle.play && (
           <button className="fab bar-fab" aria-label={playingHere ? t("pause") : t("play")} onClick={playingHere ? P.pause : pageTitle.play}>
             {playingHere ? <I.IPause size={22} /> : <I.IPlay size={22} />}
@@ -240,10 +254,10 @@ export function SearchField() {
 export function DesktopActions() {
   const t = useT();
   const cur = useUi((s) => s.stack[s.pos]);
-  const online = useApp((s) => s.online);
+  const offline = useAllOffline();
   return (
     <>
-      {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
+      {offline && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
       <button className={cls("icon-btn tb-icon", cur.name === "new" && "on")} aria-label={t("whatsNew")} title={t("whatsNew")} onClick={() => navigate({ name: "new" })}>
         <I.IBell size={20} />
       </button>
@@ -255,12 +269,14 @@ export function DesktopActions() {
 /** Your profile picture (or initial). Opens Spotify's account menu. */
 export function AvatarButton({ phone }: { phone?: boolean }) {
   const t = useT();
-  const signedIn = useApp((s) => !!s.auth?.signedIn);
-  const account = useApp((s) => s.auth?.account);
+  const services = useProvidersKey();
+  const account = useApp((s) => PROVIDERS.map((p) => s.auth?.[p]?.account ?? "").join("\u001f"));
   const me = useMe();
+  // The profile follows the accounts: YouTube's channel when YouTube is on with an account,
+  // otherwise the Plex account.
   useEffect(() => {
-    if (signedIn) loadProfile(true);
-  }, [signedIn, account]);
+    if (accounts().length) loadProfile(true);
+  }, [services, account]);
   const initial = me.name.trim().slice(0, 1).toUpperCase() || "♪";
   return (
     <button
@@ -272,7 +288,7 @@ export function AvatarButton({ phone }: { phone?: boolean }) {
         // Phones: Spotify's side drawer. Desktop: the account menu under the picture.
         if (phone) return useUi.setState({ drawer: true });
         const r = e.currentTarget.getBoundingClientRect();
-        openMenu({ clientX: r.right, clientY: r.bottom + 8, preventDefault: () => {}, stopPropagation: () => e.stopPropagation() }, accountMenu(t, signedIn));
+        openMenu({ clientX: r.right, clientY: r.bottom + 8, preventDefault: () => {}, stopPropagation: () => e.stopPropagation() }, accountMenu(t, accounts()));
       }}
     >
       {me.photo ? <Art src={me.photo} size={96} round /> : initial}
@@ -280,19 +296,29 @@ export function AvatarButton({ phone }: { phone?: boolean }) {
   );
 }
 
-function accountMenu(t: ReturnType<typeof useT>, signedIn: boolean): MenuItem[] {
+/** Spotify's account menu. With one account (YouTube Music or Plex) it reads as before: Account,
+ * Switch profile and Log out are that service's. With both, Account and Switch profile open a
+ * submenu per service, and "Services…" (Settings) takes the place of Log out. */
+function accountMenu(t: ReturnType<typeof useT>, accts: Provider[]): MenuItem[] {
   const priv = useSettings.getState().privateSession;
   const items: MenuItem[] = [];
-  if (signedIn) items.push({ label: t("account"), external: true, onClick: () => openExternal(accountUrl()) });
+  const one = accts.length === 1 ? accts[0] : null;
+  const perService = (fn: (p: Provider) => void, external?: boolean): MenuItem[] => accts.map((p) => ({ label: serviceLabel(p), external, onClick: () => fn(p) }));
+  if (one) items.push({ label: t("account"), external: true, onClick: () => openAccount(one) });
+  else if (accts.length) items.push({ label: t("account"), submenu: perService(openAccount, true) });
   items.push({ label: t("profile"), onClick: () => navigate({ name: "profile" }) });
-  if (signedIn) items.push({ label: t("switchProfile"), onClick: openProfilePicker });
+  if (one) items.push({ label: t("switchProfile"), onClick: () => openProfilePicker(one) });
+  else if (accts.length) items.push({ label: t("switchProfile"), submenu: perService(openProfilePicker) });
   items.push({ label: t("recents"), onClick: () => navigate({ name: "library", tab: "recent" }) });
   items.push({ label: t("transferPlaylists"), onClick: () => navigate({ name: "import" }) });
   items.push({ label: t("support"), external: true, onClick: () => openExternal(SUPPORT_URL) });
   items.push({ label: t("privateSession"), checked: priv, onClick: () => useSettings.getState().set({ privateSession: !priv }) });
   items.push({ label: t("settings"), onClick: () => navigate({ name: "settings" }) });
   items.push({ label: "", separator: true });
-  items.push(signedIn ? { label: t("logOut"), onClick: signOut } : { label: t("signIn"), onClick: () => setLocalOnly(false) });
+  // Signing in happens in Settings → Services (one card per service).
+  if (one) items.push({ label: t("logOut"), onClick: () => signOutOf(one) });
+  else if (accts.length) items.push({ label: t("menuServices"), onClick: () => navigate({ name: "settings" }) });
+  else items.push({ label: t("signIn"), onClick: () => navigate({ name: "settings" }) });
   return items;
 }
 
@@ -301,7 +327,9 @@ function accountMenu(t: ReturnType<typeof useT>, signedIn: boolean): MenuItem[] 
 export function AccountDrawer() {
   const t = useT();
   const open = useUi((s) => s.drawer);
-  const signedIn = useApp((s) => !!s.auth?.signedIn);
+  useProvidersKey();
+  const accts = accounts();
+  const one = accts.length === 1 ? accts[0] : null;
   const priv = useSettings((s) => s.privateSession);
   const me = useMe();
   useEffect(() => {
@@ -335,13 +363,19 @@ export function AccountDrawer() {
           {row(<I.IBell size={24} />, t("whatsNew"), go(() => navigate({ name: "new" })))}
           {row(<I.IClock size={24} />, t("recents"), go(() => navigate({ name: "library", tab: "recent" })))}
           {row(<I.IHistory size={24} />, t("listeningHistory"), go(() => navigate({ name: "history" })))}
-          {signedIn && row(<I.IUser size={24} />, t("switchProfile"), go(openProfilePicker))}
+          {one && row(<I.IUser size={24} />, t("switchProfile"), go(() => openProfilePicker(one)))}
+          {!one && accts.map((p) => <Fragment key={p}>{row(<I.IUser size={24} />, t("switchProfileOf", { service: serviceLabel(p) }), go(() => openProfilePicker(p)))}</Fragment>)}
           {row(<I.IImport size={24} />, t("transferPlaylists"), go(() => navigate({ name: "import" })))}
           {row(<I.ILock size={24} />, t("privateSession"), () => useSettings.getState().set({ privateSession: !priv }), <span className={cls("drawer-switch", priv && "on")} aria-hidden="true" />)}
           {row(<I.ISettings size={24} />, t("settingsAndPrivacy"), go(() => navigate({ name: "settings" })))}
-          {signedIn && row(<I.IOpen size={24} />, t("account"), go(() => openExternal(accountUrl())))}
+          {one && row(<I.IOpen size={24} />, t("account"), go(() => openAccount(one)))}
+          {!one && accts.map((p) => <Fragment key={p}>{row(<I.IOpen size={24} />, t("accountOf", { service: serviceLabel(p) }), go(() => openAccount(p)))}</Fragment>)}
           {row(<I.IInfo size={24} />, t("support"), go(() => openExternal(SUPPORT_URL)))}
-          {signedIn ? row(<I.IBack size={24} />, t("logOut"), go(signOut)) : row(<I.IUser size={24} />, t("signIn"), go(() => setLocalOnly(false)))}
+          {one
+            ? row(<I.IBack size={24} />, t("logOut"), go(() => signOutOf(one)))
+            : accts.length
+              ? row(<I.ISettings size={24} />, t("menuServices"), go(() => navigate({ name: "settings" })))
+              : row(<I.IUser size={24} />, t("signIn"), go(() => navigate({ name: "settings" })))}
         </div>
       </nav>
     </div>
