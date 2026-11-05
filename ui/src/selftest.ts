@@ -84,16 +84,21 @@ export async function runSelfTest() {
     });
   }
 
-  // Every other switch: held by reference, so switches appearing or moving can't shift which one
-  // the second click lands on.
-  const switches = $$('input[role="switch"]:not([data-service])') as HTMLInputElement[];
-  for (const [i, s] of switches.entries()) {
-    if (!s.isConnected || s.disabled) continue;
-    await step(`switch ${i} (${labelOf(s)})`, async () => {
+  // Every other switch, found again by its label for the second click: a click re-renders the
+  // settings (the old input can be replaced), and switches appearing or moving can't shift which
+  // one the second click lands on.
+  const others = () => $$('input[role="switch"]:not([data-service])') as HTMLInputElement[];
+  const byLabel = (label: string) => others().find((x) => labelOf(x) === label);
+  for (const [i, label] of others().map(labelOf).entries()) {
+    const s = byLabel(label);
+    if (!s || s.disabled) continue;
+    await step(`switch ${i} (${label})`, async () => {
       s.scrollIntoView({ block: "center" });
       s.click();
       await sleep(300);
-      if (s.isConnected) s.click();
+      const again = byLabel(label);
+      if (!again) throw new Error("the switch disappeared");
+      again.click();
     });
   }
 

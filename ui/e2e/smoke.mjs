@@ -23,7 +23,16 @@ async function openSettings(p) {
   await p.locator(".drawer .drawer-item:has-text('Settings'), .menu button:has-text('Settings')").first().click();
 }
 
-async function test(name, fn, { youtube = false, init, userAgent } = {}) {
+/**
+ * One test in a fresh page. Options:
+ * - scenario: which services are on and signed in ("both" by default, "youtube", "plex", "fresh");
+ * - youtube: only YouTube Music on, with Japanese metadata (yt-overrides.js; 1.x YTSpot);
+ * - init: an init script run after the mock (it can change `window.__MOCK__`);
+ * - ready: the selector that says the app is up (the player bar; the Connect page on a fresh install).
+ * Env ONLY=<regex> runs the matching tests only.
+ */
+async function test(name, fn, { youtube = false, scenario = "both", init, userAgent, ready = ".playerbar" } = {}) {
+  if (process.env.ONLY && !new RegExp(process.env.ONLY, "i").test(name)) return;
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, userAgent });
   page.setDefaultTimeout(15000);
   const errors = [];
@@ -33,9 +42,10 @@ async function test(name, fn, { youtube = false, init, userAgent } = {}) {
   try {
     await page.addInitScript({ path: mock });
     if (youtube) await page.addInitScript({ path: ytOverrides });
+    else if (scenario !== "both") await page.addInitScript((s) => window.__setScenario(s), scenario);
     if (init) await page.addInitScript(init);
     await page.goto(base);
-    await page.waitForSelector(".playerbar");
+    await page.waitForSelector(ready);
     await within(150000, fn(page), "test");
     assert.deepEqual(errors, [], "uncaught page errors");
     r = { name, ok: true, ms: Date.now() - t0 };
@@ -193,7 +203,7 @@ await test("playlist folders and custom order in the sidebar", async (p) => {
   await lib.locator(".side-item", { hasText: /^End/ }).dragTo(lib.locator(".side-item", { hasText: "Moods" }), { targetPosition: { x: 40, y: 2 } });
   const order = await names();
   assert.ok(order.indexOf("End") < order.indexOf("Moods"), `order: ${order.join(", ")}`);
-});
+}, { scenario: "plex" });
 
 await test("language switch to Japanese", async (p) => {
   await openSettings(p);
@@ -441,7 +451,7 @@ await test("Listening history lists every play by day; plays can be removed and 
   const d = window.__MOCK__;
   const now = Math.floor(Date.now() / 1000);
   const day = 86400;
-  const tr = (i) => d.search.tracks[i];
+  const tr = (i) => window.__FIX__.tracks[i];
   let entries = [
     { id: 5, track: tr(0), playedAt: now - 60, context: null },
     { id: 4, track: tr(1), playedAt: now - 120, context: null },
@@ -537,7 +547,7 @@ await test("Space only plays/pauses: it never presses a clicked or keyboard-focu
 await test("A refused request repairs the session and retries instead of signing out", async (p) => {
   await p.waitForSelector(".greeting");
   await p.waitForSelector(".shelf .card");
-  assert.deepEqual(await p.evaluate(() => [window.__RECOVERS, window.__HOME_CALLS]), [1, 2]);
+  assert.deepEqual(await p.evaluate(() => [window.__RECOVERS, window.__HOME_CALLS, window.__RECOVERED]), [1, 2, "plex"]);
   assert.equal(await p.locator(".login").count(), 0, "signed out");
 }, { init: () => {
   const d = window.__MOCK__;
@@ -546,10 +556,10 @@ await test("A refused request repairs the session and retries instead of signing
   window.__HOME_CALLS = 0;
   // The first Home request is refused as if the session had expired; the repair fixes it.
   d.home = () => {
-    if (window.__HOME_CALLS++ === 0) throw { code: "authExpired", message: "session expired, please sign in again" };
+    if (window.__HOME_CALLS++ === 0) throw { code: "authExpired", message: "session expired, please sign in again", provider: "plex" };
     return home;
   };
-  d.auth_recover = () => (window.__RECOVERS++, true);
+  d.auth_recover = (a) => (window.__RECOVERS++, (window.__RECOVERED = a.provider), true);
 } });
 
 await test("A submenu reached while its menu is still opening stays open", async (p) => {
@@ -620,7 +630,7 @@ await test("Android: notification buttons reach the player and song changes reac
 });
 
 await test("YouTube playlists can get an in-app cover", async (p) => {
-  await p.locator(".lib-list .side-item", { hasText: "autumn" }).click();
+  await p.locator(".lib-list .side-item", { hasText: "My YouTube mix" }).click();
   await p.waitForSelector(".page h1:has-text('My YouTube mix')");
   // 1×1 PNG.
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -786,11 +796,31 @@ await test("Desktop Settings has no Android download link", async (p) => {
   assert.equal(await p.locator(".setting", { hasText: "Latest version for Android" }).count(), 0);
 });
 
-await test("PLEXSpot Albums lists only saved albums, not the whole server", async (p) => {
+await test("Plex only: Albums lists only saved albums, not the whole server", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".page h1:has-text('Albums')");
+  await p.waitForSelector("text=Nothing here yet");
   assert.equal(await p.locator(".grid .card").count(), 0);
-});
+}, { scenario: "plex" });
+
+await test("Both services: Library Albums lists YouTube's library albums, not the Plex server's", async (p) => {
+  await p.click('.sidebar .side-cat:has-text("Albums")');
+  await p.waitForSelector(".grid .card");
+  const titles = (await p.locator(".grid .card .card-title").allTextContents()).map((x) => x.trim()).sort();
+  assert.deepEqual(titles, ["Blue Hour", "Cassette Summer", "Midnight Ferry", "Orbit Season"]);
+  // Every card is a YouTube one (badges show with both services on).
+  assert.equal(await p.locator('.grid .card .src-badge[data-source="youtube"]').count(), 4);
+  assert.equal(await p.locator('.grid .card .src-badge[data-source="plex"]').count(), 0);
+  // A Plex album saved in the app counts.
+  await p.evaluate(() => window.__EMIT__("saved-changed", null));
+  await p.waitForFunction(() => [...document.querySelectorAll(".grid .card .card-title")].some((n) => n.textContent.trim() === "Night Drive"));
+  assert.equal(await p.locator('.grid .card .src-badge[data-source="plex"]').count(), 1);
+}, { init: () => {
+  const d = window.__MOCK__;
+  let calls = 0;
+  // Saved in the app once the test says so (saved-changed).
+  d.saved_list = () => ({ albums: calls++ ? [window.__FIX__.albums[0]] : [], artists: [], playlists: [], podcasts: [] });
+} });
 
 await test("Your Library albums sort by name or release year, and the choice sticks", async (p) => {
   await p.click('.sidebar .side-cat:has-text("Albums")');
@@ -798,15 +828,15 @@ await test("Your Library albums sort by name or release year, and the choice sti
   const first = async () => (await p.locator(".grid .card .card-title").first().textContent()).trim();
   await p.click("button.lib-sort");
   await p.click('.menu button:has-text("Alphabetical")');
-  await p.waitForFunction(() => document.querySelector(".grid .card .card-title")?.textContent?.trim() === "Autumn Tapes");
+  await p.waitForFunction(() => document.querySelector(".grid .card .card-title")?.textContent?.trim() === "Blue Hour");
   await p.click("button.lib-sort");
   await p.click('.menu button:has-text("Release date")');
-  await p.waitForFunction(() => document.querySelector(".grid .card .card-title")?.textContent?.trim() === "Summer Static");
+  await p.waitForFunction(() => document.querySelector(".grid .card .card-title")?.textContent?.trim() === "Cassette Summer");
   // Leave and come back: still newest first.
   await p.click('.sidebar .side-cat:has-text("Artists")');
   await p.click('.sidebar .side-cat:has-text("Albums")');
   await p.waitForSelector(".grid .card");
-  assert.equal(await first(), "Summer Static");
+  assert.equal(await first(), "Cassette Summer");
 }, { youtube: true });
 
 await test("Saved in: check and uncheck playlists for the playing song", async (p) => {
@@ -878,14 +908,25 @@ await test(
     const lines = await p.evaluate(() => window.__SELFTEST);
     const fails = lines.filter((l) => l.startsWith("fail"));
     console.log(`  self-test: ${lines.filter((l) => l.startsWith("ok")).length} steps ok${fails.length ? "; " + fails.join("; ") : ""}`);
+    if (process.env.DEBUG) console.log(lines.join("\n"));
     assert.equal(lines.at(-1), "done");
+    assert.deepEqual(fails, []);
+    assert.ok(lines.includes("ok service youtube") && lines.includes("ok service plex"), "the Services switches were not exercised");
     assert.ok(lines.filter((l) => l.startsWith("ok switch")).length >= 5, "switches were not exercised");
+    // Every switch went back: the services are as they were, and nobody was signed out.
+    assert.deepEqual(await p.evaluate(() => window.__STATE__.services), { youtube: true, plex: true });
+    assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("sign_out"))), "a switch signed out");
+    assert.deepEqual(await p.evaluate(() => window.__SETTINGS_SAVED__ && Object.keys(window.__SETTINGS_START__).filter((k) => window.__SETTINGS_SAVED__[k] !== window.__SETTINGS_START__[k])), []);
   },
   {
     init: () => {
       window.__SELFTEST = [];
       const d = window.__MOCK__;
       d.app_info = { ...d.app_info, selfTest: true };
+      // Saved settings, to see that every switch went back.
+      window.__SETTINGS_START__ = { translateNames: true, translateLyrics: true, gapless: true, automix: false, autoplaySimilar: true, normalizeVolume: false, closeToTray: false, autoUpdate: true, privateSession: false, reducedMotion: false, highContrast: false, htpc: false };
+      d.settings_get = { ...window.__SETTINGS_START__ };
+      d.settings_set = (a) => ((window.__SETTINGS_SAVED__ = a.settings), null);
       d.self_test_log = (a) => (window.__SELFTEST.push(a.line), null);
       d.self_test_exit = () => ((window.__SELFTEST_EXIT = true), null);
     },
@@ -911,6 +952,7 @@ await test(
     assert.equal(await p.locator(".topbar .account, .topbar .import-btn").count(), 0);
   },
   {
+    scenario: "plex",
     init: () => {
       window.__OPENED = [];
       window.__MOCK__["plugin:opener|open_url"] = (a) => (window.__OPENED.push(a.url), null);
@@ -969,6 +1011,9 @@ await test(
     await p.waitForSelector(".browse-tile:has-text('Pop')");
     // Covers load for tiles on screen.
     await p.waitForSelector(".browse-tile .bt-art");
+    // Both services on: one group each, with its name.
+    assert.deepEqual((await p.locator("h2.browse-group").allTextContents()).map((x) => x.trim()), ["YouTube Music", "Plex"]);
+    await p.locator('.browse-tiles[data-provider="youtube"] .browse-tile', { hasText: "Feel good" }).waitFor();
     // Your library shortcuts are still there.
     assert.ok(await p.locator("h2", { hasText: "Your library" }).count());
     await p.click(".browse-tile:has-text('Pop')");
