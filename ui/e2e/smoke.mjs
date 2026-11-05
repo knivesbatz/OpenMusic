@@ -1392,6 +1392,73 @@ await test("Liked Songs combines YouTube's liked songs and Plex's; with YouTube 
   assert.equal(await badges(p).count(), 0);
 });
 
+await test("Only YouTube on: Liked Songs is YTSpot 1.6.1's Liked Music playlist page (cover wash, owner, Find/Sort, playlist menu)", async (p) => {
+  await p.click('.sidebar .side-cat:has-text("Liked Songs")');
+  await p.waitForSelector(".page.detail .hero h1:has-text('Liked Music')");
+  await p.waitForFunction(() => document.querySelectorAll(".page .tl-row:not(.tl-head)").length === 3);
+  // The Hero of a playlist: its colour wash and cover, not the combined page's heart tile.
+  assert.equal(await p.locator(".page .hero .hero-wash").count(), 1);
+  assert.equal(await p.locator(".page .hero .grad-liked").count(), 0);
+  assert.equal((await p.locator(".page .hero .hero-owner strong").textContent()).trim(), "Me");
+  await p.locator(".action-bar .ab-right .sort-btn").waitFor();
+  assert.equal(await badges(p).count(), 0);
+  assert.ok(await p.evaluate(() => window.__CALLS__.includes("playlist")), "asked for yt:LM like 1.6.1");
+  await p.click('.action-bar button[aria-label="More options"]');
+  const items = (await p.locator(".menu > button").allTextContents()).map((x) => x.trim());
+  assert.ok(items.some((x) => x.startsWith("Move to folder")) && items.some((x) => x.startsWith("Export")), items.join(", "));
+}, { scenario: "youtube" });
+
+await test("Plex on with a token but no server: the Connect page shows the server list, as PLEXSpot 1.6.1 did", async (p) => {
+  await p.locator(".login .server", { hasText: "Home server" }).click();
+  await p.waitForSelector(".playerbar");
+  assert.equal(await p.locator(".login").count(), 0);
+  assert.deepEqual(await p.evaluate(() => window.__SELECTED), ["srv1"]);
+}, { scenario: "plex", ready: ".login .server", init: () => {
+  const d = window.__MOCK__;
+  const st = window.__STATE__;
+  window.__SELECTED = [];
+  st.auth.plex = { signedIn: true, account: "demo", server: null, serverConnection: null, needsServer: true };
+  d.plex_servers = [{ name: "Home server", clientIdentifier: "srv1", owned: true, connections: [{ uri: "http://192.168.1.5:32400", local: true, relay: false }] }];
+  d.plex_select_server = (a) => {
+    window.__SELECTED.push(a.clientIdentifier);
+    st.auth.plex = { signedIn: true, account: "demo", server: "Home server", serverConnection: "local", needsServer: false };
+    setTimeout(() => (window.__EMIT__("services-changed", st.services), window.__EMIT__("auth-changed", { provider: "plex" })), 0);
+    return "Home server";
+  };
+} });
+
+await test("Only YouTube on: search keeps its spinner, then the last results, until YouTube answers (local files never stand alone)", async (p) => {
+  await search(p, "aster");
+  await p.locator(".page.search [role='status'] .spinner").waitFor();
+  // Local files have answered; YouTube hasn't: no half-empty page.
+  await p.waitForFunction(() => window.__CALLS__.filter((c) => c === "search").length === 2);
+  await p.waitForTimeout(150);
+  assert.equal(await p.locator(".search-top").count(), 0, "nothing rendered before YouTube answers");
+  await p.evaluate(() => window.__releaseYt());
+  await p.waitForSelector(".top-result .top-name");
+  assert.equal((await p.locator(".top-result .top-name").textContent()).trim(), "Luna Park");
+  // The next query: the last results stay on screen until YouTube answers again.
+  await p.fill("#global-search", "aster v");
+  await p.waitForFunction(() => window.__CALLS__.filter((c) => c === "search").length === 4);
+  await p.waitForTimeout(150);
+  assert.equal((await p.locator(".top-result .top-name").textContent()).trim(), "Luna Park");
+  await p.evaluate(() => window.__releaseYt());
+  await p.waitForFunction(() => document.querySelector(".top-result .top-name")?.textContent.trim() === "Kite Runners");
+}, { scenario: "youtube", init: () => {
+  const d = window.__MOCK__;
+  const base = d.search;
+  let n = 0;
+  let release = [];
+  window.__releaseYt = () => (release.forEach((r) => r()), (release = []));
+  d.search = (a) => {
+    if (a.provider !== "youtube") return base(a);
+    const r = base(a);
+    // A different top result per query, to tell the answers apart.
+    r.top = { type: "artist", ...window.__FIX__.ytArtists[n++ % 2] };
+    return new Promise((res) => release.push(() => res(r)));
+  };
+} });
+
 await test("Japanese: the Settings → Services section", async (p) => {
   await openSettings(p);
   await p.click('button[aria-label="Language"]');

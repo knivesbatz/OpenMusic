@@ -18,7 +18,8 @@ import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
 import * as P from "./player/engine";
 import { isMobileApp, needsConnect, useApp } from "./store/app";
-import { useConnectFlowActive } from "./store/signin";
+import { loadServers, useConnectFlowActive, useSignIn } from "./store/signin";
+import { useNeedsReconnect } from "./store/providers";
 import { PANEL_W, SIDEBAR_W, useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
 import { BrowseCategoryPage, HistoryPage, Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
@@ -95,6 +96,16 @@ export function App() {
   const ready = useApp((s) => s.ready);
   const noService = useApp(needsConnect);
   const connectFlow = useConnectFlowActive();
+  // Only Plex is on and it has no server (or no sign-in): the Connect page, as PLEXSpot 1.6.1
+  // went straight to the server list. A token without a server opens that list once by itself.
+  const reconnect = useNeedsReconnect();
+  const plexNeedsServer = useApp((s) => !!s.auth?.plex?.signedIn && !!s.auth.plex.needsServer);
+  const serversAsked = useRef(false);
+  useEffect(() => {
+    if (!reconnect || !plexNeedsServer || serversAsked.current || useSignIn.getState().plex.active) return;
+    serversAsked.current = true;
+    void loadServers("connect");
+  }, [reconnect, plexNeedsServer]);
   const servicesEpoch = useApp((s) => s.servicesEpoch);
   const routeName = useUi((s) => s.stack[s.pos].name);
   const lyricsPanel = useUi((s) => s.lyricsPanel);
@@ -193,7 +204,7 @@ export function App() {
   if (!info || !ready) return <Loading />;
   // "Connect your music": nothing set up yet, or a sign-in started there is still going (the
   // Plex server list comes after Plex is signed in).
-  const needsLogin = noService || connectFlow;
+  const needsLogin = noService || connectFlow || reconnect;
 
   return (
     <div className={cls("app", htpc && "htpc", titleBar && "titled")}>

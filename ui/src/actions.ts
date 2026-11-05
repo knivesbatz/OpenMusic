@@ -2,8 +2,8 @@
 // fullscreen, cards) offers the same behavior.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { api, errorMessage, inTauri } from "./api";
-import { translate, type Key } from "./i18n";
+import { api, inTauri } from "./api";
+import { localError, translate, type Key } from "./i18n";
 import * as P from "./player/engine";
 import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
 import { loadProfile, openExternal, useProfile } from "./store/profile";
@@ -71,7 +71,7 @@ export async function signOutOf(p: Provider) {
   try {
     await api.signOut(p);
   } catch (e) {
-    return toast(errorMessage(e));
+    return toast(localError(e));
   }
   await api.kvSet(p === "plex" ? "plex.profileChosen" : "yt.profileChosen", false).catch(() => {});
   useProfile.setState({ info: null });
@@ -95,7 +95,7 @@ export async function createPlaylist(tracks: Track[] = []): Promise<Playlist | n
     if (tracks.length) toast(t("addedToPlaylist", { name }));
     return pl;
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
     return null;
   }
 }
@@ -105,7 +105,7 @@ export async function addToPlaylist(pl: Playlist, tracks: Track[]) {
     await api.plAdd(pl.id, tracks);
     toast(t("addedToPlaylist", { name: pl.title }));
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -132,7 +132,7 @@ export async function toggleLike(track: Track) {
     toast(on ? t("like") : t("unlike"));
   } catch (e) {
     useApp.setState({ liked });
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -207,7 +207,7 @@ export async function downloadTracks(tracks: Track[]) {
     const n = await api.downloadTracks(eligible);
     toast(t("downloadStarted", { n }));
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -217,7 +217,7 @@ export async function startRadio(track: Track) {
     if (!tracks.length) return toast(t("empty"));
     P.playTracks([track, ...tracks.filter((x) => x.id !== track.id)], 0, { kind: "radio", id: track.id, title: track.title, artwork: track.artwork });
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -375,7 +375,7 @@ export function changeCover(pl: Playlist, onDone?: () => void) {
       await setCover(pl, Array.from(new Uint8Array(await blob.arrayBuffer())));
       onDone?.();
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
   };
   input.click();
@@ -387,7 +387,7 @@ async function setCover(pl: Playlist, image: number[] | null) {
     refreshPlaylists();
     toast(t(image ? "coverChanged" : "coverRemoved"));
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -496,7 +496,7 @@ export async function copyToYouTube(pl: Playlist) {
     const body = r.missing.length ? `${t("ytCopiedSome", { n: r.added, total: r.added + r.missing.length })}\n\n${shown}${more}` : t("ytCopiedAll", { n: r.added });
     if (await confirmDialog({ title: t("ytCopiedTitle"), body, confirm: t("openPlaylist") })) navigate({ name: "playlist", id: r.playlistId });
   } catch (e) {
-    toast(errorMessage(e), toastId);
+    toast(localError(e), toastId);
   } finally {
     stop();
     copying = false;
@@ -525,7 +525,7 @@ export async function toggleSaved(
     toast(on ? t("savedToLibrary") : t("removedFromLibrary"));
   } catch (e) {
     useApp.setState({ saved: prev });
-    toast(errorMessage(e));
+    toast(localError(e));
     refreshSaved();
   }
 }
@@ -574,7 +574,7 @@ export async function renamePlaylist(pl: Playlist) {
     await api.plUpdate(pl.id, name, pl.description ?? null);
     await refreshPlaylists();
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -585,7 +585,7 @@ export async function deletePlaylist(pl: Playlist) {
     await refreshPlaylists();
     navigate({ name: "home" }, true);
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -606,7 +606,7 @@ export async function deleteFromYouTube(pl: Playlist) {
     if (cur.name === "playlist" && cur.id === pl.id) navigate({ name: "home" }, true);
     await refreshLibrary(false);
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -619,7 +619,7 @@ export async function hidePlaylist(pl: Playlist) {
     await refreshLibrary(false);
     navigate({ name: "home" }, true);
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 

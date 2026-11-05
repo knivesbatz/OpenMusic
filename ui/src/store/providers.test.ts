@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AppInfo, Capabilities, Track } from "../types";
 import { useApp } from "./app";
-import { allOffline, caps, capsFor, needsReconnect, playable, sourceOf, usable } from "./providers";
+import { allOffline, caps, capsFor, needsReconnect, playable, reconnectNeeded, sourceOf, usable } from "./providers";
 
 const none: Capabilities = { downloads: false, qualityControl: false, podcasts: false, crossfade: false, gapless: false, favorites: false };
 const info: AppInfo = {
@@ -80,5 +80,20 @@ describe("providers", () => {
     setUp(false, false);
     useApp.setState({ online: { youtube: false, plex: false } });
     expect(allOffline()).toBe(false);
+  });
+});
+
+describe("reconnect (1.6.1 PLEXSpot opened on the server list)", () => {
+  it("only Plex on, with a token but no server: the Connect page, unless local files only was chosen", () => {
+    setUp(false, true, { signedIn: true, needsServer: true });
+    expect(needsReconnect()).toBe(true);
+    expect(reconnectNeeded({ ...useApp.getState(), localOnly: true })).toBe(false);
+    // Before the sign-in state is known: never.
+    expect(reconnectNeeded({ ...useApp.getState(), auth: null })).toBe(false);
+    // YouTube on as well: the app opens (YouTube works without an account).
+    setUp(true, true, { signedIn: true, needsServer: true });
+    expect(needsReconnect()).toBe(false);
+    setUp(false, true);
+    expect(needsReconnect()).toBe(false);
   });
 });

@@ -1,4 +1,7 @@
+import { errorCode, errorMessage, errorProvider } from "./api";
 import { useSettings } from "./store/settings";
+import type { Provider } from "./types";
+import { serviceLabel } from "./util";
 
 const en = {
   // ---- OpenSpot: state, sign-in and Settings (builder A adds keys below) ----
@@ -1109,4 +1112,21 @@ export function shelfTitle(lang: Lang, title: string): string {
 export function useT() {
   const lang = useSettings((s) => s.language);
   return (key: Key, vars?: Record<string, string | number>) => translate(lang, key, vars);
+}
+
+/** Core error codes that name a service, shown in the UI language (with `{service}`). */
+const ERROR_KEYS: Record<string, Key> = {
+  disabled: "serviceDisabled",
+  notSignedIn: "notSignedInFor",
+  authExpired: "authExpiredFor",
+  timeout: "serviceTimedOut",
+  offline: "serviceOfflineFor",
+};
+
+/** The text to show for a failed command: a translated message for the known codes that name
+ * their service (the core's English text is never shown for those), else the core's message. */
+export function localError(e: unknown, provider?: Provider): string {
+  const key = ERROR_KEYS[errorCode(e) ?? ""];
+  const p = errorProvider(e) ?? provider;
+  return key && p ? translate(useSettings.getState().language, key, { service: serviceLabel(p) }) : errorMessage(e);
 }

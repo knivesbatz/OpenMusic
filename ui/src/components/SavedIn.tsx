@@ -3,8 +3,8 @@
 // YouTube Music's own "Save to playlist" list; Plex playlists are never written.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { canLikeTrack, createPlaylist, toggleLike } from "../actions";
-import { api, errorMessage, inTauri } from "../api";
-import { useT } from "../i18n";
+import { api, inTauri } from "../api";
+import { localError, useT } from "../i18n";
 import { refreshPlaylists, useApp } from "../store/app";
 import { toast, useUi } from "../store/ui";
 import type { Track } from "../types";
@@ -103,7 +103,7 @@ export function SavedInPanel() {
       });
       refreshPlaylists();
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
     setBusy(null);
   }
@@ -114,7 +114,7 @@ export function SavedInPanel() {
       await api.ytPlaylistEdit(p.id, track, on);
       setRemote((rs) => rs.map((r) => (r.id === p.id ? { ...r, contains: on } : r)));
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
     setBusy(null);
   }

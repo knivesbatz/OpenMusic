@@ -194,7 +194,8 @@
           tracks: Array.from({ length: 50000 }, (_, i) => ({ ...tracks[i % tracks.length], id: "plex:big" + i, title: tracks[i % tracks.length].title + " " + i })) };
       if (id === show.id) return { playlist: show, tracks: eps };
       const ytp = ytPlaylists.find((p) => p.id === id);
-      if (ytp) return { playlist: ytp, tracks: ytTracks };
+      // Liked Music holds the liked songs (the same list as liked_tracks' YouTube part).
+      if (ytp) return { playlist: ytp, tracks: id === "yt:LM" ? likedYt : ytTracks };
       const app = appPls.find((p) => p.id === id);
       if (app) return { playlist: app, tracks };
       return { playlist: playlists.find((p) => p.id === id) ?? playlists[0], tracks };
@@ -296,7 +297,8 @@
         return null;
       }
       if (!(cmd in data)) return null;
-      const v = typeof data[cmd] === "function" ? data[cmd](args) : data[cmd];
+      // A function may answer later (a Promise), like a slow service.
+      const v = await (typeof data[cmd] === "function" ? data[cmd](args) : data[cmd]);
       return clone(v);
     },
     transformCallback: (fn, once) => {

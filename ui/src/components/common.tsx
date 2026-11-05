@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "reac
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { api, artUrl, inTauri } from "../api";
-import { useT, type Key } from "../i18n";
+import { localError, useT, type Key } from "../i18n";
 import { displayText } from "../romaji";
 import { isMobileApp, useApp } from "../store/app";
 import { caps } from "../store/providers";
@@ -199,7 +199,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data: T | 
     setState((s) => ({ ...s, loading: true, error: null }));
     fn().then(
       (data) => my === tok.current && setState({ data, error: null, loading: false }),
-      (e) => my === tok.current && setState({ data: null, error: e?.message ?? String(e), loading: false }),
+      (e) => my === tok.current && setState({ data: null, error: localError(e), loading: false }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, n]);

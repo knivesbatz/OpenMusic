@@ -1,7 +1,7 @@
 // Home, Search and the Library grid.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, likedSongsAvailable, playlistMenu, podcastMenu, providerOfId, trackMenu, usableProvider, visibleId } from "../actions";
-import { api, artUrl, errorCode, errorMessage, inTauri } from "../api";
+import { albumMenu, artistMenu, likedSongsAvailable, playlistMenu, podcastMenu, providerOfId, trackMenu, usableProvider, usableProviders, visibleId } from "../actions";
+import { api, artUrl, errorCode, inTauri } from "../api";
 import {
   Art,
   Card,
@@ -22,7 +22,7 @@ import {
 import { SourceBadge } from "../components/SourceBadge";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
-import { shelfTitle, translate, useT } from "../i18n";
+import { localError, shelfTitle, translate, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
 import { capsOf, useBothOn, useOn } from "../store/providers";
@@ -58,7 +58,7 @@ export async function playItem(item: MediaItem) {
       return P.playTracks(a.topTracks, 0, { kind: "artist", id: item.id, title: a.artist?.name ?? item.name, artwork: a.artist?.artwork });
     }
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -108,7 +108,7 @@ export function Home() {
         homeCache.data = partErrors(d).length ? null : d;
         setData(d);
       },
-      (e) => setError(errorMessage(e)),
+      (e) => setError(localError(e)),
     );
   };
   // Again when a service is switched on or off, or signs in or out.
@@ -346,7 +346,7 @@ function useSearch(query: string, kind: SFilter | null, enabled: boolean): Searc
         (kind ? api.searchKind(query, kind, provider) : api.search(query, provider))
           .then(
             (r) => void (parts[src] = r),
-            (e) => void failed.push({ source: src, code: errorCode(e) ?? "network", message: errorMessage(e) }),
+            (e) => void failed.push({ source: src, code: errorCode(e) ?? "network", message: localError(e, provider ?? undefined) }),
           )
           .finally(() => {
             left--;
@@ -376,7 +376,11 @@ function useMerged(query: string, s: SearchState | null): { res: SearchResults |
     if (!s) return { res: null, errors: [], failure: null };
     const errors = providerErrors(s);
     const arrived = Object.keys(s.parts).length > 0;
-    const res = arrived ? mergeSearch(query, s.parts, errors) : null;
+    // Local files and app playlists come back from SQLite at once; they never stand alone while a
+    // service is still on its way (the spinner, or the last results, stay up as with one service).
+    const providerArrived = s.providers.some((p) => p in s.parts);
+    const providersDone = s.providers.every((p) => p in s.parts || s.failed.some((f) => f.source === p));
+    const res = arrived && (providerArrived || providersDone) ? mergeSearch(query, s.parts, errors) : null;
     const allFailed = s.providers.length > 0 && s.providers.every((p) => s.failed.some((f) => f.source === p));
     const nothing = !res || isEmptyResults(res);
     const failure = s.pending === 0 && (allFailed || (!arrived && s.failed.length > 0)) && nothing ? s.failed[0]?.message ?? null : null;
@@ -506,6 +510,15 @@ const TILE_COLORS = ["#dc148c", "#006450", "#8400e7", "#1e3264", "#e8115b", "#47
 const tileColor = (title: string) => TILE_COLORS[[...title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % TILE_COLORS.length];
 
 const categoryCache: { list: BrowseCategory[] | null } = { list: null };
+
+/** Keeps a Browse all list for the session only when every service asked gave its part: a list
+ * missing one service (it timed out or was unreachable) is shown but asked for again next visit,
+ * so that service's genres come back once it answers (the core caches each part on its own). */
+function keepCategories(list: BrowseCategory[]): BrowseCategory[] {
+  const complete = usableProviders().every((p) => list.some((c) => providerOfId(c.id) === p));
+  categoryCache.list = complete ? list : null;
+  return list;
+}
 const tileArt = new Map<string, string | null>();
 
 /** Search with nothing typed: Spotify's "Browse all": the provider's genres, moods and sections
@@ -528,8 +541,8 @@ function BrowseEmpty() {
     setCats(null);
     setError(null);
     api.browseCategories(false).then(
-      (l) => setCats((categoryCache.list = l)),
-      (e) => setError(errorMessage(e)),
+      (l) => setCats(keepCategories(l)),
+      (e) => setError(localError(e)),
     );
   }, [usable, services]);
   const liked = likedSongsAvailable();
@@ -553,7 +566,7 @@ function BrowseEmpty() {
   // One group per service (YouTube Music's sections, moods and genres; Plex's genres), titled only
   // while both are on.
   const groups = PROVIDERS.map((p) => ({ p, list: (cats ?? []).filter((c) => providerOfId(c.id) === p) })).filter((g) => g.list.length > 0);
-  const retry = () => (setError(null), api.browseCategories(true).then((l) => setCats((categoryCache.list = l)), (e) => setError(errorMessage(e))));
+  const retry = () => (setError(null), api.browseCategories(true).then((l) => setCats(keepCategories(l)), (e) => setError(localError(e))));
   return (
     <div className="page browse-page">
       <h1>{t("browseAll")}</h1>
@@ -973,7 +986,7 @@ export function HistoryPage() {
           setMore(page.length === HISTORY_PAGE);
         },
         (e) => {
-          toast(errorMessage(e));
+          toast(localError(e));
           setEntries((cur) => cur ?? []);
         },
       )
@@ -986,11 +999,11 @@ export function HistoryPage() {
   const tracks = entries.map((e) => e.track);
   const remove = (indexes: number[]) => {
     const ids = new Set(indexes.map((i) => entries[i].id));
-    api.historyRemove([...ids]).then(() => setEntries((cur) => (cur ?? []).filter((e) => !ids.has(e.id))), (e) => toast(errorMessage(e)));
+    api.historyRemove([...ids]).then(() => setEntries((cur) => (cur ?? []).filter((e) => !ids.has(e.id))), (e) => toast(localError(e)));
   };
   const clear = async () => {
     if (!(await confirmDialog({ title: t("clearHistory"), body: t("clearHistoryBody"), confirm: t("clearHistory") }))) return;
-    api.historyClear().then(() => (setEntries([]), setMore(false)), (e) => toast(errorMessage(e)));
+    api.historyClear().then(() => (setEntries([]), setMore(false)), (e) => toast(localError(e)));
   };
   return (
     <div className="page history">

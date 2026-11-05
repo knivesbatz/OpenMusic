@@ -1,12 +1,12 @@
 // Artist, album and playlist pages.
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { albumMenu, canChangeCover, changeCover, downloadTracks, likedMenu, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
-import { api, artUrl, errorMessage, inTauri } from "../api";
+import { albumMenu, canChangeCover, changeCover, downloadTracks, likedMenu, likesOn, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
+import { api, artUrl, inTauri } from "../api";
 import { Art, ArtistName, ErrorBox, Loading, PlayFab, ProviderNotes, TitleText, useAsync, usePageTitle, usePhoneLayout, useProvidersKey } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
-import { useT } from "../i18n";
+import { localError, useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
@@ -437,7 +437,7 @@ export function PlaylistPage({ id }: { id: string }) {
       reload();
       refreshPlaylists();
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
     setBusy(false);
   }
@@ -646,9 +646,20 @@ export function EpisodesPage() {
   );
 }
 
-/** Liked Songs: the songs you liked on YouTube Music and the tracks you rated on Plex, on one
- * page. Laid out like a playlist (Find in playlist, Sort, the pinned bar). */
+/** Liked Songs. When YouTube Music is the only service that keeps likes, it is YouTube's own
+ * Liked Music playlist on the playlist page, exactly as in YTSpot 1.6.1 (its cover and colour
+ * wash, owner, menu, sort and find). With Plex ratings too, both lists on one page. */
 export function LikedPage() {
+  useProvidersKey();
+  return likesOn("youtube") && !likesOn("plex") ? <PlaylistPage id={YT_LIKED} /> : <MergedLikedPage />;
+}
+
+/** YouTube Music's liked songs playlist ("Liked Music"). */
+const YT_LIKED = "yt:LM";
+
+/** The songs you liked on YouTube Music and the tracks you rated on Plex, on one page. Laid out
+ * like a playlist (Find in playlist, Sort, the pinned bar). */
+function MergedLikedPage() {
   const t = useT();
   const phone = usePhoneLayout();
   const me = useMe();
