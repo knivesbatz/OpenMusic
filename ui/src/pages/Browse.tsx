@@ -1,18 +1,19 @@
 // Home, Search and the Library grid.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, createPlaylist, playlistMenu, podcastMenu, trackMenu } from "../actions";
+import { albumMenu, artistMenu, playlistMenu, podcastMenu, trackMenu } from "../actions";
 import { api, artUrl, errorMessage, inTauri } from "../api";
 import { Art, Card, ErrorBox, Loading, PlayFab, Shelf, itemSubtitle, openItem, useAsync, usePageTitle, usePhoneLayout } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
-import { shelfTitle, useT } from "../i18n";
+import { shelfTitle, translate, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
 import { sortAlbums, sortArtists } from "../store/librarySort";
+import { setSort, setView, useFolders } from "../store/folders";
 import { useSettings } from "../store/settings";
 import { confirmDialog, navigate, openMenu, toast, useUi, type LibraryTab } from "../store/ui";
 import { useDisplayTrack } from "../store/songmeta";
-import type { BrowseCategory, HistoryEntry, HomeData, MediaItem, PlayContext, SearchResults, Track } from "../types";
+import type { BrowseCategory, HistoryEntry, HomeData, MediaItem, PlayContext, Playlist, SearchResults, Track } from "../types";
 import { cls } from "../util";
 
 /** Play any card: tracks play directly, collections are fetched first. */
@@ -37,11 +38,12 @@ export async function playItem(item: MediaItem) {
 }
 
 export function cardMenu(e: React.MouseEvent, item: MediaItem) {
-  if (item.type === "track") return openMenu(e, trackMenu(item));
-  if (item.type === "album") return openMenu(e, albumMenu(item, async () => (await api.album(item.id)).tracks));
-  if (item.type === "playlist") return openMenu(e, playlistMenu(item, async () => (await api.playlist(item.id)).tracks));
-  if (item.type === "artist") return openMenu(e, artistMenu(item));
-  if (item.type === "podcast") return openMenu(e, podcastMenu(item));
+  const head = { title: item.type === "artist" ? item.name : item.title, art: item.artwork, round: item.type === "artist", sub: itemSubtitle(item, (k, v) => translate(useSettings.getState().language, k, v)) };
+  if (item.type === "track") return openMenu(e, trackMenu(item), head);
+  if (item.type === "album") return openMenu(e, albumMenu(item, async () => (await api.album(item.id)).tracks), head);
+  if (item.type === "playlist") return openMenu(e, playlistMenu(item, async () => (await api.playlist(item.id)).tracks), head);
+  if (item.type === "artist") return openMenu(e, artistMenu(item), head);
+  if (item.type === "podcast") return openMenu(e, podcastMenu(item), head);
 }
 
 const homeCache: { data: HomeData | null } = { data: null };
@@ -54,7 +56,9 @@ export function Home() {
   const appPls = useApp((s) => s.playlists);
   const [data, setData] = useState<HomeData | null>(homeCache.data);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | "music" | "podcasts">("all");
+  const filter = useUi((s) => s.homeFilter);
+  const setFilter = (f: "all" | "music" | "podcasts") => useUi.setState({ homeFilter: f });
+  const phone = usePhoneLayout();
   const htpc = useSettings((s) => s.htpc);
 
   const load = (refresh: boolean) => {
@@ -120,7 +124,8 @@ export function Home() {
           }
         />
       )}
-      {info?.capabilities.podcasts && (
+      {/* Phones show these chips in the top bar, next to your picture. */}
+      {info?.capabilities.podcasts && !phone && (
         <div className="chips">
           {(["all", "music", "podcasts"] as const).map((f) => (
             <button key={f} className={cls("chip", filter === f && "on")} aria-pressed={filter === f} onClick={() => setFilter(f)}>
@@ -129,7 +134,7 @@ export function Home() {
           ))}
         </div>
       )}
-      <h1 className="greeting">{greeting}</h1>
+      {!phone && <h1 className="greeting">{greeting}</h1>}
       {data?.stale && <p className="muted small">{t("offline")}</p>}
       {error && <ErrorBox message={error} onRetry={() => load(true)} />}
       {filter !== "podcasts" && shortcuts.length > 0 && (
@@ -443,7 +448,7 @@ function BrowseEmpty() {
     ...(caps?.downloads ? [{ label: t("downloads"), color: "#27856a", go: () => navigate({ name: "downloads" }), icon: <I.IDownload size={36} /> }] : []),
   ];
   return (
-    <div className="page">
+    <div className="page browse-page">
       <h1>{t("browseAll")}</h1>
       {signedIn &&
         (cats ? (
@@ -616,67 +621,104 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
     );
   }
 
-  const podcasts = cur === "podcasts";
+  return <PhoneLibrary tab={tab} playlists={playlists.filter((p) => p !== liked)} liked={liked} />;
+}
+
+type PhoneChip = "playlists" | "podcasts" | "albums" | "artists";
+
+/** Your Library on phones, as in Spotify's app: filter chips (Playlists, Podcasts, Albums,
+ * Artists), a sort row with the list/grid switch, then everything in one list: Liked Songs and
+ * the app's own collections first. */
+function PhoneLibrary({ tab, playlists, liked }: { tab?: LibraryTab; playlists: Playlist[]; liked?: Playlist }) {
+  const t = useT();
+  const lib = useApp((s) => s.library);
+  const err = useApp((s) => s.libraryError);
+  const saved = useApp((s) => s.saved);
+  const caps = useApp((s) => s.info?.capabilities);
+  const org = useFolders();
+  const chip: PhoneChip | null = tab === "playlists" || tab === "podcasts" || tab === "albums" || tab === "artists" ? tab : null;
+  const ytLibrary = useApp.getState().info?.flavor === "youtube";
+  const of = (c: PhoneChip) => !chip || chip === c;
+  const items: MediaItem[] = [
+    ...(of("playlists") ? playlists.map((p) => ({ type: "playlist" as const, ...p })) : []),
+    ...(of("podcasts") ? dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])]).map((a) => ({ type: "podcast" as const, ...a })) : []),
+    ...(of("albums") ? dedupe([...saved.albums, ...(ytLibrary ? lib?.albums ?? [] : [])]).map((a) => ({ type: "album" as const, ...a })) : []),
+    ...(of("artists") ? dedupe([...saved.artists, ...(ytLibrary ? lib?.artists ?? [] : [])]).map((a) => ({ type: "artist" as const, ...a })) : []),
+  ];
+  const name = (it: MediaItem) => (it.type === "artist" ? it.name : it.title);
+  const creator = (it: MediaItem) =>
+    it.type === "playlist" ? it.owner ?? "" : it.type === "album" ? it.artist : it.type === "podcast" ? it.author ?? "" : it.type === "artist" ? it.name : it.artist;
+  const sorted =
+    org.sort === "alpha"
+      ? [...items].sort((a, b) => name(a).localeCompare(name(b)))
+      : org.sort === "creator"
+        ? [...items].sort((a, b) => creator(a).localeCompare(creator(b)) || name(a).localeCompare(name(b)))
+        : org.sort === "added"
+          ? items.map((it, i) => ({ it, i })).sort((a, b) => (org.added[b.it.id] ?? 0) - (org.added[a.it.id] ?? 0) || a.i - b.i).map((x) => x.it)
+          : items;
+  const grid = org.view === "grid" || org.view === "compactGrid";
+  const go = (c: PhoneChip | null) => navigate(c ? { name: "library", tab: c } : { name: "library" }, true);
+  const chips: PhoneChip[] = ["playlists", ...(caps?.podcasts ? (["podcasts"] as PhoneChip[]) : []), "albums", "artists"];
+  const sortNames: Record<string, string> = { recent: t("sortRecent"), added: t("recentlyAdded"), alpha: t("sortAlpha"), creator: t("sortCreator"), custom: t("sortRecent") };
+  const sortMenu = (e: React.MouseEvent) =>
+    openMenu(e, [
+      { label: t("sortMenu"), heading: true },
+      ...(["recent", "added", "alpha", "creator"] as const).map((k) => ({ label: sortNames[k], checked: (org.sort === "custom" ? "recent" : org.sort) === k, onClick: () => setSort(k) })),
+    ]);
+  const pinned: { key: string; icon: React.ReactNode; title: string; sub?: string; go: () => void }[] = [
+    ...(liked && of("playlists") ? [{ key: "liked", icon: <div className="art grad-liked"><I.IHeartFill size={grid ? 40 : 24} /></div>, title: t("likedSongs"), sub: [t("playlist"), liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : null].filter(Boolean).join(" • "), go: () => navigate({ name: "playlist", id: liked.id }) }] : []),
+    ...(caps?.podcasts && of("podcasts") ? [{ key: "episodes", icon: <div className="art grad-episodes"><I.IBookmark size={grid ? 40 : 24} /></div>, title: t("yourEpisodes"), sub: t("episodesCount", { n: saved.episodes.length }), go: () => navigate({ name: "episodes" }) }] : []),
+    ...(!chip ? [{ key: "local", icon: <div className="art grad-local"><I.IFolder size={grid ? 40 : 24} /></div>, title: t("localFiles"), go: () => navigate({ name: "local" }) }] : []),
+    ...(!chip && caps?.downloads ? [{ key: "downloads", icon: <div className="art grad-dl"><I.IDownload size={grid ? 40 : 24} /></div>, title: t("downloads"), go: () => navigate({ name: "downloads" }) }] : []),
+  ];
   return (
-    <div className="page lib-classic">
-      <div className="lib-top">
-        <button className={cls("lib-big", !podcasts && "on")} onClick={() => go("playlists")}>
-          {t("music")}
-        </button>
-        {caps?.podcasts && (
-          <button className={cls("lib-big", podcasts && "on")} onClick={() => go("podcasts")}>
-            {t("podcasts")}
+    <div className="page lib-phone">
+      <div className="chips lib-chips">
+        {chip && (
+          <button className="chip clear" aria-label={t("clear")} onClick={() => go(null)}>
+            <I.IClose size={16} />
           </button>
         )}
-      </div>
-      {!podcasts && (
-        <div className="lib-tabs" role="tablist">
-          {(["playlists", "artists", "albums"] as const).map((f) => (
-            <button key={f} role="tab" aria-selected={cur === f} className={cls("lib-tab", cur === f && "on")} onClick={() => go(f)}>
-              {t(f)}
+        {chips
+          .filter((c) => !chip || c === chip)
+          .map((c) => (
+            <button key={c} className={cls("chip", chip === c && "on")} aria-pressed={chip === c} onClick={() => go(chip === c ? null : c)}>
+              {t(c)}
             </button>
           ))}
-        </div>
-      )}
-      {(cur === "albums" || cur === "artists") && (
-        <div className="lib-sort-row">
-          <LibrarySortButton tab={cur} />
-        </div>
-      )}
-      <div className="lib-rows" key={cur + albumSort.key + albumSort.desc + artistSort.key + artistSort.desc}>
-        {cur === "playlists" && (
-          <>
-            <LibRow
-              icon={<div className="art grad-new"><I.IPlus size={26} /></div>}
-              title={t("createPlaylist")}
-              onClick={async () => {
-                const pl = await createPlaylist();
-                if (pl) navigate({ name: "playlist", id: pl.id });
-              }}
-            />
-            {liked && <LibRow icon={<div className="art grad-liked"><I.IHeartFill size={24} /></div>} title={t("likedSongs")} sub={liked.trackCount != null ? t("songsCount", { n: liked.trackCount }) : undefined} onClick={() => navigate({ name: "playlist", id: liked.id })} />}
-            <LibRow icon={<div className="art grad-local"><I.IFolder size={24} /></div>} title={t("localFiles")} onClick={() => navigate({ name: "local" })} />
-            {caps?.downloads && <LibRow icon={<div className="art grad-dl"><I.IDownload size={24} /></div>} title={t("downloads")} onClick={() => navigate({ name: "downloads" })} />}
-          </>
-        )}
-        {podcasts && (
-          <LibRow icon={<div className="art grad-episodes"><I.IBookmark size={24} /></div>} title={t("yourEpisodes")} sub={t("episodesCount", { n: saved.episodes.length })} onClick={() => navigate({ name: "episodes" })} />
-        )}
-        {!lib && !err ? (
-          <Loading />
-        ) : (
-          shown.map((it) => (
-            <LibRow
-              key={it.type + it.id}
-              icon={<Art src={it.artwork} size={128} round={it.type === "artist"} />}
-              title={it.type === "artist" ? it.name : it.title}
-              sub={itemSubtitle(it, t)}
-              onClick={() => openItem(it)}
-              onContext={(e) => cardMenu(e, it)}
-            />
-          ))
-        )}
       </div>
+      <div className="lib-sortbar">
+        <button className="lib-sortbtn" onClick={sortMenu} aria-label={`${t("sortMenu")}: ${sortNames[org.sort]}`}>
+          <I.ISort size={16} />
+          <span>{sortNames[org.sort]}</span>
+        </button>
+        <button className="icon-btn" aria-label={grid ? t("viewList") : t("viewGrid")} title={grid ? t("viewList") : t("viewGrid")} onClick={() => setView(grid ? "list" : "grid")}>
+          {grid ? <I.IViewList size={18} /> : <I.IViewGrid size={18} />}
+        </button>
+      </div>
+      {!lib && err ? (
+        <ErrorBox message={err} onRetry={() => refreshLibrary(true)} />
+      ) : (
+        <div className={cls("lib-rows", grid && "lib-grid")} key={(chip ?? "all") + org.sort + org.view}>
+          {pinned.map((x) => (
+            <LibRow key={x.key} icon={x.icon} title={x.title} sub={x.sub} onClick={x.go} />
+          ))}
+          {!lib && !err ? (
+            <Loading />
+          ) : (
+            sorted.map((it) => (
+              <LibRow
+                key={it.type + it.id}
+                icon={<Art src={it.artwork} size={grid ? 240 : 128} round={it.type === "artist"} />}
+                title={name(it)}
+                sub={itemSubtitle(it, t)}
+                onClick={() => openItem(it)}
+                onContext={(e) => cardMenu(e, it)}
+              />
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

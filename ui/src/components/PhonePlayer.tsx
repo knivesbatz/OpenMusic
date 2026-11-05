@@ -3,20 +3,19 @@
 // seek bar with elapsed/remaining time, transport, then share and queue; lyrics in a card
 // below. The queue is a bottom sheet with drag handles and Shuffle / Repeat / Timer buttons.
 import { useRef, useState } from "react";
-import { artUrl } from "../api";
-import { shareSubmenu, sleepSubmenu, trackMenu } from "../actions";
+import { api, artUrl } from "../api";
+import { shareSubmenu, sleepSubmenu, toggleSaved, trackHead, trackMenu } from "../actions";
 import { useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
-import { useSettings } from "../store/settings";
 import { useDisplayTrack } from "../store/songmeta";
-import { openMenu, useUi } from "../store/ui";
-import { displayText } from "../romaji";
+import { navigate, openMenu, useUi } from "../store/ui";
+import { useApp } from "../store/app";
 import { cls, fmtTime } from "../util";
-import { Art, ArtistName, TitleText } from "./common";
-import { LyricsView, useLyrics } from "./Fullscreen";
+import { Art, ArtistName, TitleText, useAsync } from "./common";
+import { LyricsView } from "./Fullscreen";
 import * as I from "./Icons";
-import { SaveButton, Transport } from "./PlayerBar";
+import { PhoneSaveButton, Transport } from "./PlayerBar";
 
 /** The cover blown up so only its colors show (no blur filter). */
 const wash = (a?: string | null) => {
@@ -53,18 +52,6 @@ function PhoneSeek() {
   );
 }
 
-/** The synced lyric line at the current position, shown above the title. */
-function CurrentLine({ track }: { track: Parameters<typeof useLyrics>[0] }) {
-  const { lyrics } = useLyrics(track);
-  const pos = usePlayer((s) => s.position);
-  const jp = useSettings((s) => s.jpMode);
-  if (!lyrics?.synced) return <div className="pp-line" />;
-  const ms = pos * 1000 + 250;
-  let text = "";
-  for (const l of lyrics.lines) if ((l.timeMs ?? 0) <= ms) text = l.text;
-  return <div className="pp-line">{text ? displayText(text, jp)[0] : ""}</div>;
-}
-
 export function PhonePlayer() {
   const t = useT();
   const item = usePlayer((s) => s.queue.items[s.queue.index]);
@@ -81,13 +68,15 @@ export function PhonePlayer() {
           <button className="icon-btn" aria-label={t("close")} onClick={close}>
             <I.IChevronDown size={28} />
           </button>
-          <span className="pp-context">{context?.title ?? ""}</span>
-          <button className="icon-btn" aria-label={t("more")} onClick={(e) => tr && openMenu(e, trackMenu(tr, { queueUid: item?.uid }))}>
+          <span className="pp-context">
+            <span className="pp-ctx-title">{context?.title ?? ""}</span>
+          </span>
+          <button className="icon-btn" aria-label={t("more")} onClick={(e) => tr && openMenu(e, trackMenu(tr, { queueUid: item?.uid }), trackHead(tr))}>
             <I.IMore size={24} />
           </button>
         </div>
         {tr ? <Art src={tr.artwork} size={800} className={cls("pp-art", !playing && "paused")} alt={tr.album ?? tr.title} /> : <div className="pp-art art" />}
-        {tr && <CurrentLine track={tr} />}
+        <div className="pp-gap" />
         <div className="pp-meta">
           <div className="pp-names">
             <div className="pp-title">
@@ -97,7 +86,7 @@ export function PhonePlayer() {
               <ArtistName name={tr?.artist} />
             </div>
           </div>
-          <SaveButton />
+          <PhoneSaveButton size={28} />
         </div>
         <PhoneSeek />
         <div className="pp-transport">
@@ -120,9 +109,49 @@ export function PhonePlayer() {
             <LyricsView track={tr} />
           </section>
         )}
+        {tr?.artistId && <AboutArtist id={tr.artistId} />}
       </div>
       {queueOpen && <PhoneQueue />}
     </div>
+  );
+}
+
+/** "About the artist" under the lyrics (Spotify): photo, name, followers, the start of the bio
+ * and Follow. Tapping it opens the artist page. */
+function AboutArtist({ id }: { id: string }) {
+  const t = useT();
+  const { data } = useAsync(() => (id.startsWith("local-artist:") ? Promise.resolve(null) : api.artist(id)), [id]);
+  const followed = useApp((s) => s.saved.artists.some((a) => a.id === id));
+  const a = data?.artist;
+  if (!a) return null;
+  const open = () => {
+    useUi.setState({ fullscreen: false, queueOpen: false });
+    navigate({ name: "artist", id });
+  };
+  return (
+    <section className="pp-about" role="button" tabIndex={0} onClick={open} onKeyDown={(e) => e.key === "Enter" && open()}>
+      <div className="pp-about-img" style={a.artwork ? { backgroundImage: `url("${artUrl(a.artwork, 600)}")` } : undefined}>
+        <h2>{t("aboutTheArtist")}</h2>
+      </div>
+      <div className="pp-about-body">
+        <div className="row between">
+          <div>
+            <div className="pp-about-name">{a.name}</div>
+            {data?.followers && <div className="muted small">{t("followersCount", { n: data.followers })}</div>}
+          </div>
+          <button
+            className={cls("pill ghost small", followed && "on")}
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSaved({ kind: "artist", v: a });
+            }}
+          >
+            {followed ? t("following") : t("follow")}
+          </button>
+        </div>
+        {data?.description && <p className="pp-about-bio">{data.description}</p>}
+      </div>
+    </section>
   );
 }
 
@@ -202,7 +231,7 @@ export function PhoneQueue() {
               dragging={drag?.uid === it.uid}
               dy={drag?.uid === it.uid ? drag.dy : 0}
               onPlay={() => P.playUid(it.uid)}
-              onMenu={(e) => openMenu(e, trackMenu(it.track, { queueUid: it.uid }))}
+              onMenu={(e) => openMenu(e, trackMenu(it.track, { queueUid: it.uid }), trackHead(it.track))}
               onHandleDown={(e) => onDown(e, it.uid, i)}
             />
           ))}

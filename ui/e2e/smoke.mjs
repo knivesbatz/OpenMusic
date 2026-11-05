@@ -19,7 +19,8 @@ const within = (ms, p, what) => Promise.race([p, new Promise((_, rej) => setTime
 /** Settings is in the profile picture's menu (Spotify's top bar). */
 async function openSettings(p) {
   await p.locator(".avatar-btn").first().click();
-  await p.click(".menu button:has-text('Settings')");
+  // Phones open the account drawer, desktop the menu under the picture.
+  await p.locator(".drawer .drawer-item:has-text('Settings'), .menu button:has-text('Settings')").first().click();
 }
 
 async function test(name, fn, { youtube = false, init, userAgent } = {}) {
@@ -1073,6 +1074,20 @@ await test("YTSpot: your own playlist can be deleted from YouTube, after a confi
     const base = d.library;
     d.library = () => ({ ...(typeof base === "function" ? base() : base), playlists: pls });
     d.yt_delete_playlist = (a) => (window.__DELETED.push(a.id), (pls = pls.filter((x) => x.id !== a.id)), null);
+  },
+});
+
+await test("Android: a new version found at startup is downloaded and installed by the app", async (p) => {
+  await p.waitForFunction(() => window.__INSTALL?.length === 1, null, { timeout: 12000 });
+  assert.equal(await p.evaluate(() => window.__INSTALL[0]), "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk");
+  assert.ok(!(await p.evaluate(() => window.__CALLS__.includes("plugin:opener|open_url"))));
+}, {
+  init: () => {
+    const d = window.__MOCK__;
+    d.app_info = { ...d.app_info, platform: "android" };
+    window.__INSTALL = [];
+    window.OpenMusicMedia = { update() {}, installUpdate: (url) => (window.__INSTALL.push(url), true) };
+    d.update_check = { available: true, current: "1.4.1", version: "9.9.9", url: "https://github.com/knivesbatz/OpenMusic/releases/download/v9.9.9/PLEXSpot_9.9.9_android-arm64.apk", ready: false };
   },
 });
 

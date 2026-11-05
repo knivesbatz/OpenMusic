@@ -183,6 +183,13 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
       return true
     }
 
+    /**
+     * Download this project's newer APK from GitHub and install it (see SelfUpdate). False when
+     * "Install unknown apps" still has to be allowed for the app (its settings page opens).
+     */
+    @JavascriptInterface
+    fun installUpdate(url: String): Boolean = SelfUpdate.start(activity, url)
+
     /** The widget that opened the app, if any (once); "" when none. */
     @JavascriptInterface
     fun takeLaunch(): String {

@@ -1,7 +1,7 @@
 // Virtualized track table used by albums, playlists, artist pages, search, local files and liked.
 import { createContext, memo, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { trackMenu, type TrackMenuOpts } from "../actions";
+import { trackHead, trackMenu, type TrackMenuOpts } from "../actions";
 import { useT } from "../i18n";
 import { usePlayer } from "../player/engine";
 import * as P from "../player/engine";
@@ -128,7 +128,7 @@ export function TrackList({ tracks, context, showAlbum = true, showArt = true, n
                 if (!inSel) setSel({ selected: new Set([keys[i]]), anchor: keys[i] });
                 const selection = inSel ? selectedTracks() : [tr];
                 const idx = inSel ? selectedIdx() : [i];
-                openMenu(e, trackMenu(tr, { selection, onRemoveFromPlaylist: onRemove ? () => onRemove(idx) : undefined, removeLabel }));
+                openMenu(e, trackMenu(tr, { selection, onRemoveFromPlaylist: onRemove ? () => onRemove(idx) : undefined, removeLabel }), trackHead(tr));
               }}
               onDragStart={(e) => {
                 if (!sel.selected.has(keys[i])) setSel({ selected: new Set([keys[i]]), anchor: keys[i] });

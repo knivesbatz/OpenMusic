@@ -4,6 +4,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Updates: the app downloads and installs its new versions itself (SelfUpdate.kt). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
     <!-- Finding the default browser (Settings → Latest version opens GitHub there, Android 11+). -->
     <queries>
@@ -19,6 +22,18 @@
             android:name="app.openmusic.media.PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Updates installed by the app (SelfUpdate.kt). -->
+        <receiver
+            android:name="app.openmusic.media.UpdateStatusReceiver"
+            android:exported="false" />
+        <receiver
+            android:name="app.openmusic.media.PackageReplacedReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Home screen widgets -->
         <receiver

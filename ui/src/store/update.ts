@@ -23,9 +23,12 @@ export interface UpdateState {
 export const useUpdate = create<UpdateState>(() => ({ version: null, url: null, notes: null, status: "idle", dismissed: false }));
 const tr = (k: Parameters<typeof translate>[1], v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
-/** Phones download the new APK in the browser (Android asks before installing); Windows and macOS
- * download the update themselves and install it. */
-export const updatesInBrowser = () => isMobileApp();
+/** Android: the app's own installer (SelfUpdate.kt), when this build has it. */
+const androidInstaller = () => (window as unknown as { OpenMusicMedia?: { installUpdate?: (url: string) => boolean } }).OpenMusicMedia?.installUpdate;
+
+/** Older Android builds open the new APK in the browser. Windows, macOS and Android (with the
+ * app's installer) download the update themselves and install it. */
+export const updatesInBrowser = () => isMobileApp() && !androidInstaller();
 
 export async function checkForUpdates(manual = false) {
   if (!inTauri) return;
@@ -40,7 +43,7 @@ export async function checkForUpdates(manual = false) {
       return;
     }
     useUpdate.setState({ version: info.version, url: info.url, notes: info.notes ?? null, status: info.ready ? "ready" : "available", dismissed: false });
-    if (!info.ready && !updatesInBrowser() && useSettings.getState().autoUpdate) await downloadUpdate();
+    if (!info.ready && !isMobileApp() && useSettings.getState().autoUpdate) await downloadUpdate();
   } catch (e) {
     useUpdate.setState({ status: "idle" });
     if (manual) toast(errorMessage(e));
@@ -51,6 +54,12 @@ export async function downloadUpdate() {
   const { url } = useUpdate.getState();
   if (!url) return;
   if (updatesInBrowser()) return void openUrl(url);
+  if (isMobileApp()) {
+    // Android downloads and installs in the background; the app closes when the update lands.
+    if (!(window as unknown as { OpenMusicMedia: { installUpdate: (url: string) => boolean } }).OpenMusicMedia.installUpdate(url)) toast(tr("allowInstallUpdates"));
+    else toast(tr("updatingAndroid", { v: useUpdate.getState().version ?? "" }));
+    return;
+  }
   useUpdate.setState({ status: "downloading" });
   try {
     await api.updateDownload(url);
@@ -74,11 +83,14 @@ export async function updateOnStart() {
   if (!inTauri || updatesInBrowser()) return;
   await checkForUpdates(false);
   const s = useUpdate.getState();
-  if (s.status !== "ready" || !s.version || !useSettings.getState().autoUpdate) return;
+  // Android: "available" (the download happens in the installer); desktop: downloaded, "ready".
+  const due = isMobileApp() ? s.status === "available" : s.status === "ready";
+  if (!due || !s.version || !s.url || !useSettings.getState().autoUpdate) return;
   if (usePlayer.getState().playing || Date.now() - startedAt > STARTUP_WINDOW_MS) return;
   const tried = await api.kvGet<{ version: string; at: number }>("update.autoInstall").catch(() => null);
   if (tried && tried.version === s.version && Date.now() - tried.at < 6 * 3600_000) return;
   await api.kvSet("update.autoInstall", { version: s.version, at: Date.now() }).catch(() => {});
+  if (isMobileApp()) return void downloadUpdate();
   toast(tr("updatingNow", { v: s.version }));
   await new Promise((r) => setTimeout(r, 1500));
   if (usePlayer.getState().playing) return;

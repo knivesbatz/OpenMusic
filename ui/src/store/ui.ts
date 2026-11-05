@@ -70,10 +70,14 @@ interface UiState {
   lyricsOpen: boolean;
   fullscreen: boolean;
   toasts: Toast[];
-  menu: { x: number; y: number; items: MenuItem[] } | null;
+  menu: { x: number; y: number; items: MenuItem[]; head?: MenuHead } | null;
   dialog: Dialog | null;
   /** The Profile page's "Profile details" dialog is open. */
   profileEdit: boolean;
+  /** Phones: the account drawer (tap your picture). */
+  drawer: boolean;
+  /** Home's All / Music / Podcasts chips (in the phone's top bar). */
+  homeFilter: "all" | "music" | "podcasts";
   /** Tracks for the "View credits" style info dialog. */
   info: Track | null;
   /** The page's own name and play action, shown in the top bar once the page has scrolled. */
@@ -95,6 +99,8 @@ export const useUi = create<UiState>(() => ({
   menu: null,
   dialog: null,
   profileEdit: false,
+  drawer: false,
+  homeFilter: "all",
   info: null,
   pageTitle: null,
   savedIn: null,
@@ -142,10 +148,18 @@ export function toast(text: string, replace?: number): number {
   return id;
 }
 
-export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void }, items: MenuItem[]) {
+/** What a menu is about: shown at the top of the phone's bottom sheet (Spotify's ••• sheet). */
+export interface MenuHead {
+  title: string;
+  sub?: string | null;
+  art?: string | null;
+  round?: boolean;
+}
+
+export function openMenu(e: { clientX: number; clientY: number; preventDefault(): void; stopPropagation(): void }, items: MenuItem[], head?: MenuHead) {
   e.preventDefault();
   e.stopPropagation();
-  useUi.setState({ menu: { x: e.clientX, y: e.clientY, items } });
+  useUi.setState({ menu: { x: e.clientX, y: e.clientY, items, head } });
 }
 
 export const closeMenu = () => useUi.setState({ menu: null });

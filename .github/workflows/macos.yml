@@ -58,7 +58,8 @@ jobs:
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
           DISCORD_CLIENT_ID_YTSPOT: ${{ vars.DISCORD_CLIENT_ID_YTSPOT || secrets.DISCORD_CLIENT_ID_YTSPOT }}
           DISCORD_CLIENT_ID_PLEXSPOT: ${{ vars.DISCORD_CLIENT_ID_PLEXSPOT || secrets.DISCORD_CLIENT_ID_PLEXSPOT }}
-        run: ../../../ui/node_modules/.bin/tauri build --target universal-apple-darwin --bundles dmg
+        # "app" too: with only "dmg", Tauri deletes the .app after packing it and the check below has nothing to look at.
+        run: ../../../ui/node_modules/.bin/tauri build --target universal-apple-darwin --bundles app,dmg
         working-directory: apps/${{ matrix.app }}/src-tauri
       - name: Check the app bundle
         run: |

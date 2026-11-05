@@ -164,6 +164,8 @@ export function PlayerBar() {
   const queueOpen = useUi((s) => s.queueOpen);
   const lyricsPanel = useUi((s) => s.lyricsPanel);
   const [pip, setPip] = useState(false);
+  const touchX = useRef<number | null>(null);
+  const swiped = useRef(false);
   const tr = shown;
 
   useEffect(() => {
@@ -183,8 +185,23 @@ export function PlayerBar() {
       aria-label={t("nowPlaying")}
       // Phone mini player: tinted with the cover's colour (a tiny cover stretched into a wash).
       style={tr?.artwork ? ({ ["--pb-wash" as string]: `url("${artUrl(tr.artwork, 60)}")` } as React.CSSProperties) : undefined}
-      // Phone: the whole mini player opens the song screen, except its own buttons.
-      onClick={(e) => tr && isTouch() && !(e.target as HTMLElement).closest("button:not(.pb-art):not(.link), input") && useUi.setState({ fullscreen: true })}
+      // Phone: the whole mini player opens the song screen, except its own buttons; a sideways
+      // swipe skips (left: next, right: previous).
+      onClick={(e) => {
+        if (swiped.current) return void (swiped.current = false);
+        if (tr && isTouch() && !(e.target as HTMLElement).closest("button:not(.pb-art):not(.link), input")) useUi.setState({ fullscreen: true });
+      }}
+      onTouchStart={(e) => (touchX.current = e.touches[0].clientX)}
+      onTouchEnd={(e) => {
+        const x0 = touchX.current;
+        touchX.current = null;
+        if (x0 == null || !isTouch() || !matchMedia("(max-width: 760px)").matches) return;
+        const dx = e.changedTouches[0].clientX - x0;
+        if (Math.abs(dx) < 60) return;
+        swiped.current = true;
+        if (dx < 0) P.next();
+        else P.previous();
+      }}
     >
       <div className="pb-left">
         {tr && (
@@ -265,7 +282,29 @@ function SleepButton() {
   );
 }
 
-/** Phone layout: play/pause and next on the mini player, plus a thin progress line. */
+/** Phones (Spotify): ⊕ to save the song, a green ✓ once it's saved (tapping that opens
+ * "Saved in"). Songs that can't be liked offer Add to playlist. */
+export function PhoneSaveButton({ size = 24 }: { size?: number }) {
+  const t = useT();
+  const track = usePlayer((s) => s.queue.items[s.queue.index]?.track);
+  const caps = useApp((s) => s.info?.capabilities);
+  const liked = useApp((s) => (track ? s.liked.has(track.id) : false));
+  if (!track) return null;
+  const canLike = caps?.favorites && track.source !== "local";
+  return (
+    <button
+      className={cls("icon-btn save-circle", liked && "on")}
+      aria-pressed={canLike ? liked : undefined}
+      aria-label={liked ? t("savedIn") : canLike ? t("like") : t("addToPlaylist")}
+      onClick={(e) => (canLike ? likeOrOpen(e, track) : openSavedIn(e, track))}
+    >
+      {liked ? <I.IAddedCircle size={size} /> : <I.IAddCircle size={size} />}
+    </button>
+  );
+}
+
+/** Phone layout (Spotify): save and play/pause on the mini player, a thin progress line, and a
+ * sideways swipe on it skips to the next or previous song. */
 function MiniControls() {
   const t = useT();
   const playing = usePlayer((s) => s.playing);
@@ -273,13 +312,11 @@ function MiniControls() {
   const dur = usePlayer((s) => s.duration);
   return (
     <div className="pb-mobile">
+      <PhoneSaveButton />
       <button className="icon-btn" aria-label={playing ? t("pause") : t("play")} onClick={P.toggle}>
         <span className="swap" key={String(playing)}>
-          {playing ? <I.IPause size={24} /> : <I.IPlay size={24} />}
+          {playing ? <I.IPause size={26} /> : <I.IPlay size={26} />}
         </span>
-      </button>
-      <button className="icon-btn" aria-label={t("next")} onClick={() => P.next()}>
-        <I.INext size={22} />
       </button>
       <div className="pb-line" aria-hidden="true">
         <div style={{ width: dur ? (pos / dur) * 100 + "%" : 0 }} />

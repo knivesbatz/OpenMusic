@@ -1,14 +1,102 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
-import { closeMenu, useUi, type MenuItem } from "../store/ui";
+import { closeMenu, useUi, type MenuHead, type MenuItem } from "../store/ui";
 import { cls, fmtMs } from "../util";
-import { Art } from "./common";
+import { Art, usePhoneLayout } from "./common";
 import * as I from "./Icons";
 
 export function ContextMenu() {
   const menu = useUi((s) => s.menu);
+  const phone = usePhoneLayout();
   if (!menu) return null;
+  // Phones: Spotify's ••• sheet from the bottom instead of a pop-up menu.
+  if (phone) return <MenuSheet key={menu.x + ":" + menu.y + ":" + menu.items.length} items={menu.items} head={menu.head} />;
   return <MenuList items={menu.items} x={menu.x} y={menu.y} root />;
+}
+
+/** The phone menu: a sheet that slides up, with what it's about (cover, title) at the top and
+ * one big row per action. Submenus open in place with a back row; swipe down or tap outside to
+ * close. */
+function MenuSheet({ items, head }: { items: MenuItem[]; head?: MenuHead }) {
+  const t = useT();
+  const [stack, setStack] = useState<{ title?: string; items: MenuItem[] }[]>([{ items }]);
+  const [drag, setDrag] = useState(0);
+  const startY = useRef<number | null>(null);
+  const cur = stack[stack.length - 1];
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && closeMenu();
+    addEventListener("keydown", esc);
+    return () => removeEventListener("keydown", esc);
+  }, []);
+  const touch = {
+    onTouchStart: (e: React.TouchEvent) => (startY.current = e.touches[0].clientY),
+    onTouchMove: (e: React.TouchEvent) => startY.current != null && setDrag(Math.max(0, e.touches[0].clientY - startY.current)),
+    onTouchEnd: () => {
+      if (drag > 90) closeMenu();
+      startY.current = null;
+      setDrag(0);
+    },
+  };
+  return (
+    <div className="sheet-bg" onClick={(e) => e.target === e.currentTarget && closeMenu()} onContextMenu={(e) => e.preventDefault()}>
+      <div className="menu-sheet" role="menu" style={drag ? { transform: `translateY(${drag}px)`, transition: "none" } : undefined}>
+        <div className="sheet-top" {...touch}>
+          <div className="sheet-grip" aria-hidden="true" />
+          {head && stack.length === 1 && (
+            <div className="sheet-head">
+              <Art src={head.art} size={128} round={head.round} />
+              <div className="sheet-head-text">
+                <div className="t">{head.title}</div>
+                {head.sub && <div className="s">{head.sub}</div>}
+              </div>
+            </div>
+          )}
+          {stack.length > 1 && (
+            <button className="sheet-back" onClick={() => setStack((s) => s.slice(0, -1))}>
+              <I.IBack size={20} />
+              <span>{cur.title ?? t("back")}</span>
+            </button>
+          )}
+        </div>
+        <div className="sheet-items">
+          {cur.items.map((m, i) =>
+            m.separator ? (
+              <hr key={i} />
+            ) : m.heading ? (
+              <div key={i} className="sheet-heading">
+                {m.label}
+              </div>
+            ) : m.icons ? (
+              <div key={i} className="menu-icons" role="group" aria-label={m.label}>
+                {m.icons.map((b) => (
+                  <button key={b.label} className={cls(b.on && "on")} aria-label={b.label} aria-pressed={b.on} onClick={() => (closeMenu(), b.onClick())}>
+                    <b.icon size={22} />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <button
+                key={i}
+                role={m.checked !== undefined ? "menuitemradio" : "menuitem"}
+                aria-checked={m.checked}
+                disabled={m.disabled}
+                className={cls("sheet-item", m.danger && "danger", m.checked && "on")}
+                onClick={() => {
+                  if (m.submenu) return setStack((s) => [...s, { title: m.label, items: m.submenu! }]);
+                  closeMenu();
+                  m.onClick?.();
+                }}
+              >
+                <span className="sheet-icon">{m.icon ? <m.icon size={24} /> : null}</span>
+                <span className="sheet-label">{m.label}</span>
+                {m.submenu ? <I.IForward size={18} /> : m.checked ? <I.ICheck size={20} /> : m.hint ? <span className="sheet-hint">{m.hint}</span> : m.external ? <I.IOpen size={18} /> : null}
+              </button>
+            ),
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MenuList({ items, x, y, root }: { items: MenuItem[]; x: number; y: number; root?: boolean }) {

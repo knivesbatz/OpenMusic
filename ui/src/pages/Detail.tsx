@@ -1,6 +1,6 @@
 // Artist, album and playlist pages.
 import { useMemo, useState } from "react";
-import { albumMenu, canChangeCover, changeCover, downloadTracks, playlistMenu, toggleSaved, trackMenu } from "../actions";
+import { albumMenu, canChangeCover, changeCover, downloadTracks, playlistMenu, toggleSaved, trackHead, trackMenu } from "../actions";
 import { api, artUrl, errorMessage } from "../api";
 import { Art, ArtistName, ErrorBox, Loading, PlayFab, TitleText, useAsync, usePageTitle } from "../components/common";
 import * as I from "../components/Icons";
@@ -204,7 +204,7 @@ export function AlbumPage({ id }: { id: string }) {
       <ActionBar
         tracks={tracks}
         ctx={ctx}
-        onMore={(e) => openMenu(e, albumMenu(album, async () => tracks))}
+        onMore={(e) => openMenu(e, albumMenu(album, async () => tracks), { title: album.title, sub: album.artist, art: album.artwork })}
         extra={<SaveAlbumButton album={album} />}
       />
       <DiscTracks tracks={tracks} ctx={ctx} />
@@ -411,7 +411,7 @@ export function PlaylistPage({ id }: { id: string }) {
       <ActionBar
         tracks={shown}
         ctx={ctx}
-        onMore={(e) => openMenu(e, playlistMenu(playlist, async () => shown, reload))}
+        onMore={(e) => openMenu(e, playlistMenu(playlist, async () => shown, reload), { title: playlist.title, sub: playlist.owner, art: playlist.artwork })}
         right={
           tracks.length > 1 && (
             <>
@@ -476,7 +476,7 @@ function EpisodeRow({ ep, onPlay }: { ep: Track; onPlay: () => void }) {
   const playing = usePlayer((s) => s.playing) && current;
   const saved = useApp((s) => s.saved.episodes.some((e) => e.id === ep.id));
   return (
-    <div className={cls("ep-row", current && "current")} onContextMenu={(e) => openMenu(e, trackMenuFor(ep))}>
+    <div className={cls("ep-row", current && "current")} onContextMenu={(e) => openMenu(e, trackMenuFor(ep), trackHead(ep))}>
       <Art src={ep.artwork} size={240} className="ep-art" />
       <div className="ep-body">
         <div className="ep-title">
@@ -492,7 +492,7 @@ function EpisodeRow({ ep, onPlay }: { ep: Track; onPlay: () => void }) {
           <button className={cls("icon-btn", saved && "on")} aria-pressed={saved} aria-label={saved ? t("removeFromYourEpisodes") : t("saveToYourEpisodes")} title={saved ? t("removeFromYourEpisodes") : t("saveToYourEpisodes")} onClick={() => toggleSaved({ kind: "episode", v: ep })}>
             {saved ? <I.IChecked size={22} /> : <I.IAddCircle size={22} />}
           </button>
-          <button className="icon-btn" aria-label={t("more")} onClick={(e) => openMenu(e, trackMenuFor(ep))}>
+          <button className="icon-btn" aria-label={t("more")} onClick={(e) => openMenu(e, trackMenuFor(ep), trackHead(ep))}>
             <I.IMore size={20} />
           </button>
         </div>
