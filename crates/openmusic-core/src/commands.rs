@@ -330,9 +330,13 @@ pub async fn plex_reconnect(app: &AppHandle, state: &AppState) -> Result<()> {
             emit_connection(app, Provider::Plex, true);
             Ok(())
         }
+        // Only an unreachable server is "offline"; a refused token is a sign-in problem.
         Err(e) => {
-            state.mark_offline(Provider::Plex);
-            emit_connection(app, Provider::Plex, false);
+            match &e {
+                Error::Offline(_) if state.mark_offline(Provider::Plex) => emit_connection(app, Provider::Plex, false),
+                Error::AuthExpired(_) => emit_for(app, "auth-expired", Provider::Plex),
+                _ => {}
+            }
             Err(e)
         }
     }
@@ -868,9 +872,11 @@ where
     }
     let (a, st) = (app.clone(), state.clone());
     let task = async move { fetch_recovering(&a, &st, p, &fetch).await };
-    let a = app.clone();
+    let (a, st) = (app.clone(), state.clone());
+    let gen = state.db().generation(p);
     let late = move |r: Result<T>| {
-        if let (Ok(_), Some(event)) = (r, late_event) {
+        // Not after a sign-out or account switch: that result belongs to the previous account.
+        if let (Ok(_), Some(event), true) = (r, late_event, st.db().generation(p) == gen) {
             emit_for(&a, event, p);
         }
     };
@@ -881,6 +887,17 @@ where
         Some(Err(e)) => failed(ProviderError::of(p, &e)),
         None => failed(ProviderError { provider: p, code: "timeout".into(), message: format!("{} is taking too long", p.label()) }),
     }
+}
+
+/// Write a fetch's result only while the provider's account is the one the fetch started with
+/// (`gen` from [`Db::generation`] before the fetch): a sign-out or account switch since then
+/// cleared the cache, and the previous account's data must not come back.
+fn put_current(st: &AppState, p: Provider, gen: u64, write: impl FnOnce(&crate::db::Db) -> Result<()>) -> Result<()> {
+    let db = st.db();
+    if db.generation(p) == gen {
+        write(&db)?;
+    }
+    Ok(())
 }
 
 /// Merge parts in order: `add` takes each value; returns whether any was stale and the errors.
@@ -1196,15 +1213,16 @@ pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result
         let fetch = move |app: AppHandle, st: Arc<AppState>| {
             let key = k.clone();
             async move {
+                let gen = st.db().generation(p);
                 let shelves = match p {
                     Provider::Plex => {
                         let sess = st.plex_session().await?;
                         let mut shelves = Vec::new();
-                        let latest = st.plex.latest_releases(&sess).await;
+                        let latest = st.plex.latest_releases(&sess).await?;
                         if !latest.is_empty() {
                             shelves.push(Shelf { title: "latestReleases".into(), subtitle: None, items: latest.into_iter().map(MediaItem::Album).collect() });
                         }
-                        let added = st.plex.recently_added(&sess).await;
+                        let added = st.plex.recently_added(&sess).await?;
                         if !added.is_empty() {
                             shelves.push(Shelf { title: "recentlyAdded".into(), subtitle: None, items: added.into_iter().map(MediaItem::Album).collect() });
                         }
@@ -1215,7 +1233,7 @@ pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result
                         yt_call!(app, st, |y| y.new_releases())?
                     }
                 };
-                st.db().cache_put(&key, &shelves, 3600)?;
+                put_current(&st, p, gen, |db| db.cache_put(&key, &shelves, 3600))?;
                 Ok(shelves)
             }
         };
@@ -1303,15 +1321,17 @@ async fn library_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refre
                 }
             }
             let fetch = |app: AppHandle, st: Arc<AppState>| async move {
+                let gen = st.db().generation(Provider::YouTube);
                 st.yt_account().await?;
                 let l = yt_call!(app, st, |y| y.library())?;
-                st.db().cache_put("yt:library", &l, 15 * 60)?;
+                put_current(&st, Provider::YouTube, gen, |db| db.cache_put("yt:library", &l, 15 * 60))?;
                 Ok(l)
             };
             provider_part(app, state, p, WAIT_LONG, Some("library-changed"), fetch, |st| st.db().cache_get("yt:library", true).ok().flatten()).await
         }
         Provider::Plex => {
             let fetch = move |_app: AppHandle, st: Arc<AppState>| async move {
+                let gen = st.db().generation(Provider::Plex);
                 let sess = st.plex_session().await?;
                 // Incremental sync: reuse the cached library while the server's content
                 // fingerprint is unchanged.
@@ -1322,7 +1342,7 @@ async fn library_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refre
                     _ => {
                         let lib = st.plex.library(&sess).await?;
                         if let Some(fp) = fp {
-                            st.db().kv_set("plex.library", &(fp, &lib))?;
+                            put_current(&st, Provider::Plex, gen, |db| db.kv_set("plex.library", &(fp, &lib)))?;
                         }
                         lib
                     }
@@ -2149,8 +2169,8 @@ pub fn htpc_autostart_set(_app: AppHandle, _enabled: bool) -> Result<()> {
 /// tracks. Cached under `<provider>:liked`; `rate` drops it.
 async fn liked_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh: bool) -> Option<Part<Vec<Track>>> {
     let key = p.key("liked");
-    if !refresh && state.on(p) {
-        if let Some(t) = state.db().cache_get::<Vec<Track>>(&key, false).ok().flatten() {
+    if !refresh {
+        if let Some(t) = liked_cached(state, p) {
             return Some(Part { value: t, stale: false, error: None });
         }
     }
@@ -2158,10 +2178,13 @@ async fn liked_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh
     let fetch = move |app: AppHandle, st: Arc<AppState>| {
         let key = k.clone();
         async move {
+            let gen = st.db().generation(p);
             let tracks = match p {
                 Provider::Plex => {
                     let sess = st.plex_session().await?;
-                    st.plex.liked_tracks(&sess).await
+                    // Fallible: an outage is an error (stale cache shown, reconnect tried), never
+                    // an empty list cached for 15 minutes.
+                    st.plex.liked_tracks(&sess).await?
                 }
                 Provider::YouTube => {
                     st.yt_account().await?;
@@ -2169,11 +2192,19 @@ async fn liked_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh
                     yt_call!(app, st, |y| y.playlist("yt:LM"))?.tracks
                 }
             };
-            st.db().cache_put(&key, &tracks, 15 * 60)?;
+            put_current(&st, p, gen, |db| db.cache_put(&key, &tracks, 15 * 60))?;
             Ok(tracks)
         }
     };
     provider_part(app, state, p, WAIT_LONG, Some("liked-changed"), fetch, move |st| st.db().cache_get(&key, true).ok().flatten()).await
+}
+
+/// A provider's fresh cached liked songs (`<provider>:liked`), while its switch is on.
+fn liked_cached(state: &AppState, p: Provider) -> Option<Vec<Track>> {
+    if !state.on(p) {
+        return None;
+    }
+    state.db().cache_get::<Vec<Track>>(&p.key("liked"), false).ok().flatten()
 }
 
 /// Liked Songs from every provider that is on: YouTube's first (newest like first), then Plex's.
@@ -2200,9 +2231,12 @@ pub async fn liked_tracks(app: AppHandle, state: S<'_>, refresh: bool) -> Result
 }
 
 /// Track ids the user has liked on the providers that are on, so the UI can show the like state.
+/// Served from the `<provider>:liked` cache (`rate` drops it): the UI calls this on every
+/// `liked-changed`, which a late fetch emits after filling that cache, so refetching here would
+/// start the same slow fetch again and again.
 #[tauri::command]
 pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
-    Ok(liked_merged(&app, state.inner(), true).await.tracks.into_iter().map(|t| t.id).collect())
+    Ok(liked_merged(&app, state.inner(), false).await.tracks.into_iter().map(|t| t.id).collect())
 }
 
 // ---- saved albums / artists ("Your Library") -----------------------------------------------
@@ -2960,6 +2994,35 @@ mod tests {
         .await;
         assert_eq!(slow, None, "the caller gave up");
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), 2, "the result still arrives");
+    }
+
+    #[test]
+    fn writes_skip_after_an_account_change() {
+        let st = crate::state::test_state();
+        let gen = st.db().generation(Provider::Plex);
+        put_current(&st, Provider::Plex, gen, |db| db.cache_put("plex:liked", &1, 600)).unwrap();
+        assert_eq!(st.db().cache_get::<i32>("plex:liked", false).unwrap(), Some(1));
+        // A Home user switch while the fetch ran: its result is not written back.
+        st.db().cache_clear_provider(Provider::Plex).unwrap();
+        put_current(&st, Provider::Plex, gen, |db| db.cache_put("plex:liked", &2, 600)).unwrap();
+        assert_eq!(st.db().cache_get::<i32>("plex:liked", true).unwrap(), None);
+        // YouTube's fetches are not affected by a Plex change.
+        let yt = st.db().generation(Provider::YouTube);
+        put_current(&st, Provider::YouTube, yt, |db| db.cache_put("yt:liked", &3, 600)).unwrap();
+        assert_eq!(st.db().cache_get::<i32>("yt:liked", false).unwrap(), Some(3));
+    }
+
+    #[test]
+    fn liked_ids_are_served_from_the_cache() {
+        // liked_ids reads with refresh=false: what a late fetch just cached ends the
+        // liked-changed -> liked_ids round, instead of starting the same fetch again.
+        let st = crate::state::test_state();
+        let tracks: Vec<Track> = serde_json::from_value(json!([{ "id": "yt:a", "source": "youtube", "title": "a", "artist": "A" }])).unwrap();
+        st.db().cache_put("yt:liked", &tracks, 600).unwrap();
+        assert!(liked_cached(&st, Provider::YouTube).is_none(), "switch off: nothing");
+        st.services.write().unwrap().youtube = true;
+        assert_eq!(liked_cached(&st, Provider::YouTube).unwrap()[0].id, "yt:a");
+        assert!(liked_cached(&st, Provider::Plex).is_none());
     }
 
     #[test]

@@ -97,6 +97,10 @@ pub fn now() -> i64 {
 
 pub struct Db {
     pub conn: Connection,
+    /// Per provider (`Provider::index`): bumped by every [`Db::cache_clear_provider`] (sign-in,
+    /// sign-out, user/server/account switches), so a fetch that started before can skip writing
+    /// the previous account's data back (see [`Db::generation`]).
+    generation: [std::sync::atomic::AtomicU64; 2],
 }
 
 impl Db {
@@ -113,7 +117,7 @@ impl Db {
         conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
         )?;
-        let mut db = Db { conn };
+        let mut db = Db { conn, generation: Default::default() };
         db.migrate()?;
         Ok(db)
     }
@@ -195,12 +199,22 @@ impl Db {
     /// Clear one provider's cached responses (keys `yt:…` / `plex:…`), and for Plex the cached
     /// library listing. The other provider's entries, translations and name aliases stay.
     pub fn cache_clear_provider(&self, p: crate::state::Provider) -> Result<()> {
+        self.generation[p.index()].fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // The prefixes hold no LIKE wildcards.
         self.conn.execute("DELETE FROM cache WHERE key LIKE ?1", [format!("{}%", p.cache_prefix())])?;
+        // What's New's "from artists you follow" mixes both providers' albums.
+        self.conn.execute("DELETE FROM cache WHERE key LIKE 'newreleases:followed:%'", [])?;
         if p == crate::state::Provider::Plex {
             self.kv_delete("plex.library")?;
         }
         Ok(())
+    }
+
+    /// How many times this provider's cache was cleared since the app started. A fetch reads it
+    /// before it starts and writes its result only while it is unchanged (read and write under
+    /// the same database lock).
+    pub fn generation(&self, p: crate::state::Provider) -> u64 {
+        self.generation[p.index()].load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Clear the cache except entries whose keys start with one of `keep`.
@@ -678,7 +692,12 @@ mod tests {
             db.cache_put(k, &1, 600).unwrap();
         }
         db.kv_set("plex.library", &("fp", 1)).unwrap();
+        db.cache_put("newreleases:followed:11", &1, 600).unwrap();
+        let (yt_gen, plex_gen) = (db.generation(crate::state::Provider::YouTube), db.generation(crate::state::Provider::Plex));
         db.cache_clear_provider(crate::state::Provider::Plex).unwrap();
+        assert_eq!(db.generation(crate::state::Provider::Plex), plex_gen + 1);
+        assert_eq!(db.generation(crate::state::Provider::YouTube), yt_gen);
+        assert!(db.cache_get::<i32>("newreleases:followed:11", true).unwrap().is_none(), "the mixed followed list goes too");
         assert!(db.cache_get::<i32>("plex:home", true).unwrap().is_none());
         assert!(db.cache_get::<i32>("plex:browsePage:plex-genre:1", true).unwrap().is_none());
         assert!(db.kv_get::<(String, i32)>("plex.library").unwrap().is_none(), "Plex's library listing goes too");

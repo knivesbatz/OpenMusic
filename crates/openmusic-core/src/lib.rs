@@ -51,6 +51,26 @@ fn read_secret<T>(r: Result<Option<T>, error::Error>, name: &str, errored: &mut 
     })
 }
 
+/// The saved service switches, or the defaults for this data dir ([`Services::initial`]), saved
+/// only when `settled`.
+fn decide_services(db: &db::Db, before: &migrate::Before, yt_cookie: bool, plex_token: bool, settled: bool) -> error::Result<Services> {
+    if let Some(s) = db.kv_get::<Services>("services")? {
+        return Ok(s);
+    }
+    let s = Services::initial(&state::InitialFacts {
+        had_own_settings: before.had_own_settings,
+        had_yt_cookie: before.had_yt_cookie || yt_cookie,
+        had_local_only: before.had_local_only,
+        yt_account: db.kv_get::<String>("yt.account")?.is_some(),
+        plex_account: db.kv_get::<String>("plex.account")?.is_some(),
+        plex_token,
+    });
+    if settled {
+        db.kv_set("services", &s)?;
+    }
+    Ok(s)
+}
+
 fn init_state(app: &tauri::AppHandle) -> Result<Arc<AppState>, Box<dyn std::error::Error>> {
     let data = app.path().app_data_dir()?;
     let cache = app.path().app_cache_dir()?;
@@ -66,7 +86,7 @@ fn init_state(app: &tauri::AppHandle) -> Result<Arc<AppState>, Box<dyn std::erro
     let db = db::Db::open(&dirs.data.join("library.db"))?;
     let secrets = secrets::Secrets::new(&app.config().identifier, &dirs.data);
     // What this data dir held before the PLEXSpot import merged anything into it.
-    let before = migrate::before(&db, &secrets);
+    let before = migrate::before(&dirs.data, &db, &secrets);
     // The one-time PLEXSpot import. Never fails (each step logs and retries next start); it runs
     // before the clientId is read so Plex keeps PLEXSpot's device identity.
     migrate::run(&dirs.data, &db, &secrets);
@@ -97,25 +117,10 @@ fn init_state(app: &tauri::AppHandle) -> Result<Arc<AppState>, Box<dyn std::erro
         log::warn!("plex.session: {e}");
         None
     });
-    let services = match db.kv_get::<Services>("services")? {
-        Some(s) => s,
-        None => {
-            let s = Services::initial(&state::InitialFacts {
-                had_own_settings: before.had_own_settings,
-                had_yt_cookie: before.had_yt_cookie || yt_cookie.is_some(),
-                had_local_only: before.had_local_only,
-                yt_account: db.kv_get::<String>("yt.account")?.is_some(),
-                plex_account: db.kv_get::<String>("plex.account")?.is_some(),
-                plex_token: plex_token.is_some(),
-            });
-            // Decided for good only from a credential store that answered; otherwise again
-            // next start.
-            if !secret_error {
-                db.kv_set("services", &s)?;
-            }
-            s
-        }
-    };
+    // Decided for good only from a credential store that answered and once the PLEXSpot import
+    // can no longer bring a Plex sign-in in (deferred or failed); otherwise again next start.
+    let settled = !secret_error && !migrate::import_pending(&dirs.data, &db);
+    let services = decide_services(&db, &before, yt_cookie.is_some(), plex_token.is_some(), settled)?;
 
     let mut ytm = ytm::Ytm::new(http.clone(), yt_cookie, &language);
     ytm.page_id = db.kv_get::<String>("yt.pageId")?;
@@ -149,7 +154,7 @@ fn import_secrets_later(app: tauri::AppHandle, state: Arc<AppState>) {
         let st = state.clone();
         let _ = tauri::async_runtime::spawn_blocking(move || match db::Db::open(&st.dirs.data.join("library.db")) {
             Ok(db) => migrate::run_secrets_later(&st.dirs.data, &db, &st.secrets),
-            Err(e) => log::warn!("PLEXSpot sign-in import: {e}"),
+            Err(e) => migrate::log_note(&st.dirs.data, &format!("PLEXSpot sign-in import: {e}")),
         })
         .await;
         if state.plex_session.read().await.is_none() {
@@ -185,6 +190,14 @@ fn rename_bundle_once(app: &tauri::AppHandle) -> bool {
     }
     let Some(parent) = bundle.parent() else { return false };
     let target = parent.join("OpenSpot.app");
+    // No logger is installed: failures go to crash.log (shown in Settings).
+    let warn = |msg: String| match app.path().app_data_dir() {
+        Ok(dir) => {
+            let _ = std::fs::create_dir_all(&dir);
+            migrate::log_note(&dir, &msg)
+        }
+        Err(_) => log::warn!("{msg}"),
+    };
     if target.exists() {
         // A second copy with the same identity: it would compete with OpenSpot.app for the
         // single-instance lock, Launch Services and updates.
@@ -192,16 +205,16 @@ fn rename_bundle_once(app: &tauri::AppHandle) -> bool {
         match Command::new("/usr/bin/osascript").args(["-e", &script]).output() {
             Ok(o) if o.status.success() => {}
             Ok(o) => {
-                log::warn!("moving {name} to the Trash failed: {}", String::from_utf8_lossy(&o.stderr).trim());
+                warn(format!("moving {name} to the Trash failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
                 return false;
             }
             Err(e) => {
-                log::warn!("moving {name} to the Trash failed: {e}");
+                warn(format!("moving {name} to the Trash failed: {e}"));
                 return false;
             }
         }
     } else if let Err(e) = std::fs::rename(&bundle, &target) {
-        log::warn!("renaming {name} to OpenSpot.app failed: {e}");
+        warn(format!("renaming {name} to OpenSpot.app failed: {e}"));
         return false;
     }
     // A 1.x launch-at-startup entry points at the old name: OpenSpot registers its own on the

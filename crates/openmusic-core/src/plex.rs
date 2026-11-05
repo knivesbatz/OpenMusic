@@ -478,9 +478,19 @@ impl Plex {
         out
     }
 
+    /// Like [`Plex::per_section`], but fails when every section failed (an unreachable server, a
+    /// refused token), so callers that cache the result never cache an outage as "empty".
+    async fn per_section_try<T>(&self, sess: &Session, q: &str, f: fn(&Value) -> Option<T>) -> Result<Vec<T>> {
+        let mut results = Vec::new();
+        for sid in &sess.sections {
+            results.push(self.list(sess, &format!("/library/sections/{sid}/all?{q}")).await.map(|l| l.iter().filter_map(f).collect()));
+        }
+        combine_sections(results)
+    }
+
     /// Tracks the user has liked (rated) on this server, for Liked Songs.
-    pub async fn liked_tracks(&self, sess: &Session) -> Vec<Track> {
-        self.per_section(sess, "type=10&userRating>>=5", to_track).await
+    pub async fn liked_tracks(&self, sess: &Session) -> Result<Vec<Track>> {
+        self.per_section_try(sess, "type=10&userRating>>=5", to_track).await
     }
 
     /// Ids of tracks the user has liked (rated) on this server.
@@ -507,13 +517,13 @@ impl Plex {
     }
 
     /// Newest releases in the library (by release date), for the What's New page.
-    pub async fn latest_releases(&self, sess: &Session) -> Vec<Album> {
-        self.per_section(sess, "type=9&sort=originallyAvailableAt:desc&X-Plex-Container-Size=30", to_album).await
+    pub async fn latest_releases(&self, sess: &Session) -> Result<Vec<Album>> {
+        self.per_section_try(sess, "type=9&sort=originallyAvailableAt:desc&X-Plex-Container-Size=30", to_album).await
     }
 
     /// Albums most recently added to the library.
-    pub async fn recently_added(&self, sess: &Session) -> Vec<Album> {
-        self.per_section(sess, "type=9&sort=addedAt:desc&X-Plex-Container-Size=30", to_album).await
+    pub async fn recently_added(&self, sess: &Session) -> Result<Vec<Album>> {
+        self.per_section_try(sess, "type=9&sort=addedAt:desc&X-Plex-Container-Size=30", to_album).await
     }
 
     pub async fn home(&self, sess: &Session) -> Result<Vec<Shelf>> {
@@ -823,9 +833,42 @@ pub fn loudness_of(track: &Value) -> Option<f32> {
         .find_map(|s| s.get("loudness").and_then(num).or_else(|| s.get("gain").and_then(num).map(|g| -18.0 - g)))
 }
 
+/// The sections' lists together. Fails only when every section failed (a refused token first,
+/// since a reconnect can repair it); one bad section among good ones is skipped.
+fn combine_sections<T>(results: Vec<Result<Vec<T>>>) -> Result<Vec<T>> {
+    let mut out = Vec::new();
+    let mut first_err = None;
+    let mut any_ok = results.is_empty();
+    for r in results {
+        match r {
+            Ok(list) => {
+                any_ok = true;
+                out.extend(list);
+            }
+            Err(e @ Error::AuthExpired(_)) => first_err = Some(e),
+            Err(e) => {
+                first_err.get_or_insert(e);
+            }
+        }
+    }
+    match first_err {
+        Some(e) if !any_ok => Err(e),
+        _ => Ok(out),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sections_fail_only_when_all_fail() {
+        assert_eq!(combine_sections::<i32>(vec![]).unwrap(), Vec::<i32>::new());
+        assert_eq!(combine_sections(vec![Ok(vec![1]), Err(Error::Offline("x".into())), Ok(vec![2])]).unwrap(), vec![1, 2]);
+        let all_down = combine_sections::<i32>(vec![Err(Error::Offline("x".into())), Err(EXPIRED)]);
+        assert!(matches!(all_down, Err(Error::AuthExpired(_))), "a refused token wins, so a reconnect is tried");
+        assert!(matches!(combine_sections::<i32>(vec![Err(Error::Offline("x".into()))]), Err(Error::Offline(_))));
+    }
 
     #[test]
     fn parses_home_users() {

@@ -82,7 +82,9 @@ pub struct Receiving {
 
 /// The app name a bundle carries. 1.x apps only accept their own name ("youtube" from YTSpot,
 /// "plex" from PLEXSpot), so a bundle whose songs all come from one provider says so and still
-/// reaches them; a mixed bundle says "openspot".
+/// reaches them; a mixed bundle says "openspot". A bundle with no provider songs (empty
+/// playlists, local files only, covers, which are always YouTube's) says "youtube", so a 1.x
+/// YTSpot still takes it.
 fn bundle_app_name<'a>(tracks: impl IntoIterator<Item = &'a Track>) -> &'static str {
     let mut seen: Option<Provider> = None;
     for t in tracks {
@@ -95,7 +97,7 @@ fn bundle_app_name<'a>(tracks: impl IntoIterator<Item = &'a Track>) -> &'static 
     }
     match seen {
         Some(p) => p.as_str(),
-        None => "openspot",
+        None => Provider::YouTube.as_str(),
     }
 }
 
@@ -383,7 +385,8 @@ mod tests {
         assert_eq!(bundle_app_name(&[t("yt:a"), t("local:x"), t("yt:b")]), "youtube");
         assert_eq!(bundle_app_name(&[t("plex:1"), t("plex:2")]), "plex");
         assert_eq!(bundle_app_name(&[t("yt:a"), t("plex:1")]), "openspot");
-        assert_eq!(bundle_app_name(&[]), "openspot");
+        assert_eq!(bundle_app_name(&[]), "youtube", "nothing provider-specific: a 1.x YTSpot takes it");
+        assert_eq!(bundle_app_name(&[t("local:x")]), "youtube");
         for name in ["openspot", "youtube", "plex"] {
             assert!(accepts(name));
         }
