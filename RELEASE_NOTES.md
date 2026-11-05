@@ -1,8 +1,18 @@
-# OpenMusic 1.5.0
+# OpenMusic 1.5.1
 
-The phone app redone after today's Spotify app, and Android updates that install themselves.
+Android apps signed with OpenMusic's permanent key, so from now on they update themselves.
 
-## New in 1.5.0
+## New in 1.5.1
+- **Android: one last manual install.** Earlier APKs were each signed with a new temporary key, so
+  Android refused to install one over another. 1.5.1 and every later version are signed with
+  the same permanent key.
+  - **Uninstall the app once and install 1.5.1.** (Your sign-in and settings on the phone are
+    removed with it; the music library itself is on YouTube Music / Plex.)
+  - After that, new versions download and install themselves when the app starts (allow
+    **Install unknown apps** for it the first time Android asks).
+- Builds can no longer publish an APK signed with any other key.
+
+## Also in 1.5.0
 - **Phones look like Spotify's app now.** Every screen was compared with recent screenshots of
   Spotify's Android and iPhone apps and redone to match:
   - **Home:** your picture and the All / Music / Podcasts chips share the top row; the shortcut
