@@ -932,7 +932,7 @@ mod tests {
                 std::fs::write(dir.join("downloads/plex_2.flac"), b"ours").unwrap();
                 o.conn.execute(
                     "INSERT INTO downloads(track_id,track_json,status,path,updated_at) VALUES('plex:2','{}','done',?1,1)",
-                    [dir.join("downloads/plex_2.flac").to_string_lossy()],
+                    [dir.join("downloads").join("plex_2.flac").to_string_lossy()],
                 ).unwrap();
             },
             |t, dir| {
@@ -954,12 +954,13 @@ mod tests {
         );
         e.run(true);
         let path = |id: &str| -> String { e.ours.conn.query_row("SELECT path FROM downloads WHERE track_id=?1", [id], |r| r.get(0)).unwrap() };
-        let moved = e.ours_dir.join("downloads/plex_1.flac");
+        // Built with join per component: the import writes native separators (`\` on Windows).
+        let moved = e.ours_dir.join("downloads").join("plex_1.flac");
         assert_eq!(path("plex:1"), moved.to_string_lossy());
         assert_eq!(std::fs::read(&moved).unwrap(), b"one");
         assert!(!e.theirs_dir.join("downloads/plex_1.flac").exists());
         // Ours wins on the same track: our file and row stay, theirs is left in place.
-        assert_eq!(path("plex:2"), e.ours_dir.join("downloads/plex_2.flac").to_string_lossy());
+        assert_eq!(path("plex:2"), e.ours_dir.join("downloads").join("plex_2.flac").to_string_lossy());
         assert_eq!(std::fs::read(e.ours_dir.join("downloads/plex_2.flac")).unwrap(), b"ours");
         assert!(e.theirs_dir.join("downloads/plex_2.flac").exists());
         assert!(!e.ours_dir.join("downloads/plex_3.flac.part").exists());
