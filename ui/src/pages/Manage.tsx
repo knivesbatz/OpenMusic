@@ -7,7 +7,7 @@ import { checkForUpdates, updatesInBrowser } from "../store/update";
 
 const LASTFM_API = "https://www.last.fm/api/account/create";
 import { api, errorMessage, inTauri } from "../api";
-import { Loading, Select, useAsync, usePhoneLayout } from "../components/common";
+import { Loading, Select, useAsync } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
@@ -268,7 +268,6 @@ export function ImportPage() {
 
 export function SettingsPage() {
   const t = useT();
-  const phone = usePhoneLayout();
   const s = useSettings();
   const info = useApp((x) => x.info);
   const auth = useApp((x) => x.auth);
@@ -287,7 +286,7 @@ export function SettingsPage() {
     api.htpcAutostartGet().then(setAutostart, () => setAutostart(null));
   }, []);
 
-  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "normalizeVolume" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "shareAudio" | "privateSession" | "reducedMotion" | "highContrast" | "classicLibrary" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
+  const Toggle = ({ k, label, hint, disabled }: { k: "gapless" | "automix" | "normalizeVolume" | "autoplaySimilar" | "closeToTray" | "autoUpdate" | "discordPresence" | "shareAudio" | "privateSession" | "reducedMotion" | "highContrast" | "lastfmScrobble" | "htpc" | "translateNames" | "translateLyrics"; label: string; hint?: string; disabled?: boolean }) => (
     <label className={cls("setting", disabled && "disabled")}>
       <div className="grow">
         <div>{label}</div>
@@ -453,7 +452,6 @@ export function SettingsPage() {
         </label>
         <Toggle k="reducedMotion" label={t("reduceMotion")} />
         <Toggle k="highContrast" label={t("highContrast")} />
-        {phone && <Toggle k="classicLibrary" label={t("classicLibrary")} hint={t("classicLibraryHint")} />}
         <p className="muted small">{t("shortcuts")}</p>
       </section>
 

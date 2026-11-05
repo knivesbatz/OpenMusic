@@ -1142,10 +1142,6 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .browse-page > h1 { font-size: 1rem; margin: 6px 0 12px; }
   /* Your Library */
   .lib-phone { padding-top: 0; }
-  .lib-chips { margin: 2px 0 14px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .lib-chips::-webkit-scrollbar { display: none; }
-  .lib-chips .chip { flex: none; height: 32px; padding: 0 14px; font-size: 0.875rem; }
-  .lib-chips .chip.clear { width: 32px; padding: 0; display: grid; place-items: center; }
   .lib-sortbar { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px; }
   .lib-sortbtn { display: inline-flex; align-items: center; gap: 8px; font-size: 0.875rem; font-weight: 600; padding: 6px 0; }
   .lib-rows.lib-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 12px; }
@@ -1175,22 +1171,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .pb-mobile .save-circle.on { color: var(--green); }
 }
 
-/* ---- 1.6.0: Spotify app details (Create tab, pinned bar) ---------------------- */
+/* ---- 1.6.0: Spotify app details (pinned bar) ---------------------- */
 @media (max-width: 760px) {
-  /* Create tab: a "+" that turns into a white circle with ✕ while its panel is open. */
-  .mobile-tabs button { min-width: 64px; padding: 4px 8px; }
-  .create-icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease-out); }
-  .create-tab.open { color: var(--text); }
-  .create-tab.open .create-icon { width: 34px; height: 34px; margin: -5px 0; background: #fff; color: #000; }
-  .create-bg { position: fixed; inset: 0 0 calc(62px + env(safe-area-inset-bottom)); z-index: 65; display: flex; flex-direction: column; justify-content: flex-end; padding: 8px; background: #0009; animation: om-fade var(--t-med) var(--ease-out); }
-  .create-panel { background: #282828; border-radius: 16px; padding: 8px 0; box-shadow: 0 12px 32px #000a; animation: om-sheet-up var(--t-slow) var(--ease-out); }
-  .create-row { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 76px; padding: 10px 16px; text-align: left; color: var(--text); }
-  .create-row:active { background: #ffffff12; }
-  .create-row-icon { width: 56px; height: 56px; flex: none; border-radius: 50%; background: #3e3e3e; display: grid; place-items: center; }
-  .create-row-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .create-row-text .t { font-weight: 700; font-size: 1rem; }
-  .create-row-text .s { color: var(--muted); font-size: 0.8125rem; }
-
   /* Album, playlist and artist pages: back, the name centred once pinned, and the play button
      docked on the bar's lower edge; the bar takes the cover's colour. */
   .topbar.detail-bar { display: grid; grid-template-columns: 34px 1fr 34px; gap: 12px; }
@@ -1218,9 +1200,8 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
 /* Phones: Spotify's chips (outlined, green when on), the pin on pinned library rows, and your
    picture next to your own playlists. */
 @media (max-width: 760px) {
-  .phone-chips .chip, .lib-chips .chip { background: transparent; border: 1px solid #ffffff59; color: var(--text); }
-  .phone-chips .chip.on, .lib-chips .chip.on { background: var(--green); border-color: var(--green); color: #000; }
-  .lib-chips .chip.clear { border-color: transparent; background: #ffffff26; }
+  .phone-chips .chip { background: transparent; border: 1px solid #ffffff59; color: var(--text); }
+  .phone-chips .chip.on { background: var(--green); border-color: var(--green); color: #000; }
   .lib-pin { color: var(--green); vertical-align: -2px; margin-right: 4px; flex: none; }
 }
 img.avatar { object-fit: cover; }

@@ -1091,19 +1091,16 @@ await test("Android: a new version found at startup is downloaded and installed 
   },
 });
 
-await test("Phone: Create tab, classic library, Find in playlist + Sort sheet, pinned bar with play", async (p) => {
+await test("Phone: library tabs, Find in playlist + Sort sheet, pinned bar with play", async (p) => {
   await p.setViewportSize({ width: 390, height: 844 });
-  // Create: a panel above the tabs; the tab turns into a close button.
-  await p.click(".mobile-tabs .create-tab");
-  await p.locator(".create-panel .create-row").first().waitFor();
-  assert.equal(await p.locator(".create-panel .create-row").count(), 3);
-  assert.equal(await p.locator(".create-tab").getAttribute("aria-expanded"), "true");
-  await p.click(".mobile-tabs .create-tab");
-  assert.equal(await p.locator(".create-panel").count(), 0);
-  // Classic Your Library (the default): Music / Podcasts, then Playlists · Artists · Albums.
+  // Three tabs, no Create.
+  assert.deepEqual(await p.locator(".mobile-tabs button span").allTextContents(), ["Home", "Search", "Your Library"]);
+  // Your Library: Playlists · Artists · Albums tabs; tapping the open one again shows everything.
   await p.click('.mobile-tabs button:has-text("Your Library")');
-  await p.locator(".lib-classic .lib-tab.on", { hasText: "Playlists" }).waitFor();
-  await p.locator(".lib-row", { hasText: "Create playlist" }).waitFor();
+  await p.locator(".lib-phone .lib-tab", { hasText: "Albums" }).click();
+  await p.locator(".lib-phone .lib-tab.on", { hasText: "Albums" }).waitFor();
+  await p.locator(".lib-phone .lib-tab", { hasText: "Albums" }).click();
+  await p.waitForFunction(() => !document.querySelector(".lib-phone .lib-tab.on"));
   // A playlist: Find in playlist and Sort above the cover; Sort opens the Sort by sheet.
   await p.locator(".lib-row", { hasText: "Road trip" }).first().click();
   const before = await p.locator(".detail .tl-row .tl-text .name").allTextContents();

@@ -44,7 +44,6 @@ export function TopBar() {
   const bar = useBarHeight();
   const caps = useApp((s) => s.info?.capabilities);
   const homeFilter = useUi((s) => s.homeFilter);
-  const classicLibrary = useSettings((s) => s.classicLibrary);
   const playingHere = usePlayer((s) => s.playing && !!pageTitle?.ctxId && s.context?.id === pageTitle.ctxId);
 
   // Phone (Spotify mobile). Home: your picture and the All / Music / Podcasts chips in one row.
@@ -70,17 +69,16 @@ export function TopBar() {
       );
     }
     if (cur.name === "library") {
-      // The classic library shows its own big "Music  Podcasts" heading and a Create playlist row.
       return (
         <header ref={bar} className={cls("topbar phone-bar", scrolled > 0 && "solid")}>
           <AvatarButton phone />
-          {!classicLibrary && <h1 className="phone-h1">{t("library")}</h1>}
+          <h1 className="phone-h1">{t("library")}</h1>
           <span className="grow" />
           {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
           <button className="icon-btn" aria-label={t("search")} title={t("search")} onClick={() => navigate({ name: "search" })}>
             <I.ISearch size={24} />
           </button>
-          {!classicLibrary && <button
+          <button
             className="icon-btn"
             aria-label={t("createPlaylist")}
             title={t("createPlaylist")}
@@ -90,7 +88,7 @@ export function TopBar() {
             }}
           >
             <I.IPlus size={26} />
-          </button>}
+          </button>
         </header>
       );
     }
