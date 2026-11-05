@@ -6,7 +6,7 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(desktop)");
     println!("cargo:rerun-if-env-changed=OPENMUSIC_CHECK_MOBILE");
     // Baked-in Discord application ids (see src/discord.rs).
-    for k in ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_ID_YTSPOT", "DISCORD_CLIENT_ID_PLEXSPOT"] {
+    for k in ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_ID_OPENSPOT", "DISCORD_CLIENT_ID_YTSPOT"] {
         println!("cargo:rerun-if-env-changed={k}");
     }
     let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
