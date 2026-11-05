@@ -191,8 +191,13 @@ jobs:
           APK=$(find gen/android -name '*release-unsigned.apk' | head -1)
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           if [ -n "$ANDROID_KEYSTORE" ]; then
-            echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
-            PASS="$ANDROID_KEYSTORE_PASSWORD"
+            # Pasted secrets can pick up stray spaces, line breaks or invisible non-ASCII
+            # characters (Java rejects those in a password); keep only visible ASCII.
+            printf '%s' "$ANDROID_KEYSTORE" | tr -cd 'A-Za-z0-9+/=' | base64 -d > "$RUNNER_TEMP/release.jks"
+            PASS=$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | LC_ALL=C tr -cd '\041-\176')
+            if [ "$PASS" != "$ANDROID_KEYSTORE_PASSWORD" ]; then
+              echo "::warning::ANDROID_KEYSTORE_PASSWORD contains spaces or invisible characters; they were ignored."
+            fi
           elif [ -n "$RELEASE_TAG" ]; then
             # A release signed with a throwaway key can't update the installed app: refuse.
             echo "::error::ANDROID_KEYSTORE secret missing: a release must be signed with the stable key."
