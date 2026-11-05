@@ -1,8 +1,37 @@
-# OpenMusic 1.6.1
+# OpenSpot 2.0.0
 
-One Your Library on phones: today's layout with the older Playlists · Artists · Albums tabs.
+YTSpot and PLEXSpot are now one app: **OpenSpot**. It plays YouTube Music and Plex side by side.
 
-## New in 1.6.1
+## New in 2.0.0
+- **One app for YouTube Music and Plex.** Sign in to either or both, or use neither and play
+  local files only.
+- **Settings → Services.** There is an on/off switch for each service, plus its account and
+  Sign in / Sign out. Switching a service off hides it everywhere (Home, Search, Your Library,
+  Browse) but keeps you signed in, so turning it back on is instant.
+- **Combined search.** One list with results from both services. When both are on, a tiny
+  badge shows where each result comes from.
+- **Home, Your Library and Liked Songs** show both services together. Browse all has a group
+  for each service.
+- **Mixed queues.** A Plex song can play right after a YouTube one. Crossfade and gapless
+  don't blend across the switch between the two.
+- **It looks just like YTSpot.** With only YouTube Music on, OpenSpot looks the same as YTSpot
+  1.6.1.
+
+## Moving from YTSpot or PLEXSpot
+- **YTSpot (Windows, Mac, Android)** updates in place to OpenSpot by itself. Your sign-in,
+  playlists, history and settings are kept.
+- **PLEXSpot on Windows or Mac** updates to OpenSpot too. The first time OpenSpot starts, it
+  brings over your Plex sign-in, app playlists, history, saved items and downloads. On a Mac,
+  it may ask once for access to PLEXSpot's saved sign-in; if you say no, just sign in to Plex
+  again in Settings → Services.
+- **Windows:** the installer removes the old YTSpot and PLEXSpot apps for you, keeps your data,
+  and carries "Launch at startup" over. Pin OpenSpot to the taskbar again if you had the old
+  app pinned.
+- **PLEXSpot on Android** can't update itself into a different app. Install OpenSpot (the
+  `OpenSpot_2.0.0_android-arm64.apk` file), sign in to Plex in it, then uninstall PLEXSpot.
+- **Discord** shows OpenSpot.
+
+## Also in 1.6.1
 - **Your Library on phones** is now always the newer layout (your picture, "Your Library", search
   and +, the Recents sort and grid switch, one list with Liked Songs and Your Episodes pinned), with
   the older **Playlists · Artists · Albums** tabs and their green underline in place of the pill
