@@ -24,6 +24,9 @@ function make(path: JSX.Element, fill = false) {
 }
 
 export const IHome = make(<path d="M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z" />);
+export const IHomeFill = make(<path d="M3 10.5 12 3l9 7.5V21h-6.5v-6.5h-5V21H3z" />, true);
+export const ILibraryFill = make(<><path d="M3 3h3.5v18H3zM8.5 3H12v18H8.5z" /><path d="m13.6 4.2 3.3-1.2 5.6 16.8-3.3 1.2z" /></>, true);
+export const IPin = make(<path d="M14.5 2.5 21.5 9.5l-2.2.6-3.4 3.4.3 4.3-1.6 1.6-3.7-3.7L5 21.5l-.5-.5 5.8-5.9-3.7-3.7 1.6-1.6 4.3.3 3.4-3.4z" />, true);
 export const ISearch = make(<><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>);
 export const ILibrary = make(<><path d="M4 3v18M9 3v18" /><path d="m14 3.5 6 17" /></>);
 export const IPlus = make(<path d="M12 5v14M5 12h14" />);

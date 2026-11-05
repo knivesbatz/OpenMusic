@@ -117,7 +117,14 @@ export function App() {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        const level = el.scrollTop > 260 ? 2 : el.scrollTop > 48 ? 1 : 0;
+        // On a phone the title (and the play button) move into the bar as the page's own play
+        // button scrolls under it, like Spotify; elsewhere past a fixed height.
+        const fab = phone ? el.querySelector<HTMLElement>(".detail .action-bar .fab") : null;
+        const bar = document.documentElement.style.getPropertyValue("--topbar-h");
+        const past = fab
+          ? fab.getBoundingClientRect().top - el.getBoundingClientRect().top < (parseInt(bar) || 56) - 4
+          : el.scrollTop > 260;
+        const level = past ? 2 : el.scrollTop > 48 ? 1 : 0;
         if (level !== useUi.getState().scrolled) useUi.setState({ scrolled: level });
       });
     };

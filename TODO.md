@@ -338,3 +338,16 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ APKs signed with the stable key (ANDROID_KEYSTORE secrets added). Release builds now fail
   instead of falling back to a throwaway key, and check the certificate's SHA-256 (a7979368…0bf9)
 - 🟡 Android self-update from 1.5.1 to the next version not yet seen on a phone
+
+## 1.6.0
+- ✅ Phone: Create tab (+, panel with Playlist / Folder / Transfer playlists; ✕ while open)
+- ✅ Phone playlist: Find in playlist + Sort above the cover (Sort by sheet); action buttons unchanged
+  (user asked to keep them)
+- ✅ Phone pinned bar on album/playlist/artist/podcast pages: cover colour, centred name, docked
+  play/pause (appears when the page's play button reaches the bar)
+- ✅ Classic Your Library on phones again (Music/Podcasts + Playlists/Artists/Albums tabs), default on;
+  Settings → Classic Your Library off = the 1.5.0 chips layout
+- ✅ Album header on phones: artist line, then "Album • year"; filled Home/Library tab icons
+- ✅ Spotify chips (green when on, outlined), pin on Liked Songs / Your Episodes, "Playlist • owner" rows,
+  your picture by your own playlists
+- e2e 53/53 (new phone test)

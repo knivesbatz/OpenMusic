@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import { createPlaylist } from "../actions";
+import { artUrl } from "../api";
 import { useT } from "../i18n";
+import * as P from "../player/engine";
+import { usePlayer } from "../player/engine";
 import { openProfilePicker, setLocalOnly, useApp } from "../store/app";
 import { accountUrl, loadProfile, openExternal, signOut, SUPPORT_URL, useMe } from "../store/profile";
 import { useSettings } from "../store/settings";
@@ -41,6 +44,8 @@ export function TopBar() {
   const bar = useBarHeight();
   const caps = useApp((s) => s.info?.capabilities);
   const homeFilter = useUi((s) => s.homeFilter);
+  const classicLibrary = useSettings((s) => s.classicLibrary);
+  const playingHere = usePlayer((s) => s.playing && !!pageTitle?.ctxId && s.context?.id === pageTitle.ctxId);
 
   // Phone (Spotify mobile). Home: your picture and the All / Music / Podcasts chips in one row.
   // Your Library: picture, "Your Library", search and +. Search: picture and "Search" over a
@@ -65,16 +70,17 @@ export function TopBar() {
       );
     }
     if (cur.name === "library") {
+      // The classic library shows its own big "Music  Podcasts" heading and a Create playlist row.
       return (
         <header ref={bar} className={cls("topbar phone-bar", scrolled > 0 && "solid")}>
           <AvatarButton phone />
-          <h1 className="phone-h1">{t("library")}</h1>
+          {!classicLibrary && <h1 className="phone-h1">{t("library")}</h1>}
           <span className="grow" />
           {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
           <button className="icon-btn" aria-label={t("search")} title={t("search")} onClick={() => navigate({ name: "search" })}>
             <I.ISearch size={24} />
           </button>
-          <button
+          {!classicLibrary && <button
             className="icon-btn"
             aria-label={t("createPlaylist")}
             title={t("createPlaylist")}
@@ -84,7 +90,7 @@ export function TopBar() {
             }}
           >
             <I.IPlus size={26} />
-          </button>
+          </button>}
         </header>
       );
     }
@@ -101,14 +107,25 @@ export function TopBar() {
         </header>
       );
     }
+    // Spotify's pinned bar: once the page's play button reaches it, the bar takes the cover's
+    // colour, shows the name centred, and the green play button docks on its lower edge.
+    const wash = showTitle ? artUrl(pageTitle.art, 60) : null;
     return (
-      <header ref={bar} className={cls("topbar phone-bar", scrolled > 0 && "solid")}>
+      <header
+        ref={bar}
+        className={cls("topbar phone-bar detail-bar", scrolled > 0 && "solid", showTitle && "pinned", wash && "tinted")}
+        style={wash ? ({ ["--bar-wash" as string]: `url("${wash}")` } as React.CSSProperties) : undefined}
+      >
         <button className="round-btn" aria-label={t("back")} title={t("back")} disabled={pos === 0} onClick={back}>
           <I.IBack size={18} />
         </button>
-        {showTitle && <span className="phone-title">{pageTitle.title}</span>}
-        <span className="grow" />
-        {!online && <span className="offline-pill" role="status">{t("offlineShort")}</span>}
+        <span className="phone-title">{showTitle ? pageTitle.title : ""}</span>
+        {!online ? <span className="offline-pill" role="status">{t("offlineShort")}</span> : <span className="bar-spacer" />}
+        {showTitle && pageTitle.play && (
+          <button className="fab bar-fab" aria-label={playingHere ? t("pause") : t("play")} onClick={playingHere ? P.pause : pageTitle.play}>
+            {playingHere ? <I.IPause size={22} /> : <I.IPlay size={22} />}
+          </button>
+        )}
       </header>
     );
   }

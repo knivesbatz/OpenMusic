@@ -81,7 +81,7 @@ interface UiState {
   /** Tracks for the "View credits" style info dialog. */
   info: Track | null;
   /** The page's own name and play action, shown in the top bar once the page has scrolled. */
-  pageTitle: { title: string; play?: () => void } | null;
+  pageTitle: { title: string; play?: () => void; art?: string | null; ctxId?: string } | null;
   /** The "Saved in" panel (Liked Songs and playlists with checkboxes), anchored at a button. */
   savedIn: { x: number; y: number; track: Track } | null;
   /** How far the main view is scrolled: 0 top, 1 moved (solid top bar), 2 past the page header (title in the bar). */

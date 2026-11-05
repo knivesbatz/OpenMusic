@@ -287,14 +287,20 @@ export function Select<V extends string>({
 }
 
 /** Show this page's name (and a play button) in the top bar once it scrolls, like Spotify. */
-export function usePageTitle(title: string | null | undefined, play?: () => void) {
+/** The page's name for the top bar once scrolled. With `play`, the bar also gets a play button;
+ * `art` tints the phone's pinned bar with the cover's colour, `ctxId` lets it show pause while
+ * this page is playing. */
+export function usePageTitle(title: string | null | undefined, play?: () => void, opts?: { art?: string | null; ctxId?: string }) {
   const playRef = useRef(play);
   playRef.current = play;
+  const art = opts?.art ?? null;
+  const ctxId = opts?.ctxId;
+  const hasPlay = !!play;
   useEffect(() => {
     if (!title) return;
-    useUi.setState({ pageTitle: { title, play: () => playRef.current?.() } });
+    useUi.setState({ pageTitle: { title, play: hasPlay ? () => playRef.current?.() : undefined, art, ctxId } });
     return () => useUi.setState({ pageTitle: null });
-  }, [title]);
+  }, [title, art, ctxId, hasPlay]);
 }
 
 /** The phone app, or a narrow touch screen: Spotify mobile-style song screen and queue sheet. */
