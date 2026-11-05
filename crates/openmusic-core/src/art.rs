@@ -217,18 +217,21 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
     // Plex: the photo transcoder (exact size) with the stored image as fallback; on phones the
     // stored image only, since slow transcodes leave covers blank there.
     let upstreams: Vec<String> = if let Some(thumb) = path.strip_prefix("/plex") {
+        // Plex switched off: only what is already cached (above).
+        if !state.on(crate::state::Provider::Plex) {
+            return None;
+        }
         match state.plex_session.read().await.as_ref() {
             Some(sess) if cfg!(mobile) => vec![state.plex.thumb_url(sess, thumb)],
             Some(sess) => vec![state.plex.art_url(sess, thumb, size), state.plex.thumb_url(sess, thumb)],
             None => return None,
         }
-    } else if let Some(enc) = path.strip_prefix("/url/") {
+    } else {
+        let enc = path.strip_prefix("/url/")?;
         match urlencoding::decode(enc) {
             Ok(u) if u.starts_with("https://") || u.starts_with("http://") => vec![sized_upstream(&u, size)],
             _ => return None,
         }
-    } else {
-        return None;
     };
 
     let _permit = state.art_slots.acquire().await;

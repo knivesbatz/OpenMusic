@@ -215,7 +215,7 @@ pub fn scan(db: &std::sync::Mutex<Db>, folders: &[PathBuf], art_dir: &Path) -> R
 
     // Mark files under reachable folders that weren't seen as missing; un-mark seen ones.
     let db = db.lock().unwrap();
-    for (path, _) in known.iter() {
+    for path in known.keys() {
         if seen.contains(path) {
             continue;
         }
@@ -362,7 +362,7 @@ pub fn search_artists(db: &Db, q: &str) -> Result<Vec<Artist>> {
 }
 
 pub fn search(db: &Db, q: &str, limit: usize) -> Result<Vec<Track>> {
-    let like = format!("%{}%", q.replace('%', "").replace('_', ""));
+    let like = format!("%{}%", q.replace(['%', '_'], ""));
     let mut st = db.conn.prepare(&format!(
         "SELECT {TRACK_COLS} FROM local_tracks WHERE missing=0 AND (title LIKE ?1 OR artist LIKE ?1 OR album LIKE ?1) LIMIT ?2"
     ))?;
@@ -419,12 +419,12 @@ mod tests {
         std::fs::write(music.join("notes.txt"), b"x").unwrap();
         let db = Mutex::new(Db::open_in_memory().unwrap());
         let art = dir.path().join("art");
-        let r = scan(&db, &[music.clone()], &art).unwrap();
+        let r = scan(&db, std::slice::from_ref(&music), &art).unwrap();
         assert_eq!((r.scanned, r.added), (2, 2));
-        let r = scan(&db, &[music.clone()], &art).unwrap();
+        let r = scan(&db, std::slice::from_ref(&music), &art).unwrap();
         assert_eq!((r.unchanged, r.added), (2, 0));
         std::fs::remove_file(music.join("two.flac")).unwrap();
-        let r = scan(&db, &[music.clone()], &art).unwrap();
+        let r = scan(&db, std::slice::from_ref(&music), &art).unwrap();
         assert_eq!(r.missing, 1);
         let t = tracks(&db.lock().unwrap()).unwrap();
         assert_eq!(t.len(), 1);

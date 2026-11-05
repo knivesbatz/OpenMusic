@@ -81,6 +81,11 @@ const MIGRATIONS: &[&str] = &[
     r#"
     DELETE FROM cache WHERE key LIKE 'album:%';
     "#,
+    // v6 (OpenSpot 2.0): every provider-bound cache key starts with its provider (`yt:`, `plex:`)
+    // so one provider's entries can be cleared alone. No unprefixed 1.x entry may survive.
+    r#"
+    DELETE FROM cache;
+    "#,
 ];
 
 pub fn now() -> i64 {
@@ -179,6 +184,22 @@ impl Db {
 
     pub fn cache_clear(&self) -> Result<()> {
         self.conn.execute("DELETE FROM cache", [])?;
+        Ok(())
+    }
+
+    pub fn cache_delete(&self, key: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM cache WHERE key=?1", [key])?;
+        Ok(())
+    }
+
+    /// Clear one provider's cached responses (keys `yt:…` / `plex:…`), and for Plex the cached
+    /// library listing. The other provider's entries, translations and name aliases stay.
+    pub fn cache_clear_provider(&self, p: crate::state::Provider) -> Result<()> {
+        // The prefixes hold no LIKE wildcards.
+        self.conn.execute("DELETE FROM cache WHERE key LIKE ?1", [format!("{}%", p.cache_prefix())])?;
+        if p == crate::state::Provider::Plex {
+            self.kv_delete("plex.library")?;
+        }
         Ok(())
     }
 
@@ -284,19 +305,18 @@ impl Db {
 
     pub fn playlist_add(&mut self, id: &str, tracks: &[Track]) -> Result<usize> {
         let tx = self.conn.transaction()?;
-        let mut pos: i64 = tx.query_row(
+        let first: i64 = tx.query_row(
             "SELECT COALESCE(MAX(position)+1,0) FROM playlist_items WHERE playlist_id=?1",
             [id],
             |r| r.get(0),
         )?;
         let t = now();
-        for tr in tracks {
+        for (pos, tr) in (first..).zip(tracks) {
             tx.execute(
                 "INSERT INTO playlist_items(playlist_id,position,track_id,track_json,added_at)
                  VALUES(?1,?2,?3,?4,?5)",
                 params![id, pos, tr.id, serde_json::to_string(tr)?, t],
             )?;
-            pos += 1;
         }
         tx.execute("UPDATE playlists SET updated_at=?2 WHERE id=?1", params![id, t])?;
         tx.commit()?;
@@ -381,7 +401,7 @@ impl Db {
         Ok(())
     }
 
-    // ---- hidden playlists (YTSpot) ----------------------------------------------------------
+    // ---- hidden playlists (YouTube) ---------------------------------------------------------
 
     pub fn hide_playlist(&self, id: &str, title: &str) -> Result<()> {
         self.conn.execute(
@@ -397,7 +417,7 @@ impl Db {
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
-    /// Covers picked in the app for provider playlists (YTSpot), by playlist id. Only shown in
+    /// Covers picked in the app for provider playlists (YouTube), by playlist id. Only shown in
     /// the app; the playlist on YouTube keeps its own thumbnail.
     pub fn cover_overrides(&self) -> Result<std::collections::HashMap<String, String>> {
         Ok(self.kv_get("playlist.covers")?.unwrap_or_default())
@@ -558,7 +578,7 @@ impl Db {
         }
         if by_count {
             // Stable: equal counts keep the most recently played first.
-            order.sort_by(|a, b| b.1.cmp(&a.1));
+            order.sort_by_key(|b| std::cmp::Reverse(b.1));
         }
         Ok(order.into_iter().take(limit).map(|(a, _)| a).collect())
     }
@@ -652,6 +672,27 @@ mod tests {
     }
 
     #[test]
+    fn cache_clear_provider_keeps_the_other_provider() {
+        let db = Db::open_in_memory().unwrap();
+        for k in ["yt:home", "yt:artist:yt:UC1", "plex:home", "plex:browsePage:plex-genre:1", "tr:ja:x", "mbalias:ja:y", "lyrics:local:1", "ytx:odd"] {
+            db.cache_put(k, &1, 600).unwrap();
+        }
+        db.kv_set("plex.library", &("fp", 1)).unwrap();
+        db.cache_clear_provider(crate::state::Provider::Plex).unwrap();
+        assert!(db.cache_get::<i32>("plex:home", true).unwrap().is_none());
+        assert!(db.cache_get::<i32>("plex:browsePage:plex-genre:1", true).unwrap().is_none());
+        assert!(db.kv_get::<(String, i32)>("plex.library").unwrap().is_none(), "Plex's library listing goes too");
+        assert_eq!(db.cache_get::<i32>("yt:home", true).unwrap(), Some(1));
+        db.cache_clear_provider(crate::state::Provider::YouTube).unwrap();
+        assert!(db.cache_get::<i32>("yt:artist:yt:UC1", true).unwrap().is_none());
+        for k in ["tr:ja:x", "mbalias:ja:y", "lyrics:local:1", "ytx:odd"] {
+            assert_eq!(db.cache_get::<i32>(k, true).unwrap(), Some(1), "{k} is no provider's");
+        }
+        db.cache_delete("tr:ja:x").unwrap();
+        assert!(db.cache_get::<i32>("tr:ja:x", true).unwrap().is_none());
+    }
+
+    #[test]
     fn migrations_are_idempotent() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("a.db");
@@ -675,7 +716,7 @@ mod tests {
         // duplicates of the same track are allowed and kept distinct
         db.playlist_add(&p.id, &[track("a")]).unwrap();
         assert_eq!(db.playlist_tracks(&p.id).unwrap().len(), 4);
-        assert_eq!(db.playlists_containing("a").unwrap(), [p.id.clone()]);
+        assert_eq!(db.playlists_containing("a").unwrap(), std::slice::from_ref(&p.id));
         assert!(db.playlists_containing("zz").unwrap().is_empty());
         // unchecking a song removes every copy, keeping the rest in order
         assert_eq!(db.playlist_remove_track(&p.id, "a").unwrap(), 2);

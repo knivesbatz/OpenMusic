@@ -2,7 +2,7 @@
 //!
 //! App playlists live only in each device's database. The receiving device opens a small HTTP
 //! endpoint for ten minutes and shows its address and a one-time six-digit code; the sending
-//! device posts its app playlists (with their covers, and YTSpot's in-app covers of YouTube
+//! device posts its app playlists (with their covers, and the in-app covers of YouTube
 //! playlists) there. Playlists keep their ids, so sending again updates them instead of adding
 //! copies. Songs from local files stay behind: their files are on the sending device.
 //!
@@ -19,7 +19,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::error::{Error, Result};
 use crate::model::{Source, Track};
-use crate::state::{AppState, Flavor};
+use crate::state::{AppState, Provider};
 
 /// The port tried first, so the address shown stays the same between sessions.
 pub const PORT: u16 = 47380;
@@ -35,7 +35,7 @@ pub struct Bundle {
     /// "youtube" or "plex": playlists only go to the same app.
     pub app: String,
     pub playlists: Vec<SyncPlaylist>,
-    /// In-app covers of provider playlists (YTSpot), by playlist id.
+    /// In-app covers of provider playlists (YouTube), by playlist id.
     #[serde(default)]
     pub covers: Vec<SyncCover>,
 }
@@ -80,11 +80,28 @@ pub struct Receiving {
     pub expires_at: i64,
 }
 
-fn app_name(f: Flavor) -> &'static str {
-    match f {
-        Flavor::YouTube => "youtube",
-        Flavor::Plex => "plex",
+/// The app name a bundle carries. 1.x apps only accept their own name ("youtube" from YTSpot,
+/// "plex" from PLEXSpot), so a bundle whose songs all come from one provider says so and still
+/// reaches them; a mixed bundle says "openspot".
+fn bundle_app_name<'a>(tracks: impl IntoIterator<Item = &'a Track>) -> &'static str {
+    let mut seen: Option<Provider> = None;
+    for t in tracks {
+        match (Provider::of_id(&t.id), seen) {
+            (None, _) => {}
+            (Some(p), None) => seen = Some(p),
+            (Some(p), Some(s)) if p == s => {}
+            _ => return "openspot",
+        }
     }
+    match seen {
+        Some(p) => p.as_str(),
+        None => "openspot",
+    }
+}
+
+/// Bundles OpenSpot takes: its own and both 1.x apps'.
+fn accepts(app: &str) -> bool {
+    matches!(app, "openspot" | "youtube" | "plex")
 }
 
 fn is_local(t: &Track) -> bool {
@@ -112,7 +129,7 @@ pub fn bundle(state: &AppState) -> Result<(Bundle, usize)> {
         (lists, db.cover_overrides()?)
     };
     let mut skipped = 0;
-    let playlists = lists
+    let playlists: Vec<SyncPlaylist> = lists
         .into_iter()
         .map(|(p, tracks, cover)| {
             let before = tracks.len();
@@ -125,7 +142,8 @@ pub fn bundle(state: &AppState) -> Result<(Bundle, usize)> {
         .into_iter()
         .filter_map(|(id, art)| read_cover(state, Some(&art)).map(|image| SyncCover { id, image }))
         .collect();
-    Ok((Bundle { app: app_name(state.flavor).into(), playlists, covers }, skipped))
+    let app = bundle_app_name(playlists.iter().flat_map(|p: &SyncPlaylist| p.tracks.iter()));
+    Ok((Bundle { app: app.into(), playlists, covers }, skipped))
 }
 
 /// Stores a received cover image with the local artwork; None if it isn't a JPEG/PNG.
@@ -149,12 +167,8 @@ fn remove_cover(state: &AppState, old: Option<&str>) {
 
 /// Adds or updates the received playlists on this device.
 pub fn import(state: &AppState, b: Bundle) -> Result<Summary> {
-    if b.app != app_name(state.flavor) {
-        let (this, other) = match state.flavor {
-            Flavor::YouTube => ("YTSpot", "PLEXSpot"),
-            Flavor::Plex => ("PLEXSpot", "YTSpot"),
-        };
-        return Err(Error::Invalid(format!("These playlists are from {other}; send them to {other} on the other device, not {this}.")));
+    if !accepts(&b.app) {
+        return Err(Error::Invalid("These playlists come from an app OpenSpot doesn't know.".into()));
     }
     let mut sum = Summary::default();
     for p in b.playlists {
@@ -178,15 +192,13 @@ pub fn import(state: &AppState, b: Bundle) -> Result<Summary> {
         sum.playlists += 1;
         sum.songs += tracks.len();
     }
-    if state.flavor == Flavor::YouTube {
-        for c in b.covers {
-            if !c.id.starts_with("yt:") {
-                continue;
-            }
-            if let Some(cover) = write_cover(state, &c.image) {
-                let old = state.db().set_cover_override(&c.id, Some(&cover))?;
-                remove_cover(state, old.as_deref());
-            }
+    for c in b.covers {
+        if !c.id.starts_with("yt:") {
+            continue;
+        }
+        if let Some(cover) = write_cover(state, &c.image) {
+            let old = state.db().set_cover_override(&c.id, Some(&cover))?;
+            remove_cover(state, old.as_deref());
         }
     }
     Ok(sum)
@@ -344,6 +356,38 @@ mod tests {
         assert_eq!(endpoint("http://10.0.0.4:47380/").unwrap(), "http://10.0.0.4:47380/openmusic/sync");
         assert_eq!(endpoint("[fe80::1]:47380").unwrap(), "http://[fe80::1]:47380/openmusic/sync");
         assert!(endpoint("  ").is_err());
+    }
+
+    #[test]
+    fn bundle_names_reach_1x_apps_when_they_can() {
+        let t = |id: &str| Track {
+            id: id.into(),
+            source: if id.starts_with("yt:") { Source::Youtube } else if id.starts_with("plex:") { Source::Plex } else { Source::Local },
+            title: id.into(),
+            artist: String::new(),
+            artist_id: None,
+            album: None,
+            album_id: None,
+            duration_ms: None,
+            artwork: None,
+            stream_key: None,
+            track_number: None,
+            explicit: false,
+            episode: false,
+            description: None,
+            published: None,
+            year: None,
+            added_at: None,
+            disc_number: None,
+        };
+        assert_eq!(bundle_app_name(&[t("yt:a"), t("local:x"), t("yt:b")]), "youtube");
+        assert_eq!(bundle_app_name(&[t("plex:1"), t("plex:2")]), "plex");
+        assert_eq!(bundle_app_name(&[t("yt:a"), t("plex:1")]), "openspot");
+        assert_eq!(bundle_app_name(&[]), "openspot");
+        for name in ["openspot", "youtube", "plex"] {
+            assert!(accepts(name));
+        }
+        assert!(!accepts("spotify"));
     }
 
     #[test]

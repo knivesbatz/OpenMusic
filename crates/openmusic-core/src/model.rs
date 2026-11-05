@@ -1,10 +1,29 @@
-//! Provider-neutral data model shared by both apps and mirrored in `ui/src/types.ts`.
+//! Provider-neutral data model, mirrored in `ui/src/types.ts`.
 //!
 //! Every playable item carries a provider-aware `id` (`plex:<ratingKey>`, `yt:<videoId>`,
 //! `local:<hash>`) so tracks that share a title are never confused, plus a `streamKey` that the
 //! owning provider uses to resolve the actual audio source at play time.
 
 use serde::{Deserialize, Serialize};
+
+use crate::state::Provider;
+
+/// One provider's part of a merged (fan-out) result that failed or timed out; the other
+/// provider's part still shows. Only set on the merged response, never on a cached part.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderError {
+    pub provider: Provider,
+    /// "authExpired" | "offline" | "timeout" | "network" | …
+    pub code: String,
+    pub message: String,
+}
+
+impl ProviderError {
+    pub fn of(provider: Provider, e: &crate::error::Error) -> Self {
+        ProviderError { provider, code: e.code().into(), message: e.to_string() }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -172,6 +191,8 @@ pub struct SearchResults {
     pub playlists: Vec<Playlist>,
     pub podcasts: Vec<Podcast>,
     pub episodes: Vec<Track>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<ProviderError>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -218,6 +239,9 @@ pub struct Library {
     /// "Your Episodes": podcast episodes saved in the app.
     #[serde(default)]
     pub episodes: Vec<Track>,
+    /// Merged library: providers whose part failed (their part is the last one cached, if any).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub errors: Vec<ProviderError>,
 }
 
 /// How the UI should play a resolved track.
@@ -235,7 +259,7 @@ pub enum Stream {
     Youtube { video_id: String },
 }
 
-/// What the active provider can do. The UI hides or disables controls the provider lacks.
+/// What a provider can do. The UI hides or disables controls the provider lacks.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {

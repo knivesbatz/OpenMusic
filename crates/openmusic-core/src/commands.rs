@@ -1,30 +1,77 @@
 //! Tauri commands: the single API surface between the UI and the core. Provider-specific
-//! behaviour is dispatched on the app flavor and on id prefixes (`app:`, `local-…`, `plex:`,
-//! `yt:`), so features one provider lacks degrade without affecting the other app.
+//! behaviour is dispatched on id prefixes (`app:`, `local-…`, `plex:`, `yt:`; see
+//! [`Provider::of_id`]) and on the Settings → Services switches. Commands that combine both
+//! providers (home, library, likes, Browse all, What's New) run each provider that is on as a
+//! detached task with a time limit, so one slow or failing provider never fails the call: its part
+//! comes from the cache instead and the response lists it under `errors`.
 
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
+use futures_util::FutureExt;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::PlayContext;
 use crate::error::{Error, Result};
 use crate::model::*;
-use crate::state::{AppState, Flavor};
+use crate::state::{item_key, AppState, Provider, Services};
 use crate::{art, downloads, lastfm, local, lyrics, plex, ytm};
 
 type S<'a> = State<'a, Arc<AppState>>;
 
+/// Emit an event about one provider: `{ provider }`.
+fn emit_for(app: &AppHandle, event: &str, p: Provider) {
+    let _ = app.emit(event, json!({ "provider": p }));
+}
+
+/// `connection-changed { provider, online }`.
+fn emit_connection(app: &AppHandle, p: Provider, online: bool) {
+    let _ = app.emit("connection-changed", json!({ "provider": p, "online": online }));
+}
+
+/// Remember whether a provider answered, and tell the UI when that changes.
+fn note_reachability<T>(app: &AppHandle, state: &AppState, p: Provider, r: &Result<T>) {
+    match r {
+        Err(Error::Offline(_)) if state.mark_offline(p) => emit_connection(app, p, false),
+        Ok(_) if state.mark_online(p) => emit_connection(app, p, true),
+        _ => {}
+    }
+}
+
+/// A failed part as the error of the whole call (when nothing else could be shown).
+fn error_of(e: ProviderError) -> Error {
+    match e.code.as_str() {
+        "offline" | "timeout" => Error::Offline(e.message),
+        "authExpired" => Error::AuthExpired(Some(e.provider)),
+        _ => Error::Invalid(e.message),
+    }
+}
+
+fn offline_error(p: Provider) -> Error {
+    Error::Offline(format!("{} is not reachable", p.label()))
+}
+
 // ---- app / settings -------------------------------------------------------------------------
+
+#[derive(Serialize)]
+pub struct ProviderCapabilities {
+    youtube: Capabilities,
+    plex: Capabilities,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
-    flavor: Flavor,
     name: String,
     version: String,
-    capabilities: Capabilities,
+    /// What each provider can do; the UI combines them with `services`.
+    providers: ProviderCapabilities,
+    services: Services,
+    /// Discord Rich Presence is built in (desktop builds with a Discord application id).
+    discord_presence: bool,
     /// Base URL of the local artwork server; the UI falls back to `art://` when absent.
     art_base: Option<String>,
     /// "windows", "macos", "linux", "android", "ios".
@@ -35,26 +82,26 @@ pub struct AppInfo {
     self_test: bool,
 }
 
-pub fn capabilities(f: Flavor) -> Capabilities {
-    match f {
-        Flavor::Plex => Capabilities {
+pub fn capabilities(p: Provider) -> Capabilities {
+    match p {
+        Provider::Plex => Capabilities {
             downloads: true,
             quality_control: true,
             podcasts: false,
             crossfade: true,
             gapless: true,
             favorites: true,
-            discord_presence: crate::discord::available(f),
+            discord_presence: crate::discord::available(),
         },
         // YouTube blends with two IFrame players (see ui/src/player/engine.ts).
-        Flavor::YouTube => Capabilities {
+        Provider::YouTube => Capabilities {
             downloads: false,
             quality_control: false,
             podcasts: true,
             crossfade: true,
             gapless: true,
             favorites: true,
-            discord_presence: crate::discord::available(f),
+            discord_presence: crate::discord::available(),
         },
     }
 }
@@ -62,10 +109,11 @@ pub fn capabilities(f: Flavor) -> Capabilities {
 #[tauri::command]
 pub fn app_info(app: AppHandle, state: S) -> AppInfo {
     AppInfo {
-        flavor: state.flavor,
         name: app.package_info().name.clone(),
         version: app.package_info().version.to_string(),
-        capabilities: capabilities(state.flavor),
+        providers: ProviderCapabilities { youtube: capabilities(Provider::YouTube), plex: capabilities(Provider::Plex) },
+        services: state.services(),
+        discord_presence: crate::discord::available(),
         art_base: state.art_base.get().cloned(),
         platform: std::env::consts::OS,
         safe_mode: state.safe_mode.get().copied(),
@@ -87,10 +135,10 @@ pub async fn settings_set(state: S<'_>, settings: Value) -> Result<()> {
             y.hl = hl.to_string();
             changed
         };
-        // YouTube Music answers in the UI language (localized titles where it has them): drop
-        // pages cached in the old language. Translations and name aliases are kept.
-        if changed && state.flavor == Flavor::YouTube {
-            state.db().cache_clear_except(&["tr:", "mbalias:"])?;
+        // YouTube Music answers in the UI language (localized titles where it has them): drop its
+        // pages cached in the old language. Plex, translations and name aliases are kept.
+        if changed {
+            state.db().cache_clear_provider(Provider::YouTube)?;
         }
     }
     state.db().kv_set("settings", &settings)
@@ -106,6 +154,54 @@ pub fn kv_set(state: S, key: String, value: Value) -> Result<()> {
     state.db().kv_set(&format!("ui.{key}"), &value)
 }
 
+// ---- services (Settings → Services) ---------------------------------------------------------
+
+#[tauri::command]
+pub fn services_get(state: S) -> Services {
+    state.services()
+}
+
+/// Turn services on or off. Off hides a provider and stops its background work but never signs
+/// out; nothing here asks anything (the self-test flips every switch).
+#[tauri::command]
+pub async fn services_set(app: AppHandle, state: S<'_>, services: Services) -> Result<()> {
+    apply_services(&app, state.inner(), services)
+}
+
+/// Set the switches, save them, emit `services-changed` and start what a switched-on provider
+/// needs: Plex re-probes its server (the address may have changed meanwhile), YouTube saves
+/// cookies its responses renewed.
+pub fn apply_services(app: &AppHandle, state: &Arc<AppState>, new: Services) -> Result<()> {
+    let old = {
+        let mut g = state.services.write().unwrap_or_else(|e| e.into_inner());
+        std::mem::replace(&mut *g, new)
+    };
+    state.db().kv_set("services", &new)?;
+    if old == new {
+        return Ok(());
+    }
+    let _ = app.emit("services-changed", new);
+    if new.plex && !old.plex {
+        let (app, st) = (app.clone(), state.clone());
+        tauri::async_runtime::spawn(async move {
+            if plex_reconnect(&app, &st).await.is_ok() {
+                emit_for(&app, "auth-changed", Provider::Plex);
+            }
+        });
+    }
+    if new.youtube && !old.youtube {
+        let st = state.clone();
+        tauri::async_runtime::spawn(async move { yt_save_refreshed(&st).await });
+    }
+    Ok(())
+}
+
+fn set_service(app: &AppHandle, state: &Arc<AppState>, p: Provider, on: bool) -> Result<()> {
+    let mut s = state.services();
+    s.set(p, on);
+    apply_services(app, state, s)
+}
+
 // ---- auth -----------------------------------------------------------------------------------
 
 #[derive(Serialize, Default)]
@@ -118,25 +214,34 @@ pub struct AuthStatus {
     needs_server: bool,
 }
 
+/// Sign-in state of every provider, whether its switch is on or not.
+#[derive(Serialize, Default)]
+pub struct AuthAll {
+    youtube: AuthStatus,
+    plex: AuthStatus,
+}
+
 #[tauri::command]
-pub async fn auth_status(state: S<'_>) -> Result<AuthStatus> {
-    match state.flavor {
-        Flavor::Plex => {
-            let token = state.secrets.get("plex.token")?;
-            let sess = state.plex_session.read().await.clone();
-            Ok(AuthStatus {
-                signed_in: token.is_some(),
-                account: state.db().kv_get("plex.account")?,
-                needs_server: token.is_some() && sess.is_none(),
-                server: sess.as_ref().map(|s| s.server.name.clone()),
-                server_connection: sess.as_ref().map(|s| if s.relay { "relay" } else if s.local { "local" } else { "remote" }.to_string()),
-            })
-        }
-        Flavor::YouTube => {
-            let y = state.ytm().await;
-            Ok(AuthStatus { signed_in: y.signed_in(), account: state.db().kv_get("yt.account")?, ..Default::default() })
-        }
-    }
+pub async fn auth_status(state: S<'_>) -> Result<AuthAll> {
+    // A credential store that can't be read (a denied macOS keychain prompt) reads as signed out.
+    let token = state.secrets.get("plex.token").unwrap_or_else(|e| {
+        log::warn!("plex.token: {e}");
+        None
+    });
+    let sess = state.plex_session.read().await.clone();
+    let (plex_account, yt_account) = {
+        let db = state.db();
+        (db.kv_get("plex.account")?, db.kv_get("yt.account")?)
+    };
+    let plex = AuthStatus {
+        signed_in: token.is_some(),
+        account: plex_account,
+        needs_server: token.is_some() && sess.is_none(),
+        server: sess.as_ref().map(|s| s.server.name.clone()),
+        server_connection: sess.as_ref().map(|s| if s.relay { "relay" } else if s.local { "local" } else { "remote" }.to_string()),
+    };
+    let youtube = AuthStatus { signed_in: state.ytm().await.signed_in(), account: yt_account, ..Default::default() };
+    Ok(AuthAll { youtube, plex })
 }
 
 #[tauri::command]
@@ -145,7 +250,8 @@ pub async fn plex_pin_start(state: S<'_>) -> Result<plex::Pin> {
     state.plex.pin_create().await
 }
 
-/// Returns true once the PIN was approved and the token stored.
+/// Returns true once the PIN was approved and the token stored. The Plex switch turns on once a
+/// server is chosen (`plex_select_server`).
 #[tauri::command]
 pub async fn plex_pin_poll(state: S<'_>, id: u64) -> Result<bool> {
     let Some(token) = state.plex.pin_check(id).await? else { return Ok(false) };
@@ -160,6 +266,7 @@ pub async fn plex_pin_poll(state: S<'_>, id: u64) -> Result<bool> {
     Ok(true)
 }
 
+/// Servers of the signed-in account. Part of signing in, so it works with the switch off.
 #[tauri::command]
 pub async fn plex_servers(state: S<'_>) -> Result<Vec<plex::Server>> {
     let token = state.secrets.get("plex.token")?.ok_or(Error::NotSignedIn)?;
@@ -171,6 +278,7 @@ pub async fn plex_servers(state: S<'_>) -> Result<Vec<plex::Server>> {
     Ok(servers)
 }
 
+/// Use this server. The last step of signing in to Plex, so it turns the Plex switch on.
 #[tauri::command]
 pub async fn plex_select_server(app: AppHandle, state: S<'_>, client_identifier: String) -> Result<String> {
     let token = state.secrets.get("plex.token")?.ok_or(Error::NotSignedIn)?;
@@ -188,21 +296,27 @@ pub async fn plex_select_server(app: AppHandle, state: S<'_>, client_identifier:
     state.secrets.set_json("plex.session", &sess)?;
     let name = sess.server.name.clone();
     *state.plex_session.write().await = Some(sess);
-    state.db().cache_clear()?;
-    let _ = app.emit("auth-changed", ());
+    state.db().cache_clear_provider(Provider::Plex)?;
+    state.mark_online(Provider::Plex);
+    set_service(&app, state.inner(), Provider::Plex, true)?;
+    emit_for(&app, "auth-changed", Provider::Plex);
     Ok(name)
 }
 
-/// Re-probe the stored server (IP changes, LAN vs remote). Called at startup and on demand.
+/// Re-probe the stored server (IP changes, LAN vs remote). Called at startup, when Plex is turned
+/// on, and to recover from a refused or unreachable server.
 pub async fn plex_reconnect(app: &AppHandle, state: &AppState) -> Result<()> {
+    if !state.on(Provider::Plex) {
+        return Err(Error::Disabled(Provider::Plex));
+    }
     let Some(stored) = state.secrets.get_json::<plex::Session>("plex.session")? else { return Ok(()) };
     // Refresh connection list from plex.tv when possible (addresses change), else reuse stored.
     let server = match state.secrets.get("plex.token")? {
         Some(token) => match state.plex.servers(&token).await {
             Ok(list) => list.into_iter().find(|s| s.client_identifier == stored.server.client_identifier).unwrap_or(stored.server.clone()),
-            Err(Error::AuthExpired) => {
-                let _ = app.emit("auth-expired", ());
-                return Err(Error::AuthExpired);
+            Err(Error::AuthExpired(_)) => {
+                emit_for(app, "auth-expired", Provider::Plex);
+                return Err(Error::AuthExpired(Some(Provider::Plex)));
             }
             Err(_) => stored.server.clone(),
         },
@@ -212,38 +326,41 @@ pub async fn plex_reconnect(app: &AppHandle, state: &AppState) -> Result<()> {
         Ok(sess) => {
             state.secrets.set_json("plex.session", &sess)?;
             *state.plex_session.write().await = Some(sess);
-            let _ = app.emit("connection-changed", "online");
+            state.mark_online(Provider::Plex);
+            emit_connection(app, Provider::Plex, true);
             Ok(())
         }
         Err(e) => {
-            let _ = app.emit("connection-changed", "offline");
+            state.mark_offline(Provider::Plex);
+            emit_connection(app, Provider::Plex, false);
             Err(e)
         }
     }
 }
 
-/// A request was refused for its credentials. Before giving up on it the UI calls this and retries
-/// once when it returns true: Plex servers hand out new access tokens and addresses, and YouTube's
-/// cookies are renewed from the webview's store.
+/// A request was refused for its credentials. Before giving up on it the UI calls this for the
+/// provider named in the error and retries once when it returns true: Plex servers hand out new
+/// access tokens and addresses, and YouTube's cookies are renewed from the webview's store.
 #[tauri::command]
-pub async fn auth_recover(app: AppHandle, state: S<'_>) -> Result<bool> {
-    Ok(match state.flavor {
-        Flavor::Plex => plex_reconnect(&app, &state).await.is_ok(),
-        Flavor::YouTube => yt_refresh_session(&app, &state).await,
+pub async fn auth_recover(app: AppHandle, state: S<'_>, provider: Provider) -> Result<bool> {
+    Ok(match provider {
+        Provider::Plex => plex_reconnect(&app, &state).await.is_ok(),
+        Provider::YouTube => yt_refresh_session(&app, &state).await,
     })
 }
 
 /// YouTube: save cookies the responses renewed, and renew the session in the background twice a
-/// day on desktop (as an open browser tab would), so it doesn't run out between launches.
+/// day on desktop (as an open browser tab would), so it doesn't run out between launches. The
+/// loop always runs; each tick does nothing while the YouTube switch is off.
 pub fn yt_keep_session(app: AppHandle, state: Arc<AppState>) {
-    if state.flavor != Flavor::YouTube {
-        return;
-    }
     tauri::async_runtime::spawn(async move {
         let mut tick = 0u64;
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
             tick += 1;
+            if !state.on(Provider::YouTube) {
+                continue;
+            }
             yt_save_refreshed(&state).await;
             // Every 30 minutes (first after 2): renew when the last renewal is 12 hours old.
             if cfg!(desktop) && tick % 60 == 4 && state.ytm().await.signed_in() {
@@ -271,6 +388,9 @@ pub async fn plex_reconnect_cmd(app: AppHandle, state: S<'_>) -> Result<()> {
 
 const YT_LOGIN_URL: &str = "https://accounts.google.com/ServiceLogin?service=youtube&continue=https://music.youtube.com/";
 const YT_KEEP: &[&str] = ytm::SESSION_COOKIES;
+
+/// kv entries that belong to the signed-in YouTube account (cleared at sign-in and sign-out).
+const YT_ACCOUNT_KV: &[&str] = &["yt.pageId", "yt.account", "yt.refreshedAt", "ui.yt.profileChosen"];
 
 #[cfg(desktop)]
 fn youtube_cookie_header(app: &AppHandle, label: &str) -> String {
@@ -321,16 +441,25 @@ async fn read_cookies(app: &AppHandle, label: &'static str) -> String {
     rx.await.unwrap_or_default()
 }
 
-async fn yt_adopt_cookie(app: &AppHandle, state: &AppState, cookie: String) -> Result<()> {
+/// A YouTube sign-in finished: use this account from now on (no brand-account page of a previous
+/// one), drop YouTube's cached pages and turn the YouTube switch on.
+async fn yt_adopt_cookie(app: &AppHandle, state: &Arc<AppState>, cookie: String) -> Result<()> {
     state.secrets.set_large("yt.cookie", &cookie)?;
-    state.db().kv_delete("ui.yt.profileChosen")?;
+    state.ytm.write().await.page_id = None;
+    {
+        let db = state.db();
+        for k in YT_ACCOUNT_KV {
+            db.kv_delete(k)?;
+        }
+    }
     state.ytm.read().await.set_cookie(Some(cookie));
     let y = state.ytm().await;
     if let Ok(name) = y.account_name().await {
         state.db().kv_set("yt.account", &name)?;
     }
-    state.db().cache_clear()?;
-    let _ = app.emit("auth-changed", ());
+    state.db().cache_clear_provider(Provider::YouTube)?;
+    set_service(app, state, Provider::YouTube, true)?;
+    emit_for(app, "auth-changed", Provider::YouTube);
     Ok(())
 }
 
@@ -475,23 +604,56 @@ pub async fn yt_login(app: AppHandle, state: S<'_>) -> Result<()> {
     Ok(())
 }
 
+
+/// The renewal in progress, shared by every caller that needs it (single flight).
+type RefreshJob = futures_util::future::Shared<futures_util::future::BoxFuture<'static, bool>>;
+static YT_REFRESH: std::sync::Mutex<Option<RefreshJob>> = std::sync::Mutex::new(None);
+
 /// Google rotates short-lived session cookies. Pick up a fresh jar from the webview's own cookie
 /// store (the browser profile the user signed in with) and use it from now on. Rate-limited: at
-/// most once every 5 minutes.
+/// most once every 5 minutes. Does nothing without a stored cookie (anonymous YouTube).
+///
+/// The renewal runs as its own task: a caller that stops waiting (a fan-out time limit) never
+/// cancels it halfway, which used to leave the hidden window open and block every later renewal.
 pub async fn yt_refresh_session(app: &AppHandle, state: &AppState) -> bool {
-    {
-        let mut last = state.last_yt_refresh.lock().unwrap_or_else(|e| e.into_inner());
-        if last.map(|t| t.elapsed().as_secs() < 300).unwrap_or(false) {
-            return false;
-        }
-        *last = Some(std::time::Instant::now());
+    if !state.ytm().await.signed_in() {
+        return false;
     }
+    let job = {
+        let mut g = YT_REFRESH.lock().unwrap_or_else(|e| e.into_inner());
+        match g.as_ref() {
+            Some(j) if j.peek().is_none() => j.clone(),
+            _ => {
+                {
+                    let mut last = state.last_yt_refresh.lock().unwrap_or_else(|e| e.into_inner());
+                    if last.map(|t| t.elapsed().as_secs() < 300).unwrap_or(false) {
+                        return false;
+                    }
+                    *last = Some(std::time::Instant::now());
+                }
+                let Some(st) = app.try_state::<Arc<AppState>>().map(|s| s.inner().clone()) else { return false };
+                let a = app.clone();
+                let task = tauri::async_runtime::spawn(async move { yt_refresh_now(&a, &st).await });
+                let job: RefreshJob = async move { task.await.unwrap_or(false) }.boxed().shared();
+                *g = Some(job.clone());
+                job
+            }
+        }
+    };
+    job.await
+}
+
+async fn yt_refresh_now(app: &AppHandle, state: &AppState) -> bool {
     let cookie = yt_fresh_cookies(app, state).await;
     if ytm::sapisid(&cookie).is_none() {
         return false;
     }
     let _ = state.db().kv_set("yt.refreshedAt", &crate::db::now());
     if state.ytm().await.cookie().as_deref() == Some(cookie.as_str()) {
+        return false;
+    }
+    // Signed out meanwhile: don't bring the session back.
+    if !state.ytm().await.signed_in() {
         return false;
     }
     let _ = state.secrets.set_large("yt.cookie", &cookie);
@@ -505,10 +667,28 @@ async fn yt_fresh_cookies(app: &AppHandle, _state: &AppState) -> String {
     read_cookies(app, "main").await
 }
 
+/// Closes the hidden renewal window however the renewal ends.
+#[cfg(desktop)]
+struct CloseRefreshWindow(AppHandle);
+
+#[cfg(desktop)]
+impl Drop for CloseRefreshWindow {
+    fn drop(&mut self) {
+        if let Some(w) = self.0.get_webview_window("ytrefresh") {
+            let _ = w.destroy();
+        }
+    }
+}
+
 /// Desktop: load music.youtube.com in a hidden window (same browser profile as the sign-in
 /// window); its scripts renew the session cookies like an open browser tab would.
 #[cfg(desktop)]
 async fn yt_fresh_cookies(app: &AppHandle, state: &AppState) -> String {
+    // A window an earlier renewal left behind would block this one's label.
+    if let Some(w) = app.get_webview_window("ytrefresh") {
+        let _ = w.destroy();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<()>();
     let Ok(url) = "https://music.youtube.com/".parse::<tauri::Url>() else { return String::new() };
     let built = with_browser_args(tauri::WebviewWindowBuilder::new(app, "ytrefresh", tauri::WebviewUrl::External(url)), state)
@@ -522,70 +702,205 @@ async fn yt_fresh_cookies(app: &AppHandle, state: &AppState) -> String {
     if built.is_err() {
         return String::new();
     }
+    let _close = CloseRefreshWindow(app.clone());
     let loaded = tokio::time::timeout(std::time::Duration::from_secs(30), rx.recv()).await.is_ok();
     // Give the page's scripts a moment to renew the cookies.
     if loaded {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
-    let cookie = if loaded { read_cookies(app, "ytrefresh").await } else { String::new() };
-    if let Some(w) = app.get_webview_window("ytrefresh") {
-        let _ = w.close();
-    }
-    cookie
+    if loaded { read_cookies(app, "ytrefresh").await } else { String::new() }
 }
 
 /// After YouTube refused a request and a refresh didn't help: is the session really gone? YouTube
 /// also refuses single requests for other reasons (403s when it throttles, restricted videos), and
 /// signing the user out for those made them sign in again and again. Only when the account
-/// itself can't be read any more does the UI go back to the sign-in screen.
+/// itself can't be read any more does the UI ask to sign in to YouTube again. Never true (and
+/// never emits) without a stored cookie: anonymous YouTube has no session to lose.
 pub async fn yt_session_lost(app: &AppHandle, state: &AppState) -> bool {
-    let lost = match state.ytm().await.account_name().await {
-        Err(Error::AuthExpired) => true,
+    let y = state.ytm().await;
+    if !y.signed_in() {
+        return false;
+    }
+    let lost = match y.account_name().await {
+        Err(Error::AuthExpired(_)) => true,
         Ok(name) => name.is_empty(),
         Err(_) => false,
     };
     if lost {
-        let _ = app.emit("auth-expired", ());
+        emit_for(app, "auth-expired", Provider::YouTube);
     }
     lost
 }
 
-/// Run a YouTube call; on an auth failure refresh the cookie jar once and retry.
+/// Run a YouTube call; on an auth failure refresh the cookie jar once and retry. Callers check
+/// the switch (`state.yt()` or `state.yt_account()`) first.
 macro_rules! yt_call {
     ($app:expr, $state:expr, |$y:ident| $body:expr) => {{
         let $y = $state.ytm().await;
         match $body.await {
-            Err(Error::AuthExpired) if yt_refresh_session(&$app, &$state).await => {
+            Err(Error::AuthExpired(_)) if yt_refresh_session(&$app, &$state).await => {
                 let $y = $state.ytm().await;
                 $body.await
             }
-            Err(Error::AuthExpired) if yt_session_lost(&$app, &$state).await => Err(Error::AuthExpired),
-            Err(Error::AuthExpired) => Err(Error::Invalid("YouTube turned this request down. Try again in a moment.".into())),
+            Err(Error::AuthExpired(_)) if yt_session_lost(&$app, &$state).await => Err(Error::AuthExpired(Some(Provider::YouTube))),
+            Err(Error::AuthExpired(_)) => Err(Error::Invalid("YouTube turned this request down. Try again in a moment.".into())),
             r => r,
         }
     }};
 }
 
+/// Sign out of one provider: its secrets, account kv entries and cached pages. Signing out of Plex
+/// turns its switch off (Plex has nothing to show without an account); YouTube stays on and is
+/// used anonymously.
 #[tauri::command]
-pub async fn sign_out(app: AppHandle, state: S<'_>) -> Result<()> {
-    match state.flavor {
-        Flavor::Plex => {
+pub async fn sign_out(app: AppHandle, state: S<'_>, provider: Provider) -> Result<()> {
+    match provider {
+        Provider::Plex => {
             state.secrets.delete("plex.token")?;
             state.secrets.delete("plex.homeToken")?;
             state.secrets.delete_large("plex.session")?;
             *state.plex_session.write().await = None;
-            state.db().kv_delete("plex.account")?;
-            state.db().kv_delete("plex.userUuid")?;
+            {
+                let db = state.db();
+                for k in ["plex.account", "plex.userUuid", "ui.plex.profileChosen"] {
+                    db.kv_delete(k)?;
+                }
+                // Also the cached library listing (kv plex.library).
+                db.cache_clear_provider(Provider::Plex)?;
+            }
+            set_service(&app, state.inner(), Provider::Plex, false)?;
         }
-        Flavor::YouTube => {
+        Provider::YouTube => {
             state.secrets.delete_large("yt.cookie")?;
-            state.ytm.read().await.set_cookie(None);
-            state.db().kv_delete("yt.account")?;
+            {
+                let mut y = state.ytm.write().await;
+                y.set_cookie(None);
+                y.page_id = None;
+            }
+            let db = state.db();
+            for k in YT_ACCOUNT_KV {
+                db.kv_delete(k)?;
+            }
+            db.cache_clear_provider(Provider::YouTube)?;
         }
     }
-    state.db().cache_clear()?;
-    let _ = app.emit("auth-changed", ());
+    emit_for(&app, "auth-changed", provider);
     Ok(())
+}
+
+// ---- fan-out --------------------------------------------------------------------------------
+
+/// How long a combined command waits for a provider's part (Home, Browse all, What's New).
+const WAIT_SHORT: Duration = Duration::from_secs(8);
+/// Whole-library listings, which can take long on big Plex servers.
+const WAIT_LONG: Duration = Duration::from_secs(60);
+
+/// Run `fut` as a detached task and wait up to `wait` for its result. The task always runs to the
+/// end; when the caller has stopped waiting, `late` gets its result instead.
+async fn detached<T, F>(wait: Duration, fut: F, late: impl FnOnce(T) + Send + 'static) -> Option<T>
+where
+    T: Send + 'static,
+    F: Future<Output = T> + Send + 'static,
+{
+    let (tx, mut rx) = tokio::sync::oneshot::channel();
+    tauri::async_runtime::spawn(async move {
+        if let Err(r) = tx.send(fut.await) {
+            late(r);
+        }
+    });
+    match tokio::time::timeout(wait, &mut rx).await {
+        Ok(r) => r.ok(),
+        Err(_) => {
+            // Closed first: a result that arrives from now on goes to `late`, never nowhere.
+            rx.close();
+            rx.try_recv().ok()
+        }
+    }
+}
+
+/// One provider's part of a combined result.
+struct Part<T> {
+    value: T,
+    stale: bool,
+    error: Option<ProviderError>,
+}
+
+/// Run a provider fetch; when Plex refused the session or couldn't be reached, re-probe its server
+/// once and retry (YouTube renews its session inside `yt_call!`).
+async fn fetch_recovering<T, F, Fut>(app: &AppHandle, state: &Arc<AppState>, p: Provider, fetch: &F) -> Result<T>
+where
+    F: Fn(AppHandle, Arc<AppState>) -> Fut,
+    Fut: Future<Output = Result<T>>,
+{
+    let mut r = fetch(app.clone(), state.clone()).await;
+    if p == Provider::Plex && matches!(r, Err(Error::AuthExpired(_) | Error::Offline(_))) && plex_reconnect(app, state).await.is_ok() {
+        r = fetch(app.clone(), state.clone()).await;
+    }
+    note_reachability(app, state, p, &r);
+    r
+}
+
+/// One provider's part of a combined result: `None` when that provider is off or not signed in
+/// (nothing to show and nothing to report). Otherwise the fresh value, or after a failure or past
+/// `wait` the last cached one (`stale`) with an error. A provider that was just unreachable is
+/// skipped at once. When the caller stopped waiting, `late_event` (`{provider}`) tells the UI
+/// that the part has arrived since.
+async fn provider_part<T, F, Fut>(
+    app: &AppHandle,
+    state: &Arc<AppState>,
+    p: Provider,
+    wait: Duration,
+    late_event: Option<&'static str>,
+    fetch: F,
+    stale: impl Fn(&AppState) -> Option<T>,
+) -> Option<Part<T>>
+where
+    T: Default + Send + 'static,
+    F: Fn(AppHandle, Arc<AppState>) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<T>> + Send + 'static,
+{
+    if !state.on(p) {
+        return None;
+    }
+    let failed = |error: ProviderError| Some(Part { value: stale(state.as_ref()).unwrap_or_default(), stale: true, error: Some(error) });
+    if state.is_offline(p) {
+        return failed(ProviderError::of(p, &offline_error(p)));
+    }
+    let (a, st) = (app.clone(), state.clone());
+    let task = async move { fetch_recovering(&a, &st, p, &fetch).await };
+    let a = app.clone();
+    let late = move |r: Result<T>| {
+        if let (Ok(_), Some(event)) = (r, late_event) {
+            emit_for(&a, event, p);
+        }
+    };
+    match detached(wait, task, late).await {
+        Some(Ok(value)) => Some(Part { value, stale: false, error: None }),
+        // Not failures: the provider has nothing to show.
+        Some(Err(Error::NotSignedIn | Error::Disabled(_))) => None,
+        Some(Err(e)) => failed(ProviderError::of(p, &e)),
+        None => failed(ProviderError { provider: p, code: "timeout".into(), message: format!("{} is taking too long", p.label()) }),
+    }
+}
+
+/// Merge parts in order: `add` takes each value; returns whether any was stale and the errors.
+fn merge_parts<T>(parts: impl IntoIterator<Item = Option<Part<T>>>, mut add: impl FnMut(T)) -> (bool, Vec<ProviderError>) {
+    let mut stale = false;
+    let mut errors = Vec::new();
+    for part in parts.into_iter().flatten() {
+        add(part.value);
+        stale |= part.stale;
+        errors.extend(part.error);
+    }
+    (stale, errors)
+}
+
+/// Read a cache entry and whether it is still fresh, in one lock.
+fn cache_with_age<T: serde::de::DeserializeOwned>(state: &AppState, key: &str) -> Option<(T, bool)> {
+    let db = state.db();
+    let v = db.cache_get::<T>(key, true).ok().flatten()?;
+    let fresh = db.cache_get::<Value>(key, false).ok().flatten().is_some();
+    Some((v, fresh))
 }
 
 // ---- browsing -------------------------------------------------------------------------------
@@ -597,8 +912,10 @@ pub struct HomeData {
     recent: Vec<Track>,
     contexts: Vec<PlayContext>,
     top_tracks: Vec<Track>,
+    /// Some part came from an old cache: the UI asks again with `refresh`.
     stale: bool,
-    error: Option<Error>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<ProviderError>,
 }
 
 fn filter_hidden_shelves(shelves: &mut [Shelf], hidden: &std::collections::HashSet<String>) {
@@ -607,34 +924,47 @@ fn filter_hidden_shelves(shelves: &mut [Shelf], hidden: &std::collections::HashS
     }
 }
 
-async fn provider_home(app: &AppHandle, state: &AppState) -> Result<Vec<Shelf>> {
-    match state.flavor {
-        Flavor::Plex => {
-            let sess = state.plex_session().await?;
-            state.plex.home(&sess).await
+/// One provider's Home shelves: the cached ones unless `refresh` (stale ones are marked so the UI
+/// refreshes), else fetched.
+async fn home_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh: bool) -> Option<Part<Vec<Shelf>>> {
+    let key = p.key("home");
+    if !refresh && state.on(p) {
+        if let Some((value, fresh)) = cache_with_age::<Vec<Shelf>>(state, &key) {
+            return Some(Part { value, stale: !fresh, error: None });
         }
-        Flavor::YouTube => yt_call!(app, state, |y| y.home()),
     }
+    let k = key.clone();
+    let fetch = move |app: AppHandle, st: Arc<AppState>| {
+        let key = k.clone();
+        async move {
+            let shelves = match p {
+                Provider::Plex => {
+                    let sess = st.plex_session().await?;
+                    st.plex.home(&sess).await?
+                }
+                Provider::YouTube => {
+                    st.yt()?;
+                    yt_call!(app, st, |y| y.home())?
+                }
+            };
+            st.db().cache_put(&key, &shelves, 30 * 60)?;
+            Ok(shelves)
+        }
+    };
+    provider_part(app, state, p, WAIT_SHORT, None, fetch, move |st| st.db().cache_get(&key, true).ok().flatten()).await
 }
 
+/// Home: Plex's shelves first (your own files), then YouTube Music's recommendations.
 #[tauri::command]
 pub async fn home(app: AppHandle, state: S<'_>, refresh: bool) -> Result<HomeData> {
     let (recent, contexts, top) = {
         let db = state.db();
         (db.recent_tracks(20)?, db.recent_contexts(12)?, db.top_tracks(30, 20)?.into_iter().map(|t| t.0).collect())
     };
-    let cached: Option<Vec<Shelf>> = if refresh { None } else { state.db().cache_get("home", true)? };
-    let fresh = state.db().cache_get::<Vec<Shelf>>("home", false)?.is_some();
-    let (mut shelves, stale, error) = match cached {
-        Some(c) => (c, !fresh, None),
-        None => match provider_home(&app, &state).await {
-            Ok(s) => {
-                state.db().cache_put("home", &s, 30 * 60)?;
-                (s, false, None)
-            }
-            Err(e) => (state.db().cache_get("home", true)?.unwrap_or_default(), true, Some(e)),
-        },
-    };
+    let st = state.inner();
+    let (plex, yt) = tokio::join!(home_part(&app, st, Provider::Plex, refresh), home_part(&app, st, Provider::YouTube, refresh));
+    let mut shelves = Vec::new();
+    let (stale, errors) = merge_parts([plex, yt], |s| shelves.extend(s));
     let hidden = state.db().hidden_playlists()?;
     filter_hidden_shelves(&mut shelves, &hidden);
     let covers = state.db().cover_overrides()?;
@@ -642,87 +972,111 @@ pub async fn home(app: AppHandle, state: S<'_>, refresh: bool) -> Result<HomeDat
         MediaItem::Playlist(p) => Some(p),
         _ => None,
     }));
-    Ok(HomeData { shelves, recent, contexts, top_tracks: top, stale, error })
+    Ok(HomeData { shelves, recent, contexts, top_tracks: top, stale, errors })
 }
 
-#[tauri::command]
-pub async fn search(app: AppHandle, state: S<'_>, query: String) -> Result<SearchResults> {
-    let q = query.trim();
-    if q.is_empty() {
-        return Ok(SearchResults::default());
+/// One provider's search results (`kind`: one type in full, for the filter chips), cached for 10
+/// minutes under that provider's key.
+async fn provider_search(app: &AppHandle, state: &AppState, p: Provider, q: &str, kind: Option<&str>) -> Result<SearchResults> {
+    match p {
+        Provider::YouTube => state.yt()?,
+        Provider::Plex if !state.on(p) => return Err(Error::Disabled(p)),
+        Provider::Plex => {}
     }
-    let key = format!("search:{}", q.to_lowercase());
-    let cached = state.db().cache_get::<SearchResults>(&key, false)?;
-    let mut res = match cached {
-        Some(r) => r,
-        None => {
-            let r = match state.flavor {
-                Flavor::Plex => {
-                    let sess = state.plex_session().await?;
-                    state.plex.search(&sess, q).await?
-                }
-                Flavor::YouTube => yt_call!(app, state, |y| y.search(q))?,
-            };
-            state.db().cache_put(&key, &r, 10 * 60)?;
-            r
-        }
+    let key = match kind {
+        Some(k) => p.key(&format!("search:{k}:{}", q.to_lowercase())),
+        None => p.key(&format!("search:{}", q.to_lowercase())),
     };
-    let hidden = state.db().hidden_playlists()?;
-    res.playlists.retain(|p| !hidden.contains(&p.id));
-    apply_covers(&state.db().cover_overrides()?, res.playlists.iter_mut());
-    // Local files and app playlists are searched too (the UI shows local tracks in their own
-    // section, since provider songs come first).
-    {
-        let db = state.db();
-        res.tracks.extend(local::search(&db, q, 20)?);
-        res.albums.extend(local::search_albums(&db, q)?);
-        res.artists.extend(local::search_artists(&db, q)?);
+    let cached = state.db().cache_get::<SearchResults>(&key, false)?;
+    if let Some(r) = cached {
+        return Ok(r);
     }
+    if state.is_offline(p) {
+        return Err(offline_error(p));
+    }
+    let r = match p {
+        Provider::YouTube => match kind {
+            Some(k) => yt_call!(app, state, |y| y.search_kind(q, k)),
+            None => yt_call!(app, state, |y| y.search(q)),
+        },
+        Provider::Plex => match state.plex_session().await {
+            Ok(sess) => match kind {
+                Some(_) => state.plex.search_limit(&sess, q, 100).await,
+                None => state.plex.search(&sess, q).await,
+            },
+            Err(e) => Err(e),
+        },
+    };
+    note_reachability(app, state, p, &r);
+    let r = r?;
+    state.db().cache_put(&key, &r, 10 * 60)?;
+    Ok(r)
+}
+
+fn app_playlists_matching(db: &crate::db::Db, q: &str) -> Result<Vec<Playlist>> {
     let ql = q.to_lowercase();
-    let app_pls: Vec<Playlist> = state.db().playlists()?.into_iter().filter(|p| p.title.to_lowercase().contains(&ql)).collect();
-    res.playlists.splice(0..0, app_pls);
-    Ok(res)
+    Ok(db.playlists()?.into_iter().filter(|p| p.title.to_lowercase().contains(&ql)).collect())
 }
 
-/// Full results for one type (the filter chips on the search page).
+/// Search one source: `provider` = that provider's results only (its own `top`); none = local
+/// files and app playlists. The UI asks every source at once and merges as they arrive
+/// (ui/src/searchMerge.ts), so a slow provider never holds up the others.
 #[tauri::command]
-pub async fn search_kind(app: AppHandle, state: S<'_>, query: String, kind: String) -> Result<SearchResults> {
+pub async fn search(app: AppHandle, state: S<'_>, query: String, provider: Option<Provider>) -> Result<SearchResults> {
     let q = query.trim();
     if q.is_empty() {
         return Ok(SearchResults::default());
     }
-    let key = format!("search:{kind}:{}", q.to_lowercase());
-    let cached = state.db().cache_get::<SearchResults>(&key, false)?;
-    let mut res = match cached {
-        Some(r) => r,
-        None => {
-            let r = match state.flavor {
-                Flavor::Plex => {
-                    let sess = state.plex_session().await?;
-                    state.plex.search_limit(&sess, q, 100).await?
-                }
-                Flavor::YouTube => yt_call!(app, state, |y| y.search_kind(q, &kind))?,
-            };
-            state.db().cache_put(&key, &r, 10 * 60)?;
-            r
-        }
+    let Some(p) = provider else {
+        let db = state.db();
+        return Ok(SearchResults {
+            tracks: local::search(&db, q, 20)?,
+            albums: local::search_albums(&db, q)?,
+            artists: local::search_artists(&db, q)?,
+            playlists: app_playlists_matching(&db, q)?,
+            ..Default::default()
+        });
     };
+    let mut res = provider_search(&app, &state, p, q, None).await?;
     let hidden = state.db().hidden_playlists()?;
     res.playlists.retain(|p| !hidden.contains(&p.id));
     apply_covers(&state.db().cover_overrides()?, res.playlists.iter_mut());
-    let db = state.db();
-    match kind.as_str() {
-        "songs" => res.tracks.extend(local::search(&db, q, 200)?),
-        "albums" => res.albums.extend(local::search_albums(&db, q)?),
-        "artists" => res.artists.extend(local::search_artists(&db, q)?),
-        "playlists" => {
-            let ql = q.to_lowercase();
-            let app_pls: Vec<Playlist> = db.playlists()?.into_iter().filter(|p| p.title.to_lowercase().contains(&ql)).collect();
-            res.playlists.splice(0..0, app_pls);
-        }
-        _ => {}
-    }
     Ok(res)
+}
+
+/// Full results for one type (the filter chips on the search page), from one source as `search`.
+#[tauri::command]
+pub async fn search_kind(app: AppHandle, state: S<'_>, query: String, kind: String, provider: Option<Provider>) -> Result<SearchResults> {
+    let q = query.trim();
+    if q.is_empty() {
+        return Ok(SearchResults::default());
+    }
+    let Some(p) = provider else {
+        let db = state.db();
+        let mut res = SearchResults::default();
+        match kind.as_str() {
+            "songs" => res.tracks = local::search(&db, q, 200)?,
+            "albums" => res.albums = local::search_albums(&db, q)?,
+            "artists" => res.artists = local::search_artists(&db, q)?,
+            "playlists" => res.playlists = app_playlists_matching(&db, q)?,
+            _ => {}
+        }
+        return Ok(res);
+    };
+    let mut res = provider_search(&app, &state, p, q, Some(&kind)).await?;
+    let hidden = state.db().hidden_playlists()?;
+    res.playlists.retain(|p| !hidden.contains(&p.id));
+    apply_covers(&state.db().cover_overrides()?, res.playlists.iter_mut());
+    Ok(res)
+}
+
+/// The provider of an item id, with its switch on.
+fn provider_of(state: &AppState, id: &str) -> Result<Provider> {
+    let p = Provider::of_id(id).ok_or_else(|| Error::NotFound(id.to_string()))?;
+    if !state.on(p) {
+        return Err(Error::Disabled(p));
+    }
+    Ok(p)
 }
 
 /// Add local files by the same artist name to a provider artist page.
@@ -737,32 +1091,37 @@ fn with_local(state: &AppState, mut page: ArtistPage) -> Result<ArtistPage> {
 
 #[tauri::command]
 pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPage> {
+    artist_page(&app, &state, &id).await
+}
+
+pub(crate) async fn artist_page(app: &AppHandle, state: &AppState, id: &str) -> Result<ArtistPage> {
     if id.starts_with("local-artist:") {
         let db = state.db();
-        let tracks = local::artist_tracks(&db, &id)?;
+        let tracks = local::artist_tracks(&db, id)?;
         let name = id.trim_start_matches("local-artist:").to_string();
         let albums = local::albums(&db)?.into_iter().filter(|a| a.artist == name).collect();
         return Ok(ArtistPage {
-            artist: Some(Artist { id: id.clone(), name, artwork: tracks.first().and_then(|t| t.artwork.clone()) }),
+            artist: Some(Artist { id: id.to_string(), name, artwork: tracks.first().and_then(|t| t.artwork.clone()) }),
             top_tracks: tracks.into_iter().take(10).collect(),
             albums,
             ..Default::default()
         });
     }
-    let key = format!("artist:{id}");
+    let p = provider_of(state, id)?;
+    let key = item_key("artist", id);
     let cached = state.db().cache_get::<ArtistPage>(&key, false)?;
-    if let Some(p) = cached {
-        return with_local(&state, p);
+    if let Some(page) = cached {
+        return with_local(state, page);
     }
-    let page = match state.flavor {
-        Flavor::Plex => {
+    let page = match p {
+        Provider::Plex => {
             let sess = state.plex_session().await?;
-            state.plex.artist(&sess, &id).await?
+            state.plex.artist(&sess, id).await?
         }
-        Flavor::YouTube => yt_call!(app, state, |y| y.artist(&id))?,
+        Provider::YouTube => yt_call!(app, state, |y| y.artist(id))?,
     };
     state.db().cache_put(&key, &page, 6 * 3600)?;
-    with_local(&state, page)
+    with_local(state, page)
 }
 
 /// Recent albums and singles from these artists (released this year or last), newest first.
@@ -791,49 +1150,89 @@ fn current_year() -> u32 {
     (1970.0 + days as f64 / 365.2425) as u32
 }
 
-/// What's New: recent releases from followed artists, then the provider's own new-release feed
-/// (YouTube Music's New releases; for Plex, the library's newest releases and additions).
-/// Cached for an hour.
-#[tauri::command]
-pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Vec<Shelf>> {
-    let key = "newreleases";
+/// Whether an item of this id can be shown now: local and app items always, provider items while
+/// their switch is on.
+fn usable(state: &AppState, id: &str) -> bool {
+    Provider::of_id(id).is_none_or(|p| state.on(p))
+}
+
+/// "From artists you follow": recent releases of followed artists whose provider is on. Cached
+/// for an hour per combination of switches.
+async fn followed_releases(app: &AppHandle, state: &Arc<AppState>, refresh: bool) -> Vec<Album> {
+    let s = state.services();
+    let key = format!("newreleases:followed:{}{}", s.youtube as u8, s.plex as u8);
     if !refresh {
-        if let Some(c) = state.db().cache_get::<Vec<Shelf>>(key, false)? {
-            return Ok(c);
+        if let Some(c) = state.db().cache_get::<Vec<Album>>(&key, false).ok().flatten() {
+            return c;
         }
     }
-    let followed: Vec<Artist> = state.db().saved_items("artist")?;
-    let mut pages = Vec::new();
-    // A few at a time: artist pages are cached for 6 hours, so this is quick after the first visit.
-    for chunk in followed.iter().take(30).collect::<Vec<_>>().chunks(5) {
-        let got = futures_util::future::join_all(chunk.iter().map(|a| artist(app.clone(), state.clone(), a.id.clone()))).await;
-        pages.extend(got.into_iter().filter_map(|r| r.ok()));
-    }
+    let followed: Vec<Artist> = state.db().saved_items("artist").unwrap_or_default();
+    let followed: Vec<Artist> = followed.into_iter().filter(|a| usable(state, &a.id)).take(30).collect();
+    let (a, st) = (app.clone(), state.clone());
+    let work = async move {
+        let mut pages = Vec::new();
+        // A few at a time: artist pages are cached for 6 hours, so this is quick after the first visit.
+        for chunk in followed.chunks(5) {
+            let got = futures_util::future::join_all(chunk.iter().map(|ar| artist_page(&a, &st, &ar.id))).await;
+            pages.extend(got.into_iter().filter_map(|r| r.ok()));
+        }
+        let mine = recent_releases(pages, current_year());
+        let _ = st.db().cache_put(&key, &mine, 3600);
+        mine
+    };
+    detached(WAIT_SHORT, work, |_| {}).await.unwrap_or_default()
+}
+
+/// What's New: recent releases from followed artists, then each provider's own feed (for Plex,
+/// the library's newest releases and additions; YouTube Music's New releases). Each part is cached
+/// for an hour.
+#[tauri::command]
+pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Vec<Shelf>> {
+    let st = state.inner();
+    let part = |p: Provider| {
+        let key = p.key("newreleases");
+        let cached = if refresh { None } else { st.db().cache_get::<Vec<Shelf>>(&key, false).ok().flatten() };
+        let k = key.clone();
+        let fetch = move |app: AppHandle, st: Arc<AppState>| {
+            let key = k.clone();
+            async move {
+                let shelves = match p {
+                    Provider::Plex => {
+                        let sess = st.plex_session().await?;
+                        let mut shelves = Vec::new();
+                        let latest = st.plex.latest_releases(&sess).await;
+                        if !latest.is_empty() {
+                            shelves.push(Shelf { title: "latestReleases".into(), subtitle: None, items: latest.into_iter().map(MediaItem::Album).collect() });
+                        }
+                        let added = st.plex.recently_added(&sess).await;
+                        if !added.is_empty() {
+                            shelves.push(Shelf { title: "recentlyAdded".into(), subtitle: None, items: added.into_iter().map(MediaItem::Album).collect() });
+                        }
+                        shelves
+                    }
+                    Provider::YouTube => {
+                        st.yt()?;
+                        yt_call!(app, st, |y| y.new_releases())?
+                    }
+                };
+                st.db().cache_put(&key, &shelves, 3600)?;
+                Ok(shelves)
+            }
+        };
+        let app = app.clone();
+        async move {
+            if let (Some(c), true) = (cached, st.on(p)) {
+                return Some(Part { value: c, stale: false, error: None });
+            }
+            provider_part(&app, st, p, WAIT_SHORT, None, fetch, move |st| st.db().cache_get(&key, true).ok().flatten()).await
+        }
+    };
+    let (mine, plex, yt) = tokio::join!(followed_releases(&app, st, refresh), part(Provider::Plex), part(Provider::YouTube));
     let mut shelves = Vec::new();
-    let mine = recent_releases(pages, current_year());
     if !mine.is_empty() {
         shelves.push(Shelf { title: "fromArtistsYouFollow".into(), subtitle: None, items: mine.into_iter().map(MediaItem::Album).collect() });
     }
-    match state.flavor {
-        Flavor::Plex => {
-            if let Ok(sess) = state.plex_session().await {
-                let latest = state.plex.latest_releases(&sess).await;
-                if !latest.is_empty() {
-                    shelves.push(Shelf { title: "latestReleases".into(), subtitle: None, items: latest.into_iter().map(MediaItem::Album).collect() });
-                }
-                let added = state.plex.recently_added(&sess).await;
-                if !added.is_empty() {
-                    shelves.push(Shelf { title: "recentlyAdded".into(), subtitle: None, items: added.into_iter().map(MediaItem::Album).collect() });
-                }
-            }
-        }
-        Flavor::YouTube => {
-            if let Ok(feed) = yt_call!(app, state, |y| y.new_releases()) {
-                shelves.extend(feed);
-            }
-        }
-    }
-    state.db().cache_put(key, &shelves, 3600)?;
+    merge_parts([plex, yt], |s| shelves.extend(s));
     Ok(shelves)
 }
 
@@ -845,19 +1244,25 @@ pub async fn album(app: AppHandle, state: S<'_>, id: String) -> Result<AlbumPage
         let album = local::albums(&db)?.into_iter().find(|a| a.id == id).ok_or_else(|| Error::NotFound(id.clone()))?;
         return Ok(AlbumPage { album, tracks });
     }
-    let key = format!("album:{id}");
-    if let Some(p) = state.db().cache_get(&key, false)? {
-        return Ok(p);
+    let p = provider_of(&state, &id)?;
+    let key = item_key("album", &id);
+    if let Some(page) = state.db().cache_get(&key, false)? {
+        return Ok(page);
     }
-    let page = match state.flavor {
-        Flavor::Plex => {
+    let page = match p {
+        Provider::Plex => {
             let sess = state.plex_session().await?;
             state.plex.album(&sess, &id).await?
         }
-        Flavor::YouTube => yt_call!(app, state, |y| y.album(&id))?,
+        Provider::YouTube => yt_call!(app, state, |y| y.album(&id))?,
     };
     state.db().cache_put(&key, &page, 24 * 3600)?;
     Ok(page)
+}
+
+/// YouTube's Liked Music playlist (account only).
+fn is_yt_liked(id: &str) -> bool {
+    matches!(id, "yt:LM" | "yt:VLLM")
 }
 
 #[tauri::command]
@@ -870,55 +1275,82 @@ pub async fn playlist(app: AppHandle, state: S<'_>, id: String) -> Result<Playli
     if state.db().hidden_playlists()?.contains(&id) {
         return Err(Error::NotFound(id));
     }
-    let page = match state.flavor {
-        Flavor::Plex => {
+    let page = match provider_of(&state, &id)? {
+        Provider::Plex => {
             let sess = state.plex_session().await?;
             state.plex.playlist(&sess, &id).await?
         }
-        Flavor::YouTube if id.starts_with("yt:MPSP") => yt_call!(app, state, |y| y.podcast(&id))?,
-        Flavor::YouTube => yt_call!(app, state, |y| y.playlist(&id))?,
+        Provider::YouTube if id.starts_with("yt:MPSP") => yt_call!(app, state, |y| y.podcast(&id))?,
+        Provider::YouTube => {
+            if is_yt_liked(&id) {
+                state.yt_account().await?;
+            }
+            yt_call!(app, state, |y| y.playlist(&id))?
+        }
     };
     let mut page = page;
     apply_covers(&state.db().cover_overrides()?, std::iter::once(&mut page.playlist));
     Ok(page)
 }
 
+/// One provider's library listing (see [`library`]).
+async fn library_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh: bool) -> Option<Part<Library>> {
+    match p {
+        Provider::YouTube => {
+            if !refresh && state.on(p) {
+                if let Some(l) = state.db().cache_get::<Library>("yt:library", false).ok().flatten() {
+                    return Some(Part { value: l, stale: false, error: None });
+                }
+            }
+            let fetch = |app: AppHandle, st: Arc<AppState>| async move {
+                st.yt_account().await?;
+                let l = yt_call!(app, st, |y| y.library())?;
+                st.db().cache_put("yt:library", &l, 15 * 60)?;
+                Ok(l)
+            };
+            provider_part(app, state, p, WAIT_LONG, Some("library-changed"), fetch, |st| st.db().cache_get("yt:library", true).ok().flatten()).await
+        }
+        Provider::Plex => {
+            let fetch = move |_app: AppHandle, st: Arc<AppState>| async move {
+                let sess = st.plex_session().await?;
+                // Incremental sync: reuse the cached library while the server's content
+                // fingerprint is unchanged.
+                let fp = st.plex.library_fingerprint(&sess).await.ok();
+                let cached: Option<(String, Library)> = st.db().kv_get("plex.library")?;
+                Ok(match cached {
+                    Some((cfp, lib)) if !refresh && fp.as_deref().map(|f| f == cfp).unwrap_or(true) => lib,
+                    _ => {
+                        let lib = st.plex.library(&sess).await?;
+                        if let Some(fp) = fp {
+                            st.db().kv_set("plex.library", &(fp, &lib))?;
+                        }
+                        lib
+                    }
+                })
+            };
+            let stale = |st: &AppState| st.db().kv_get::<(String, Library)>("plex.library").ok().flatten().map(|(_, l)| l);
+            provider_part(app, state, p, WAIT_LONG, Some("library-changed"), fetch, stale).await
+        }
+    }
+}
+
+/// Your Library: the union of every provider that is on (YouTube's library, the Plex server's
+/// listing). A provider that fails or takes longer than a minute shows its last listing and is
+/// named in `errors`; `library-changed {provider}` follows when its listing arrives.
 #[tauri::command]
 pub async fn library(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Library> {
     let hidden = state.db().hidden_playlists()?;
-    let mut lib = match state.flavor {
-        Flavor::Plex => {
-            let sess = state.plex_session().await?;
-            // Incremental sync: reuse the cached library while the server's content fingerprint
-            // is unchanged.
-            let fp = state.plex.library_fingerprint(&sess).await.ok();
-            let cached: Option<(String, Library)> = state.db().kv_get("plex.library")?;
-            match cached {
-                Some((cfp, lib)) if !refresh && fp.as_deref().map(|f| f == cfp).unwrap_or(true) => lib,
-                _ => {
-                    let lib = state.plex.library(&sess).await?;
-                    if let Some(fp) = fp {
-                        state.db().kv_set("plex.library", &(fp, &lib))?;
-                    }
-                    lib
-                }
-            }
-        }
-        Flavor::YouTube => {
-            let cached: Option<Library> = if refresh { None } else { state.db().cache_get("yt.library", false)? };
-            match cached {
-                Some(l) => l,
-                None => match yt_call!(app, state, |y| y.library()) {
-                    Ok(l) => {
-                        state.db().cache_put("yt.library", &l, 15 * 60)?;
-                        l
-                    }
-                    Err(Error::NotSignedIn) => Library::default(),
-                    Err(e) => state.db().cache_get("yt.library", true)?.ok_or(e)?,
-                },
-            }
-        }
-    };
+    let st = state.inner();
+    let (plex, yt) = tokio::join!(library_part(&app, st, Provider::Plex, refresh), library_part(&app, st, Provider::YouTube, refresh));
+    let mut lib = Library::default();
+    let (_, errors) = merge_parts([yt, plex], |l| {
+        lib.artists.extend(l.artists);
+        lib.albums.extend(l.albums);
+        lib.playlists.extend(l.playlists);
+        lib.podcasts.extend(l.podcasts);
+        lib.episodes.extend(l.episodes);
+    });
+    lib.errors = errors;
     lib.playlists.retain(|p| !hidden.contains(&p.id));
     apply_covers(&state.db().cover_overrides()?, lib.playlists.iter_mut());
     Ok(lib)
@@ -926,8 +1358,9 @@ pub async fn library(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Libr
 
 #[tauri::command]
 pub async fn radio(app: AppHandle, state: S<'_>, track: Track) -> Result<Vec<Track>> {
-    match (state.flavor, track.source) {
-        (Flavor::YouTube, Source::Youtube) => {
+    match track.source {
+        Source::Youtube => {
+            state.yt()?;
             let vid = track.stream_key.clone().unwrap_or_default();
             yt_call!(app, state, |y| y.radio(&vid))
         }
@@ -937,19 +1370,21 @@ pub async fn radio(app: AppHandle, state: S<'_>, track: Track) -> Result<Vec<Tra
 
 /// Songs to keep playing when the queue runs out (Settings → Autoplay), seeded by the last
 /// track: YouTube Music radio, Plex sonically similar tracks (random library tracks when the
-/// server has no sonic analysis), or random local files. Skips anything in `exclude`.
+/// server has no sonic analysis), or random local files (also when the seed's provider is off).
+/// Skips anything in `exclude`.
 #[tauri::command]
 pub async fn autoplay_tracks(app: AppHandle, state: S<'_>, track: Track, exclude: Vec<String>) -> Result<Vec<Track>> {
-    let mut tracks = match track.source {
-        Source::Youtube => {
+    let provider = Provider::of_source(track.source).filter(|p| state.on(*p));
+    let mut tracks = match provider {
+        Some(Provider::YouTube) => {
             let vid = track.stream_key.clone().unwrap_or_default();
             yt_call!(app, state, |y| y.radio(&vid))?
         }
-        Source::Plex => {
+        Some(Provider::Plex) => {
             let sess = state.plex_session().await?;
             state.plex.autoplay(&sess, &track.id).await?
         }
-        _ => local::random_tracks(&state.db(), &track.artist, 50)?,
+        None => local::random_tracks(&state.db(), &track.artist, 50)?,
     };
     let mut seen: std::collections::HashSet<String> = exclude.into_iter().collect();
     seen.insert(track.id.clone());
@@ -968,7 +1403,7 @@ async fn song_version(state: &AppState, video_id: &str, track: &Track) -> Option
     if track.episode || !is_video {
         return None;
     }
-    let key = format!("songmeta:{video_id}");
+    let key = Provider::YouTube.key(&format!("songmeta:{video_id}"));
     let cached = state.db().cache_get::<SongMeta>(&key, false).ok().flatten();
     let meta = match cached {
         Some(m) => m,
@@ -981,6 +1416,7 @@ async fn song_version(state: &AppState, video_id: &str, track: &Track) -> Option
     meta.video_id.filter(|v| v != video_id)
 }
 
+/// How to play a track. A downloaded Plex track plays from its file even while Plex is off.
 #[tauri::command]
 pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Result<Stream> {
     if let Some(path) = downloads::offline_path(&state, &track.id) {
@@ -1013,6 +1449,7 @@ pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Resu
             Ok(Stream::Url { url: state.plex.stream_url(&sess, &track, kbps)?, quality: label, offline: false })
         }
         Source::Youtube => {
+            state.yt()?;
             let vid = track.stream_key.clone().ok_or_else(|| Error::NotFound(track.title.clone()))?;
             Ok(Stream::Youtube { video_id: song_version(&state, &vid, &track).await.unwrap_or(vid) })
         }
@@ -1024,7 +1461,7 @@ pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Resu
 /// itself) and for tracks nobody has analysed. Cached.
 #[tauri::command]
 pub async fn track_loudness(state: S<'_>, track: Track) -> Result<Option<f32>> {
-    let key = format!("loud:{}", track.id);
+    let key = item_key("loud", &track.id);
     // Stored as a list: empty means "no loudness known".
     let cached = state.db().cache_get::<Vec<f32>>(&key, false)?;
     if let Some(v) = cached {
@@ -1074,7 +1511,8 @@ pub fn history_clear(state: S) -> Result<()> {
     state.db().history_clear()
 }
 
-/// Called when a track finished (or was played past the scrobble point).
+/// Called when a track finished (or was played past the scrobble point). Plex play counts only
+/// while Plex is on.
 #[tauri::command]
 pub async fn mark_played(state: S<'_>, track: Track) -> Result<()> {
     if track.source == Source::Plex {
@@ -1085,19 +1523,27 @@ pub async fn mark_played(state: S<'_>, track: Track) -> Result<()> {
     Ok(())
 }
 
+/// Like or unlike a song on its provider (Plex rating, YouTube like; YouTube needs an account).
 #[tauri::command]
-pub async fn rate(state: S<'_>, track: Track, liked: bool) -> Result<()> {
-    match track.source {
-        Source::Plex => {
+pub async fn rate(app: AppHandle, state: S<'_>, track: Track, liked: bool) -> Result<()> {
+    let p = match Provider::of_source(track.source) {
+        Some(p) => p,
+        None => return Err(Error::Unsupported("local files".into())),
+    };
+    match p {
+        Provider::Plex => {
             let sess = state.plex_session().await?;
-            state.plex.rate(&sess, &track.id, liked).await
+            state.plex.rate(&sess, &track.id, liked).await?;
         }
-        Source::Youtube => {
-            let y = state.ytm().await;
-            y.rate(track.stream_key.as_deref().unwrap_or_default(), liked).await
+        Provider::YouTube => {
+            state.yt_account().await?;
+            let vid = track.stream_key.clone().unwrap_or_default();
+            yt_call!(app, state, |y| y.rate(&vid, liked))?;
         }
-        Source::Local => Err(Error::Unsupported("local files".into())),
     }
+    // Liked Songs reloads with the change.
+    state.db().cache_delete(&p.key("liked"))?;
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -1121,6 +1567,7 @@ pub async fn get_lyrics(state: S<'_>, track: Track) -> Result<Option<lyrics::Lyr
                 None => None,
             }
         }
+        // Plex lyrics come from the server, only while Plex is on.
         Source::Plex => match state.plex_session().await {
             Ok(sess) => state.plex.lyrics(&sess, &track.id).await,
             Err(_) => None,
@@ -1130,7 +1577,7 @@ pub async fn get_lyrics(state: S<'_>, track: Track) -> Result<Option<lyrics::Lyr
     if let Some(l) = embedded.and_then(|t| lyrics::from_text(&t, if track.source == Source::Plex { "Plex" } else { "the file" })) {
         return Ok(Some(l));
     }
-    let key = format!("lyrics:{}", track.id);
+    let key = item_key("lyrics", &track.id);
     if let Some(l) = state.db().cache_get::<Option<lyrics::Lyrics>>(&key, false)? {
         return Ok(l);
     }
@@ -1169,7 +1616,7 @@ pub fn pl_update(app: AppHandle, state: S, id: String, name: String, description
 /// it in their row; YouTube playlists get an in-app cover that is never sent to YouTube.
 #[tauri::command(async)]
 pub fn pl_set_cover(app: AppHandle, state: S, id: String, image: Option<Vec<u8>>) -> Result<()> {
-    let remote = state.flavor == Flavor::YouTube && id.starts_with("yt:") && !id.starts_with("yt:MPSP");
+    let remote = id.starts_with("yt:") && !id.starts_with("yt:MPSP");
     if !id.starts_with("app:") && !remote {
         return Err(Error::Invalid("this playlist's cover can't be changed".into()));
     }
@@ -1224,15 +1671,15 @@ pub fn pl_add(app: AppHandle, state: S, id: String, tracks: Vec<Track>) -> Resul
     Ok(n)
 }
 
-/// Where a song is saved, for the "Saved in" checkboxes: app playlists holding it, and on YouTube
-/// the user's own playlists from YouTube Music's "Save to playlist" list.
+/// Where a song is saved, for the "Saved in" checkboxes: app playlists holding it, and for a
+/// YouTube song the user's own playlists from YouTube Music's "Save to playlist" list.
 #[tauri::command]
 pub async fn saved_in(app: AppHandle, state: S<'_>, track: Track) -> Result<SavedIn> {
     let app_playlists = state.db().playlists_containing(&track.id)?;
     let mut remote = Vec::new();
-    if state.flavor == Flavor::YouTube && track.source == Source::Youtube && !track.episode {
+    // YouTube off, signed out or refused: just no YouTube section (no network call without an account).
+    if track.source == Source::Youtube && !track.episode && state.yt_account().await.is_ok() {
         if let Some(vid) = track.stream_key.clone() {
-            // Signed out or refused: just no YouTube section.
             remote = yt_call!(app, state, |y| y.playlist_options(&vid)).unwrap_or_default();
         }
     }
@@ -1256,9 +1703,10 @@ pub fn pl_remove_track(app: AppHandle, state: S, id: String, track_id: String) -
 /// Add a song to, or remove it from, one of the user's own YouTube playlists.
 #[tauri::command]
 pub async fn yt_playlist_edit(app: AppHandle, state: S<'_>, playlist_id: String, track: Track, add: bool) -> Result<()> {
-    if state.flavor != Flavor::YouTube || track.source != Source::Youtube {
+    if track.source != Source::Youtube {
         return Err(Error::Unsupported("adding to YouTube playlists".into()));
     }
+    state.yt_account().await?;
     let vid = track.stream_key.clone().ok_or_else(|| Error::Invalid("no video id".into()))?;
     yt_call!(app, state, |y| y.edit_playlist(&playlist_id, &vid, add))
 }
@@ -1278,9 +1726,7 @@ pub struct YtCopyResult {
 /// out when there's no confident match. Emits `yt-copy-progress` {done, total} while matching.
 #[tauri::command]
 pub async fn yt_copy_playlist(app: AppHandle, state: S<'_>, id: String, title: String, privacy: String) -> Result<YtCopyResult> {
-    if state.flavor != Flavor::YouTube {
-        return Err(Error::Unsupported("copying playlists to YouTube".into()));
-    }
+    state.yt_account().await?;
     let (pl, tracks) = {
         let db = state.db();
         let pl = db.playlist_get(&id)?.ok_or_else(|| Error::Invalid("playlist not found".into()))?;
@@ -1298,7 +1744,7 @@ pub async fn yt_copy_playlist(app: AppHandle, state: S<'_>, id: String, title: S
             (Source::Youtube, Some(v)) => Some(v.clone()),
             _ => match yt_call!(app, state, |y| y.find_song(&t.title, &t.artist, t.duration_ms)) {
                 Ok(found) => found.and_then(|f| f.stream_key),
-                Err(Error::AuthExpired) => return Err(Error::AuthExpired),
+                Err(e @ Error::AuthExpired(_)) => return Err(e),
                 Err(_) => None,
             },
         };
@@ -1351,7 +1797,9 @@ pub fn hide_playlist(app: AppHandle, state: S, id: String, title: String) -> Res
     }
     let db = state.db();
     db.hide_playlist(&id, &title)?;
-    db.cache_clear()?;
+    if let Some(p) = Provider::of_id(&id) {
+        db.cache_clear_provider(p)?;
+    }
     let _ = app.emit("playlists-changed", ());
     Ok(())
 }
@@ -1630,7 +2078,7 @@ pub async fn pip_toggle(app: AppHandle, state: S<'_>) -> Result<bool> {
         let _ = w.close();
         return Ok(false);
     }
-    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", crate::ui_url(state.flavor, "index.html#pip")), &state)
+    with_browser_args(tauri::WebviewWindowBuilder::new(&app, "pip", crate::ui_url("index.html#pip")), &state)
         // Named after the app so it is easy to pick in Discord's and OBS's window lists.
         .title(format!("{} mini player", app.package_info().name))
         .inner_size(320.0, 420.0)
@@ -1697,20 +2145,64 @@ pub fn htpc_autostart_set(_app: AppHandle, _enabled: bool) -> Result<()> {
 
 // ---- likes ----------------------------------------------------------------------------------
 
-/// Track ids the user has liked on the provider, so the UI can show the like state.
-#[tauri::command]
-pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
-    match state.flavor {
-        Flavor::Plex => {
-            let sess = state.plex_session().await?;
-            Ok(state.plex.liked_track_ids(&sess).await)
-        }
-        Flavor::YouTube => {
-            // "LM" is the account's Liked Music playlist.
-            let page = yt_call!(app, state, |y| y.playlist("yt:LM"))?;
-            Ok(page.tracks.into_iter().map(|t| t.id).collect())
+/// One provider's liked songs: YouTube's Liked Music (account only), the Plex server's rated
+/// tracks. Cached under `<provider>:liked`; `rate` drops it.
+async fn liked_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh: bool) -> Option<Part<Vec<Track>>> {
+    let key = p.key("liked");
+    if !refresh && state.on(p) {
+        if let Some(t) = state.db().cache_get::<Vec<Track>>(&key, false).ok().flatten() {
+            return Some(Part { value: t, stale: false, error: None });
         }
     }
+    let k = key.clone();
+    let fetch = move |app: AppHandle, st: Arc<AppState>| {
+        let key = k.clone();
+        async move {
+            let tracks = match p {
+                Provider::Plex => {
+                    let sess = st.plex_session().await?;
+                    st.plex.liked_tracks(&sess).await
+                }
+                Provider::YouTube => {
+                    st.yt_account().await?;
+                    // "LM" is the account's Liked Music playlist.
+                    yt_call!(app, st, |y| y.playlist("yt:LM"))?.tracks
+                }
+            };
+            st.db().cache_put(&key, &tracks, 15 * 60)?;
+            Ok(tracks)
+        }
+    };
+    provider_part(app, state, p, WAIT_LONG, Some("liked-changed"), fetch, move |st| st.db().cache_get(&key, true).ok().flatten()).await
+}
+
+/// Liked Songs from every provider that is on: YouTube's first (newest like first), then Plex's.
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LikedTracks {
+    tracks: Vec<Track>,
+    stale: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<ProviderError>,
+}
+
+async fn liked_merged(app: &AppHandle, state: &Arc<AppState>, refresh: bool) -> LikedTracks {
+    let (yt, plex) = tokio::join!(liked_part(app, state, Provider::YouTube, refresh), liked_part(app, state, Provider::Plex, refresh));
+    let mut tracks = Vec::new();
+    let (stale, errors) = merge_parts([yt, plex], |t| tracks.extend(t));
+    LikedTracks { tracks, stale, errors }
+}
+
+/// The combined Liked Songs page (the UI's `liked` route).
+#[tauri::command]
+pub async fn liked_tracks(app: AppHandle, state: S<'_>, refresh: bool) -> Result<LikedTracks> {
+    Ok(liked_merged(&app, state.inner(), refresh).await)
+}
+
+/// Track ids the user has liked on the providers that are on, so the UI can show the like state.
+#[tauri::command]
+pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
+    Ok(liked_merged(&app, state.inner(), true).await.tracks.into_iter().map(|t| t.id).collect())
 }
 
 // ---- saved albums / artists ("Your Library") -----------------------------------------------
@@ -1855,47 +2347,70 @@ pub async fn translate_texts(state: S<'_>, texts: Vec<String>, locale: String) -
 
 // ---- Browse all and the profile page --------------------------------------------------------
 
-/// "Browse all" tiles: YouTube Music's sections, moods and genres; Plex's genres. Cached a day.
+/// "Browse all" tiles: YouTube Music's sections, moods and genres, then Plex's genres (the UI
+/// groups them by id). Each provider's list is cached a day. Fails only when every provider that
+/// is on failed with nothing cached.
 #[tauri::command]
 pub async fn browse_categories(app: AppHandle, state: S<'_>, refresh: bool) -> Result<Vec<BrowseCategory>> {
-    let key = "browseCategories";
-    let cached = state.db().cache_get::<Vec<BrowseCategory>>(key, false)?;
-    if let (false, Some(c)) = (refresh, cached) {
-        return Ok(c);
-    }
-    let fresh = match state.flavor {
-        Flavor::Plex => {
-            let sess = state.plex_session().await?;
-            state.plex.genres(&sess).await
+    let st = state.inner();
+    let part = |p: Provider| {
+        let key = p.key("browseCategories");
+        let app = app.clone();
+        async move {
+            if !refresh && st.on(p) {
+                if let Some(c) = st.db().cache_get::<Vec<BrowseCategory>>(&key, false).ok().flatten() {
+                    return Some(Part { value: c, stale: false, error: None });
+                }
+            }
+            let k = key.clone();
+            let fetch = move |app: AppHandle, st: Arc<AppState>| {
+                let key = k.clone();
+                async move {
+                    let list = match p {
+                        Provider::Plex => {
+                            let sess = st.plex_session().await?;
+                            st.plex.genres(&sess).await?
+                        }
+                        Provider::YouTube => {
+                            st.yt()?;
+                            yt_call!(app, st, |y| y.categories())?
+                        }
+                    };
+                    st.db().cache_put(&key, &list, 86400)?;
+                    Ok(list)
+                }
+            };
+            provider_part(&app, st, p, WAIT_SHORT, None, fetch, move |st| st.db().cache_get(&key, true).ok().flatten()).await
         }
-        Flavor::YouTube => yt_call!(app, state, |y| y.categories()),
     };
-    match fresh {
-        Ok(list) => {
-            state.db().cache_put(key, &list, 86400)?;
-            Ok(list)
-        }
-        Err(e) => {
-            let stale = state.db().cache_get::<Vec<BrowseCategory>>(key, true)?;
-            stale.ok_or(e)
-        }
+    let (yt, plex) = tokio::join!(part(Provider::YouTube), part(Provider::Plex));
+    let mut list = Vec::new();
+    let (_, errors) = merge_parts([yt, plex], |l| list.extend(l));
+    match errors.into_iter().next() {
+        Some(e) if list.is_empty() => Err(error_of(e)),
+        _ => Ok(list),
     }
 }
 
-/// The page behind a "Browse all" tile. Cached for an hour.
+/// The page behind a "Browse all" tile (a `yt:` section or a `plex-genre:`). Cached for an hour.
 #[tauri::command]
 pub async fn browse_page(app: AppHandle, state: S<'_>, id: String) -> Result<Vec<Shelf>> {
-    let key = format!("browsePage:{id}");
+    browse_shelves(&app, &state, &id).await
+}
+
+async fn browse_shelves(app: &AppHandle, state: &AppState, id: &str) -> Result<Vec<Shelf>> {
+    let p = provider_of(state, id)?;
+    let key = item_key("browsePage", id);
     let cached = state.db().cache_get::<Vec<Shelf>>(&key, false)?;
     if let Some(c) = cached {
         return Ok(c);
     }
-    let shelves = match state.flavor {
-        Flavor::Plex => {
+    let shelves = match p {
+        Provider::Plex => {
             let sess = state.plex_session().await?;
-            state.plex.genre_page(&sess, &id).await?
+            state.plex.genre_page(&sess, id).await?
         }
-        Flavor::YouTube => yt_call!(app, state, |y| y.browse_page(&id))?,
+        Provider::YouTube => yt_call!(app, state, |y| y.browse_page(id))?,
     };
     state.db().cache_put(&key, &shelves, 3600)?;
     Ok(shelves)
@@ -1904,12 +2419,13 @@ pub async fn browse_page(app: AppHandle, state: S<'_>, id: String) -> Result<Vec
 /// A cover for a "Browse all" tile: the first artwork on its page. Kept a week (a miss a day).
 #[tauri::command]
 pub async fn browse_art(app: AppHandle, state: S<'_>, id: String) -> Result<Option<String>> {
-    let key = format!("browseArt:{id}");
+    provider_of(&state, &id)?;
+    let key = item_key("browseArt", &id);
     let cached = state.db().cache_get::<Option<String>>(&key, false)?;
     if let Some(c) = cached {
         return Ok(c);
     }
-    let shelves = browse_page(app, state.clone(), id).await?;
+    let shelves = browse_shelves(&app, &state, &id).await?;
     let art = shelves.iter().flat_map(|s| s.items.iter()).find_map(|it| match it {
         MediaItem::Track(t) => t.artwork.clone(),
         MediaItem::Album(a) => a.artwork.clone(),
@@ -1921,47 +2437,73 @@ pub async fn browse_art(app: AppHandle, state: S<'_>, id: String) -> Result<Opti
     Ok(art)
 }
 
-/// Who is signed in, for the Profile page: name, photo, public page and public playlists.
+/// Who is signed in, for the Profile page: the YouTube channel (name, photo, public page and
+/// public playlists) when YouTube is on with an account, otherwise the Plex account.
 #[tauri::command]
 pub async fn profile_info(app: AppHandle, state: S<'_>) -> Result<ProfileInfo> {
-    match state.flavor {
-        Flavor::YouTube => yt_call!(app, state, |y| y.profile()),
-        Flavor::Plex => {
-            let token = state.secrets.get("plex.token")?.ok_or(Error::NotSignedIn)?;
-            let users = plex_home_users(state.clone()).await.unwrap_or_default();
-            let me = users.into_iter().find(|u| u.selected);
-            let (name, photo) = match me {
-                Some(u) => (u.title, u.thumb),
-                None => state.plex.account_profile(&token).await?,
-            };
-            // Plex playlists are private to the server: there's no "public" to count.
-            Ok(ProfileInfo { name, photo, url: None, public_playlists: None })
-        }
+    let yt_err = match state.yt_account().await {
+        Ok(_) => match yt_call!(app, state, |y| y.profile()) {
+            Ok(p) => return Ok(p),
+            Err(e) => e,
+        },
+        Err(e) => e,
+    };
+    match plex_profile(&state).await {
+        Ok(p) => Ok(p),
+        // Neither has a profile: the more telling reason (a YouTube failure beats "Plex is off").
+        Err(Error::NotSignedIn | Error::Disabled(_)) => Err(yt_err),
+        Err(e) => Err(e),
     }
 }
 
+async fn plex_profile(state: &AppState) -> Result<ProfileInfo> {
+    if !state.on(Provider::Plex) {
+        return Err(Error::Disabled(Provider::Plex));
+    }
+    let token = state.secrets.get("plex.token")?.ok_or(Error::NotSignedIn)?;
+    let users = home_users(state).await.unwrap_or_default();
+    let me = users.into_iter().find(|u| u.selected);
+    let (name, photo) = match me {
+        Some(u) => (u.title, u.thumb),
+        None => state.plex.account_profile(&token).await?,
+    };
+    // Plex playlists are private to the server: there's no "public" to count.
+    Ok(ProfileInfo { name, photo, url: None, public_playlists: None })
+}
+
 /// Artists from your listening history: `top` (most played in the last 4 weeks) or `recent`
-/// (most recently played). Pictures and names come from the artist pages, kept for a month.
+/// (most recently played), of providers that are on. Pictures and names come from the artist
+/// pages, kept for a month; artists whose page doesn't arrive within a few seconds show as played.
 #[tauri::command]
 pub async fn profile_artists(app: AppHandle, state: S<'_>, kind: String, limit: usize) -> Result<Vec<Artist>> {
     let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
     let top = kind == "top";
-    let list = state.db().history_artists(if top { now - 28 * 86400 } else { 0 }, top, limit.min(50))?;
-    let mut out = Vec::new();
-    for chunk in list.chunks(5) {
-        let got = futures_util::future::join_all(chunk.iter().map(|a| artist_card(app.clone(), state.clone(), a.clone()))).await;
-        out.extend(got);
+    let list = state.db().history_artists(if top { now - 28 * 86400 } else { 0 }, top, 50)?;
+    let list: Vec<Artist> = list.into_iter().filter(|a| usable(&state, &a.id)).take(limit.min(50)).collect();
+    let (a, st, l) = (app.clone(), state.inner().clone(), list.clone());
+    let work = async move {
+        let mut out = Vec::new();
+        for chunk in l.chunks(5) {
+            let got = futures_util::future::join_all(chunk.iter().map(|ar| artist_card(&a, &st, ar.clone()))).await;
+            out.extend(got);
+        }
+        out
+    };
+    if let Some(out) = detached(WAIT_SHORT, work, |_| {}).await {
+        return Ok(out);
     }
-    Ok(out)
+    // Too slow: what is cached now (the rest keeps loading for next time).
+    let db = state.db();
+    Ok(list.into_iter().map(|a| db.cache_get::<Artist>(&item_key("artistCard", &a.id), false).ok().flatten().unwrap_or(a)).collect())
 }
 
-async fn artist_card(app: AppHandle, state: S<'_>, a: Artist) -> Artist {
-    let key = format!("artistCard:{}", a.id);
+async fn artist_card(app: &AppHandle, state: &AppState, a: Artist) -> Artist {
+    let key = item_key("artistCard", &a.id);
     let cached = state.db().cache_get::<Artist>(&key, false).ok().flatten();
     if let Some(c) = cached {
         return c;
     }
-    match artist(app, state.clone(), a.id.clone()).await.ok().and_then(|p| p.artist) {
+    match artist_page(app, state, &a.id).await.ok().and_then(|p| p.artist) {
         Some(page) => {
             let card = Artist { id: a.id, name: if page.name.is_empty() { a.name } else { page.name }, artwork: page.artwork };
             let _ = state.db().cache_put(&key, &card, 30 * 86400);
@@ -1975,16 +2517,14 @@ async fn artist_card(app: AppHandle, state: S<'_>, a: Artist) -> Artist {
 /// reloaded afterwards so it disappears everywhere.
 #[tauri::command]
 pub async fn yt_delete_playlist(app: AppHandle, state: S<'_>, id: String) -> Result<()> {
-    if state.flavor != Flavor::YouTube {
-        return Err(Error::Unsupported("deleting playlists".into()));
-    }
+    state.yt_account().await?;
     yt_call!(app, state, |y| y.delete_playlist(&id))?;
     // Take it out of the cached library too, so the reload doesn't bring it back for 15 minutes.
-    let cached: Option<Library> = state.db().cache_get("yt.library", true)?;
+    let cached: Option<Library> = state.db().cache_get("yt:library", true)?;
     if let Some(mut lib) = cached {
         let gone = ytm::playlist_id_of(&id);
         lib.playlists.retain(|p| ytm::playlist_id_of(&p.id) != gone);
-        state.db().cache_put("yt.library", &lib, 15 * 60)?;
+        state.db().cache_put("yt:library", &lib, 15 * 60)?;
     }
     let _ = app.emit("playlists-changed", ());
     Ok(())
@@ -1993,9 +2533,7 @@ pub async fn yt_delete_playlist(app: AppHandle, state: S<'_>, id: String) -> Res
 /// Channels the signed-in Google account can use: the personal one and brand accounts.
 #[tauri::command]
 pub async fn yt_accounts(app: AppHandle, state: S<'_>) -> Result<Vec<YtAccount>> {
-    if state.flavor != Flavor::YouTube {
-        return Err(Error::Unsupported("YouTube profiles".into()));
-    }
+    state.yt_account().await?;
     let mut list = yt_call!(app, state, |y| y.accounts())?;
     // The list marks the identity of the browser session; ours is whatever was picked here.
     let current = state.ytm().await.page_id;
@@ -2009,6 +2547,7 @@ pub async fn yt_accounts(app: AppHandle, state: S<'_>) -> Result<Vec<YtAccount>>
 /// previous profile is dropped.
 #[tauri::command]
 pub async fn yt_select_account(app: AppHandle, state: S<'_>, page_id: Option<String>, name: String) -> Result<()> {
+    state.yt_account().await?;
     state.ytm.write().await.page_id = page_id.clone();
     {
         let db = state.db();
@@ -2017,24 +2556,27 @@ pub async fn yt_select_account(app: AppHandle, state: S<'_>, page_id: Option<Str
             None => db.kv_delete("yt.pageId")?,
         }
         db.kv_set("yt.account", &name)?;
-        db.cache_clear()?;
+        db.cache_clear_provider(Provider::YouTube)?;
     }
-    let _ = app.emit("auth-changed", ());
+    emit_for(&app, "auth-changed", Provider::YouTube);
     Ok(())
 }
 
 /// Square album art and the official artist/album for YouTube music videos (from the video's
 /// song counterpart), cached for 30 days. At most 12 uncached lookups per call, 4 at a time.
+/// Needs the YouTube switch (an account isn't needed).
 #[tauri::command]
 pub async fn yt_song_meta(
     app: AppHandle,
     state: S<'_>,
     video_ids: Vec<String>,
 ) -> Result<std::collections::HashMap<String, SongMeta>> {
+    state.yt()?;
     let mut out = std::collections::HashMap::new();
     let mut todo = Vec::new();
     for vid in video_ids.into_iter().take(100) {
-        match state.db().cache_get::<SongMeta>(&format!("songmeta:{vid}"), false)? {
+        let cached = state.db().cache_get::<SongMeta>(&Provider::YouTube.key(&format!("songmeta:{vid}")), false)?;
+        match cached {
             Some(m) => {
                 out.insert(vid, m);
             }
@@ -2059,10 +2601,10 @@ pub async fn yt_song_meta(
         match res {
             Ok(m) => {
                 let m = m.unwrap_or_default();
-                state.db().cache_put(&format!("songmeta:{vid}"), &m, 30 * 86400)?;
+                state.db().cache_put(&Provider::YouTube.key(&format!("songmeta:{vid}")), &m, 30 * 86400)?;
                 out.insert(vid, m);
             }
-            Err(Error::AuthExpired) => {
+            Err(Error::AuthExpired(_)) => {
                 yt_session_lost(&app, &state).await;
                 break;
             }
@@ -2099,7 +2641,14 @@ fn plex_home_token(state: &AppState) -> Result<String> {
 
 #[tauri::command]
 pub async fn plex_home_users(state: S<'_>) -> Result<Vec<PlexUser>> {
-    let token = plex_home_token(&state)?;
+    if !state.on(Provider::Plex) {
+        return Err(Error::Disabled(Provider::Plex));
+    }
+    home_users(&state).await
+}
+
+async fn home_users(state: &AppState) -> Result<Vec<PlexUser>> {
+    let token = plex_home_token(state)?;
     let mut users = state.plex.home_users(&token).await?;
     let current: Option<String> = state.db().kv_get("plex.userUuid")?;
     for u in &mut users {
@@ -2115,6 +2664,9 @@ pub async fn plex_home_users(state: S<'_>) -> Result<Vec<PlexUser>> {
 /// Switch to a Plex Home user and reconnect to the same server with their access.
 #[tauri::command]
 pub async fn plex_switch_user(app: AppHandle, state: S<'_>, uuid: String, pin: Option<String>) -> Result<()> {
+    if !state.on(Provider::Plex) {
+        return Err(Error::Disabled(Provider::Plex));
+    }
     let home = plex_home_token(&state)?;
     let users = state.plex.home_users(&home).await?;
     let user = users.into_iter().find(|u| u.uuid == uuid).ok_or_else(|| Error::NotFound("Plex Home user".into()))?;
@@ -2127,8 +2679,8 @@ pub async fn plex_switch_user(app: AppHandle, state: S<'_>, uuid: String, pin: O
         let db = state.db();
         db.kv_set("plex.userUuid", &uuid)?;
         db.kv_set("plex.account", &user.title)?;
-        db.cache_clear()?;
-        db.kv_delete("plex.library")?;
+        // Only Plex's pages (and its library listing): YouTube's stay.
+        db.cache_clear_provider(Provider::Plex)?;
     }
     // Same server if this user can reach it; otherwise they choose one.
     let previous = state.plex_session.read().await.as_ref().map(|s| s.server.client_identifier.clone());
@@ -2144,7 +2696,7 @@ pub async fn plex_switch_user(app: AppHandle, state: S<'_>, uuid: String, pin: O
             }
         }
     }
-    let _ = app.emit("auth-changed", ());
+    emit_for(&app, "auth-changed", Provider::Plex);
     Ok(())
 }
 
@@ -2270,12 +2822,11 @@ pub async fn media_stop(app: AppHandle) -> Result<()> {
 /// reference; only public image URLs are passed on. `link` is the track's public page, if any.
 #[tauri::command]
 pub async fn presence_update(state: S<'_>, now: tauri_plugin_openmusic_media::NowPlaying, link: Option<String>) -> Result<()> {
-    let f = state.flavor;
-    if !crate::discord::available(f) {
+    if !crate::discord::available() {
         return Ok(());
     }
     if !now.playing {
-        crate::discord::set(f, None);
+        crate::discord::set(None);
         return Ok(());
     }
     let public = now
@@ -2289,10 +2840,9 @@ pub async fn presence_update(state: S<'_>, now: tauri_plugin_openmusic_media::No
         Some(u) => Some(u),
         None => crate::discord::public_cover(&state.http, &now.artist, now.album.as_deref(), &now.title).await,
     }
-    .or_else(|| Some(crate::discord::app_icon(f)));
+    .or_else(|| Some(crate::discord::app_icon()));
     let link = link.filter(|l| l.starts_with("https://music.youtube.com/")).map(|l| ("Listen on YouTube Music".to_string(), l));
     crate::discord::set(
-        f,
         Some(crate::discord::Presence {
             title: now.title,
             artist: now.artist,
@@ -2307,8 +2857,8 @@ pub async fn presence_update(state: S<'_>, now: tauri_plugin_openmusic_media::No
 }
 
 #[tauri::command]
-pub fn presence_clear(state: S) {
-    crate::discord::set(state.flavor, None);
+pub fn presence_clear() {
+    crate::discord::set(None);
 }
 
 /// Self-test progress (see ui/src/selftest.ts), appended to `selftest.log` in the data folder
@@ -2327,9 +2877,8 @@ pub fn self_test_exit(app: AppHandle) {
 }
 
 #[tauri::command]
-pub async fn update_check(app: AppHandle, state: S<'_>) -> Result<crate::updater::UpdateInfo> {
-    let product = app.config().product_name.clone().unwrap_or_default();
-    crate::updater::check(&state.http, &product).await
+pub async fn update_check(state: S<'_>) -> Result<crate::updater::UpdateInfo> {
+    crate::updater::check(&state.http).await
 }
 
 /// Windows and macOS: fetch the new installer / disk image in the background; it installs when the
@@ -2375,6 +2924,48 @@ mod tests {
         assert_eq!(ids, ["single", "dup", "last"]);
         assert_eq!(got[0].artist, "A", "the artist's name fills in when the album has none");
         assert!(current_year() >= 2025);
+    }
+
+    #[test]
+    fn merges_parts_in_order_with_their_errors() {
+        let err = ProviderError { provider: Provider::Plex, code: "timeout".into(), message: "slow".into() };
+        let parts = vec![
+            Some(Part { value: vec![1, 2], stale: false, error: None }),
+            None,
+            Some(Part { value: vec![3], stale: true, error: Some(err.clone()) }),
+        ];
+        let mut all = Vec::new();
+        let (stale, errors) = merge_parts(parts, |v| all.extend(v));
+        assert_eq!(all, [1, 2, 3]);
+        assert!(stale);
+        assert_eq!(errors, std::slice::from_ref(&err));
+        assert!(matches!(error_of(err), Error::Offline(_)));
+        let expired = ProviderError { provider: Provider::YouTube, code: "authExpired".into(), message: String::new() };
+        assert!(matches!(error_of(expired), Error::AuthExpired(Some(Provider::YouTube))));
+    }
+
+    #[tokio::test]
+    async fn detached_work_finishes_after_the_caller_stops_waiting() {
+        let fast = detached(Duration::from_secs(5), async { 1 }, |_| {}).await;
+        assert_eq!(fast, Some(1));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let slow = detached(
+            Duration::from_millis(20),
+            async {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                2
+            },
+            move |v| tx.send(v).unwrap(),
+        )
+        .await;
+        assert_eq!(slow, None, "the caller gave up");
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), 2, "the result still arrives");
+    }
+
+    #[test]
+    fn liked_music_ids() {
+        assert!(is_yt_liked("yt:LM") && is_yt_liked("yt:VLLM"));
+        assert!(!is_yt_liked("yt:PLx") && !is_yt_liked("plex:LM"));
     }
 
     #[test]

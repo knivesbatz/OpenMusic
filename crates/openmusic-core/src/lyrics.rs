@@ -70,7 +70,7 @@ pub fn from_text(text: &str, source: &str) -> Option<Lyrics> {
     Some(Lyrics { synced: false, lines: text.lines().map(|l| Line { time_ms: None, text: l.trim_end().to_string() }).collect(), source: source.into() })
 }
 
-const UA: &str = concat!("OpenMusic/", env!("CARGO_PKG_VERSION"), " (https://github.com/knivesbatz/OpenMusic)");
+const UA: &str = concat!("OpenSpot/", env!("CARGO_PKG_VERSION"), " (https://github.com/knivesbatz/OpenMusic)");
 
 /// Title without release decorations that lyric databases don't carry: " - 2006 Remaster",
 /// "(Remastered 2011)", "(feat. X)", "[Live]", "(Radio Edit)", "(Mono)". Real title words stay.

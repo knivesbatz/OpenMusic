@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 
-const UA: &str = concat!("OpenMusic/", env!("CARGO_PKG_VERSION"), " ( https://github.com/knivesbatz/OpenMusic )");
+const UA: &str = concat!("OpenSpot/", env!("CARGO_PKG_VERSION"), " ( https://github.com/knivesbatz/OpenMusic )");
 
 /// MusicBrainz allows one request per second per client.
 static LAST: tokio::sync::Mutex<Option<Instant>> = tokio::sync::Mutex::const_new(None);
