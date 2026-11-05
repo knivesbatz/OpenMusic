@@ -2,6 +2,7 @@
 // playlists you have and how many artists you follow, your top artists this month, your public
 // playlists and the artists you played recently.
 import { useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { providerOfId, signedInTo, visibleId } from "../actions";
 import { api, errorMessage, inTauri } from "../api";
 import { Art, Card, ErrorBox, Loading, Shelf, useAsync, usePageTitle, useProvidersKey } from "../components/common";
@@ -66,6 +67,10 @@ export function ProfilePage({ section }: { section?: Section }) {
     loadProfile();
     refreshLibrary(false);
     refreshSaved();
+    // Hiding (or deleting) a playlist changes the public playlists shown here.
+    if (!inTauri) return;
+    const off = listen("playlists-changed", () => loadProfile(true));
+    return () => void off.then((f) => f());
   }, []);
   return section ? <ProfileSection section={section} /> : <ProfileMain />;
 }

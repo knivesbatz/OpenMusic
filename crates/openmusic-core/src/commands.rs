@@ -2477,7 +2477,14 @@ pub async fn browse_art(app: AppHandle, state: S<'_>, id: String) -> Result<Opti
 pub async fn profile_info(app: AppHandle, state: S<'_>) -> Result<ProfileInfo> {
     let yt_err = match state.yt_account().await {
         Ok(_) => match yt_call!(app, state, |y| y.profile()) {
-            Ok(p) => return Ok(p),
+            Ok(mut p) => {
+                // Playlists hidden in the app stay hidden on the profile too.
+                if let Some(pls) = p.public_playlists.as_mut() {
+                    let hidden = state.db().hidden_playlists()?;
+                    pls.retain(|pl| !hidden.contains(&pl.id));
+                }
+                return Ok(p);
+            }
             Err(e) => e,
         },
         Err(e) => e,
