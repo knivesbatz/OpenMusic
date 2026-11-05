@@ -2698,7 +2698,7 @@ dependencies = [
 
 [[package]]
 name = "openmusic-core"
-version = "1.6.1"
+version = "2.0.0"
 dependencies = [
  "futures-util",
  "hex",
@@ -2729,6 +2729,18 @@ dependencies = [
  "walkdir",
  "windows",
  "windows-core",
+]
+
+[[package]]
+name = "openspot"
+version = "2.0.0"
+dependencies = [
+ "openmusic-core",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-openmusic-media",
 ]
 
 [[package]]
@@ -2903,18 +2915,6 @@ name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
-
-[[package]]
-name = "plexspot"
-version = "1.6.1"
-dependencies = [
- "openmusic-core",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-openmusic-media",
-]
 
 [[package]]
 name = "plist"
@@ -4309,7 +4309,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-openmusic-media"
-version = "1.6.1"
+version = "2.0.0"
 dependencies = [
  "log",
  "serde",
@@ -5696,18 +5696,6 @@ dependencies = [
  "quote",
  "syn 3.0.9",
  "synstructure",
-]
-
-[[package]]
-name = "ytspot"
-version = "1.6.1"
-dependencies = [
- "openmusic-core",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-openmusic-media",
 ]
 
 [[package]]

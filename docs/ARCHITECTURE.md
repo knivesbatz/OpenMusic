@@ -4,39 +4,88 @@
 
 | Layer | Choice | Why |
 |---|---|---|
-| Shell | **Tauri 2** (2.12) | Native Windows app on WebView2. Small installers (~5–10 MB vs ~100 MB Electron). Rust backend. |
+| Shell | **Tauri 2** (2.12) | Native Windows, macOS and Android app on the system webview. Small installers (~5–10 MB vs ~100 MB Electron). Rust backend. |
 | Core | **Rust** crate `openmusic-core` | Providers, persistence, scanning, downloads, auth, scrobbling. Off the UI thread. |
 | UI | **React 18 + TypeScript + Vite 5 + zustand** | Mature, typed, fast. zustand selectors avoid app-wide re-renders (the playback position ticks without re-rendering lists). `@tanstack/react-virtual` handles long lists. |
 | DB | **SQLite** (rusqlite, bundled) | WAL mode, versioned migrations via `PRAGMA user_version`. |
-| Secrets | **Windows Credential Manager** (`keyring`) | Per-app namespace (the app identifier). Values over 2.5 KB are chunked. |
+| Secrets | **OS credential store** (`keyring`: Windows Credential Manager, macOS Keychain) | Namespaced by the app identifier; YouTube (`yt.*`), Plex (`plex.*`) and Last.fm entries side by side. Values over 2.5 KB are chunked. |
 
 Node 18 is supported (Vite 5). CI uses Node 20.
 
-## Two apps, one codebase
+## One app, several providers
 
-`apps/ytspot` and `apps/plexspot` each hold a `tauri.conf.json` (productName, identifier, icons, window)
-and a three-line `main.rs` that calls `openmusic_core::run(Flavor::…, generate_context!())`. Because the
-identifier differs, Tauri gives each app its own `%APPDATA%\app.openmusic.<app>` data dir and WebView2
-profile, and `secrets.rs` namespaces credentials by identifier. The single UI build (`ui/dist`) is shared,
-and the UI asks `app_info` which flavor it runs in.
+OpenSpot (2.0.0) is one app in `apps/openspot`: a `tauri.conf.json` (productName/mainBinaryName
+"OpenSpot", icons, window, NSIS hooks) and a three-line `lib.rs` that calls
+`openmusic_core::run(generate_context!())`. The single UI build (`ui/dist`) asks `app_info` which
+providers exist, what each can do (`providers: { youtube, plex }` of `Capabilities`) and which are
+switched on (`services`).
+
+Until 1.x this was two apps (YTSpot and PLEXSpot) from one codebase, told apart by a `Flavor`. 2.0
+removed it: both providers live in one process, and every command picks its provider per item.
+
+**Identifier.** The identifier stays `app.openmusic.ytspot`, the old YTSpot one. It is never shown to
+users. Tauri derives from it the data dir (`%APPDATA%\app.openmusic.ytspot`), the WebView2/WKWebView
+profile (YouTube's Google cookies), the keyring service name, the Android package and the
+single-instance lock. Keeping it lets YTSpot users upgrade in place on every platform (same data,
+sign-in, Android package and signing key) and the macOS UI port stays 47321. PLEXSpot data
+(`app.openmusic.plexspot`) is imported once on desktop by `migrate.rs`.
+
+**Services.** `AppState.services` (`{ youtube, plex }`, kv `services`) holds the on/off switch of each
+provider. A provider that is off keeps its sign-in but is never called: fan-out commands (home,
+search, library, liked, browse) skip it, entity commands (`plex:` / `yt:` ids, see `Provider::of_id`)
+return `disabled`, and its background work (YouTube keep-alive, Plex reconnect) idles. YouTube Music
+can be on without an account (anonymous); Plex needs a sign-in.
+
+**Fan-out.** Commands that combine providers run each provider that is on concurrently, each with a
+timeout. One provider failing doesn't fail the call: its part is empty and the response lists it in
+`errors: [{ provider, code, message }]`. Each provider's part is cached under its own key
+(`yt:…`, `plex:…`), so `cache_clear_provider` and a Plex server or user switch only drop that
+provider's entries. Search is per provider (`search(q, provider)`): the UI queries each source in
+parallel, shows results as they arrive and merges them (`ui/src/searchMerge.ts`).
+
+**Errors.** `authExpired` and `disabled` errors carry the `provider`, so the UI asks the user to sign
+in to that service only; the rest of the app keeps working.
 
 ## Provider model
 
-Rust `commands.rs` dispatches on `Flavor` and on id prefixes:
+Rust `commands.rs` dispatches on id prefixes (`Provider::of_id`):
 
 - `plex.rs`: plex.tv PIN auth, `/api/v2/resources` discovery, parallel connection probing (local >
   remote > relay), library/search/playlists/hubs, stream URLs (direct or universal transcode for
-  Low/Medium), `/:/scrobble` to keep Plex play state in sync, and `/:/rate` for likes.
+  Low/Medium), `/:/scrobble` to keep Plex play state in sync, and `/:/rate` for likes. The device is
+  `X-Plex-Product: OpenSpot`; PLEXSpot's client id is kept, so plex.tv sees the same device.
 - `ytm.rs`: InnerTube `WEB_REMIX` JSON endpoints with the user's own Google session cookies
   (SAPISIDHASH auth), captured from a Google sign-in webview. Parsers search for renderer objects
   anywhere in the response, so small layout changes don't break them. **Unofficial**: there is no
   official API for YouTube Music libraries. It's isolated in one module.
 - `local.rs`: folder scanning with `lofty` and incremental refresh by (mtime, size). Missing files are
   flagged, not deleted.
-- App playlists (`app:` ids) are SQLite-only, so neither provider's playlists are ever modified.
+- App playlists (`app:` ids) are SQLite-only and can mix YouTube Music, Plex and local songs. OpenSpot
+  never writes Plex playlists. A YouTube playlist is deleted only when the user picks "Delete from
+  YouTube" on one they own.
 
-`Capabilities` (in `model.rs`) tells the UI what the active provider supports, so unsupported controls
-are hidden or explained rather than faked.
+`Capabilities` (in `model.rs`) tells the UI what each provider supports. The UI gates controls per
+item (Download only on Plex items, Delete from YouTube only on `yt:` playlists), so unsupported
+controls are hidden or explained rather than faked.
+
+## Updates and migration from 1.x
+
+- 1.x apps look for `<productName>_<version>_…` assets in the latest release. Every 2.x release
+  therefore also carries the OpenSpot builds as `YTSpot_<v>_x64-setup.exe`,
+  `YTSpot_<v>_android-arm64.apk`, `YTSpot_<v>_universal.dmg`, `PLEXSpot_<v>_x64-setup.exe` and
+  `PLEXSpot_<v>_universal.dmg`. CI checks that every one is present. OpenSpot itself looks for
+  `OpenSpot_` assets.
+- There is no PLEXSpot APK alias: PLEXSpot for Android is another package (`app.openmusic.plexspot`),
+  which can't update into OpenSpot. Those users install OpenSpot and sign in to Plex again.
+- Windows: the installer's NSIS hooks (`apps/openspot/src-tauri/installer/hooks.nsh`) close YTSpot
+  and PLEXSpot, run their uninstallers silently (found through their HKCU Uninstall keys), move the
+  "Launch at startup" entry to OpenSpot, and never touch app data. OpenSpot's own uninstaller also
+  removes PLEXSpot's old data folders when "Delete app data" is ticked.
+- macOS: the 1.x updater swaps the bundle in place, so OpenSpot may first run as `YTSpot.app` or
+  `PLEXSpot.app`. It renames itself to `OpenSpot.app` and relaunches, or, when `OpenSpot.app` already
+  exists next to it, moves the old copy to the Trash and opens `OpenSpot.app`.
+- CI's install test upgrades the pinned v1.6.1 YTSpot and PLEXSpot installers to the new build. The
+  release job never deletes v1.6.1.
 
 ## Playback
 
@@ -47,9 +96,11 @@ Audio plays **in the main window's webview**. There is exactly one engine (`ui/s
   idle element and started on `ended`; HTML media can't guarantee sample-accurate gapless), and
   **Automix** (crossfade between unrelated tracks, never inside the same album).
 - **YouTube** plays through the **official YouTube IFrame Player API** in an off-screen player. No
-  stream deciphering and no DRM circumvention. Limitations (documented in the UI): no crossfade or
-  gapless, quality chosen by YouTube, no downloads, and some videos disallow embedding (skipped with a
-  notice).
+  stream deciphering and no DRM circumvention. Limitations (documented in the UI): quality chosen by
+  YouTube, no downloads, and some videos disallow embedding (skipped with a notice).
+- A queue can mix providers: each track routes by its `source`, and the engine switches output
+  between the `<audio>` pair and the YouTube player. Crossfade doesn't blend a YouTube song into a
+  Plex or local one (or back). Tracks of a provider that is switched off are skipped.
 - Local and downloaded files are served through Tauri's asset protocol. Folders are added to the scope
   at runtime.
 - The engine also drives the Windows media session (media keys/SMTC via `navigator.mediaSession`),

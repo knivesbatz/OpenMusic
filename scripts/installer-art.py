@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the NSIS installer artwork for both apps.
+"""Generate the NSIS installer artwork for OpenSpot.
 
 Writes apps/<app>/src-tauri/installer/{sidebar,header}.bmp from assets/icons/<app>.png.
 Run from the repo root: python3 scripts/installer-art.py
@@ -10,8 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parent.parent
 INTER = Path("/usr/share/fonts/opentype/inter")
 APPS = {
-    "ytspot": ("YTSpot", "Your YouTube Music,\nin a cleaner player."),
-    "plexspot": ("PLEXSpot", "Your Plex music,\nin a cleaner player."),
+    "openspot": ("OpenSpot", "YouTube Music, Plex\nand your own files,\nin one player."),
 }
 S = 4  # supersampling factor
 
@@ -31,9 +30,9 @@ def finish(im, w, h):
 def sidebar(app, name, tagline):
     w, h = 164, 314
     im = Image.new("RGB", (w * S, h * S), "#121212")
-    top = (29, 185, 84)
+    top = (124, 77, 255)
     px = im.load()
-    # Spotify-style wash: brand green fading into the dark background.
+    # The icon's violet fading into the dark background.
     for y in range(h * S):
         t = min(1.0, y / (h * S * 0.62))
         t = t * t * (3 - 2 * t)
