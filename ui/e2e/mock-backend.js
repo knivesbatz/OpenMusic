@@ -195,9 +195,11 @@
       if (id === show.id) return { playlist: show, tracks: eps };
       const ytp = ytPlaylists.find((p) => p.id === id);
       // Liked Music holds the liked songs (the same list as liked_tracks' YouTube part).
-      if (ytp) return { playlist: ytp, tracks: id === "yt:LM" ? likedYt : ytTracks };
+      // Morning run holds other songs than the mix (no "Already added" for the playing song).
+      if (ytp) return { playlist: ytp, tracks: id === "yt:LM" ? likedYt : id === "yt:VLPLrun" ? ytTracks.slice(3) : ytTracks };
       const app = appPls.find((p) => p.id === id);
-      if (app) return { playlist: app, tracks };
+      // Road trip holds every Plex song; Rainy day only the second half (saved_in agrees).
+      if (app) return { playlist: app, tracks: id === "app:2" ? tracks.slice(6) : tracks };
       return { playlist: playlists.find((p) => p.id === id) ?? playlists[0], tracks };
     },
     saved_list: { albums: [], artists: [], playlists: [], podcasts: [] },
@@ -223,7 +225,14 @@
       a.id.startsWith("yt:")
         ? [{ title: "albums", items: ytAlbums.map((x) => ({ type: "album", ...x })) }, { title: "playlists", items: ytPlaylists.slice(0, 3).map((x) => ({ type: "playlist", ...x })) }]
         : [{ title: "albums", items: albums.slice(0, 6).map((x) => ({ type: "album", ...x })) }, { title: "artists", items: artists.slice(0, 4).map((x) => ({ type: "artist", ...x })) }],
-    saved_in: (a) => ({ appPlaylists: ["app:1"], remote: a && a.track && a.track.id.startsWith("yt:") ? [{ id: "yt:VLPLmine", title: "My YouTube mix", contains: false }] : [] }),
+    saved_in: (a) => ({
+      appPlaylists: ["app:1"],
+      remote: a && a.track && a.track.id.startsWith("yt:")
+        ? [{ id: "yt:VLPLmine", title: "My YouTube mix", contains: ytTracks.some((x) => x.id === a.track.id) }, { id: "yt:VLPLrun", title: "Morning run", contains: false }]
+        : [],
+    }),
+    // Every add, for the "Already added" tests: { id, tracks }.
+    pl_add: (a) => ((window.__PL_ADDS__ = window.__PL_ADDS__ || []).push(a), a.tracks.length),
     yt_accounts: [{ name: "maya", selected: true, pageId: null }],
     // A Plex sign-in waits for the PIN (never approved here).
     plex_pin_start: { id: 1, code: "ABCD", authUrl: "https://app.plex.tv/auth#?code=ABCD" },
@@ -232,6 +241,9 @@
     localized_artist_names: {},
     // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.
     translate_texts: (a) => a.texts.map((t) => (/[\u3040-\u30ff\u4e00-\u9fff]/.test(t) ? "[en] " + t : null)),
+    // Same-artist pairs confirmed by the core (set by a test in `__ART_LINKS__`); checks are recorded.
+    artist_links: (a) => (window.__ART_LINKS__ ?? []).filter(([x, y]) => a.ids.includes(x) && a.ids.includes(y)),
+    artist_link_check: (a) => void (window.__LINK_CHECKS__ = [...(window.__LINK_CHECKS__ ?? []), ...a.ids]),
     // One provider's results; `provider: null` is local files and app playlists only.
     search: (a) => {
       if (a.provider === "plex") {

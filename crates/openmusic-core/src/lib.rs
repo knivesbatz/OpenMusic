@@ -7,6 +7,7 @@
 //! dir, credentials and webview profile); PLEXSpot's data is imported once (`migrate.rs`).
 
 pub mod art;
+pub mod artist_merge;
 pub mod audio_share;
 pub mod commands;
 pub mod db;
@@ -470,6 +471,8 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             commands::search,
             commands::search_kind,
             commands::artist,
+            commands::artist_links,
+            commands::artist_link_check,
             commands::album,
             commands::playlist,
             commands::library,

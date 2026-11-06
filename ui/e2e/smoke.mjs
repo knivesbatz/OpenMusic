@@ -861,7 +861,9 @@ await test(
   "Saved in: YouTube playlists can be added to",
   async (p) => {
     await p.click('.playerbar button[aria-label="Add to playlist"]');
-    const box = p.locator(".savedin .si-row", { hasText: "My YouTube mix" }).locator("input");
+    // The mix holds the playing song already (checked); Morning run doesn't.
+    assert.equal(await p.locator(".savedin .si-row", { hasText: "My YouTube mix" }).locator("input").isChecked(), true);
+    const box = p.locator(".savedin .si-row", { hasText: "Morning run" }).locator("input");
     await box.click();
     await p.waitForFunction(() => window.__CALLS__.includes("yt_playlist_edit"));
     assert.equal(await box.isChecked(), true);
@@ -1267,6 +1269,26 @@ await test("Combined search: each section mixes both services, and every row and
   await p.locator(".grid .card", { hasText: "Conspiracy Theories" }).waitFor();
 });
 
+await test("Combined search: an artist the core confirmed on both services is shown once; namesakes are not merged by name", async (p) => {
+  await search(p, "aster");
+  const shelf = p.locator(".shelf", { has: p.locator("h2", { hasText: /^Artists$/ }) });
+  await shelf.locator('.card[data-source="youtube"]').first().waitFor();
+  const before = await shelf.locator(".card").count();
+  await p.evaluate(() => {
+    window.__ART_LINKS__ = [["plex:art0", "yt:UCart0"]];
+    window.__EMIT__("artist-links-changed", null);
+  });
+  await p.waitForFunction((n) => document.querySelectorAll(".shelf .card[data-source]").length > 0 && [...document.querySelectorAll(".shelf")].find((s) => s.querySelector("h2")?.textContent === "Artists")?.querySelectorAll(".card").length === n - 1, before);
+  // The first of the pair (Plex's, first in the list) stays and its page merges YouTube's.
+  assert.equal(await shelf.locator(".card", { hasText: "Aster Vale" }).count(), 1);
+  assert.equal(await shelf.locator(".card", { hasText: "Luna Park" }).count(), 0);
+  await p.evaluate(() => {
+    window.__ART_LINKS__ = [];
+    window.__EMIT__("artist-links-changed", null);
+  });
+  await p.waitForFunction((n) => [...document.querySelectorAll(".shelf")].find((s) => s.querySelector("h2")?.textContent === "Artists")?.querySelectorAll(".card").length === n, before);
+});
+
 await test("Only YouTube Music on looks like YTSpot 1.6.1: no source badges, no Browse group headings, no Plex", async (p) => {
   await p.locator(".shelf .card", { hasText: "Blue Hour" }).first().waitFor();
   assert.equal(await badges(p).count(), 0, "badges on Home or the sidebar");
@@ -1592,6 +1614,133 @@ await test("Mixed queue with YouTube off: its songs are skipped, the Plex ones p
   await p.click('.playerbar button[aria-label="Previous"]');
   await p.waitForFunction(() => document.querySelector(".pb-meta .name")?.textContent?.trim() === "Slow Lights");
 }, { scenario: "plex", init: mixedQueue });
+
+// ---- "Already added" (Spotify's duplicate warning) -------------------------------------------
+// Road trip (app:1) holds every Plex song; Rainy day (app:2) only the second half (mock-backend.js).
+
+const plAdds = (p) => p.evaluate(() => (window.__PL_ADDS__ || []).map((a) => ({ id: a.id, ids: a.tracks.map((x) => x.id) })));
+
+/** Open "autumn" and add its row `from`..`to` (one row when `to` is left out) to `playlist`. */
+async function addRowsTo(p, playlist, from, to = from) {
+  const rows = p.locator(".page .tl-row:not(.tl-head)");
+  if (!(await p.locator(".page h1:has-text('autumn')").count())) {
+    await p.locator(".lib-list .side-item", { hasText: "autumn" }).click();
+    await rows.nth(to).waitFor();
+  }
+  await rows.nth(from).locator(".name").click();
+  if (to !== from) await rows.nth(to).locator(".name").click({ modifiers: ["Shift"] });
+  await rows.nth(from).locator(".name").click({ button: "right" });
+  await p.hover('.menu button:has-text("Add to playlist")');
+  await p.click(`.menu.sub button:has-text("${playlist}")`);
+}
+
+/** The ids of autumn's rows `from`..`to`, by their titles. */
+const rowIds = (p, from, to) =>
+  p.evaluate(([a, b]) => {
+    const names = [...document.querySelectorAll(".page .tl-row:not(.tl-head) .name")].slice(a, b + 1).map((n) => n.textContent.trim());
+    // A title can show with more around it (a translation mark).
+    return names.map((n) => (window.__FIX__.tracks.find((x) => x.title === n) ?? window.__FIX__.tracks.find((x) => n.includes(x.title))).id);
+  }, [from, to]);
+
+await test("Already added: Don't add and Escape add nothing; Add anyway adds", async (p) => {
+  const dlg = p.locator(".dialog");
+  await addRowsTo(p, "Road trip", 0);
+  await dlg.locator("h2", { hasText: "Already added" }).waitFor();
+  assert.equal((await dlg.locator("p").textContent()).trim(), "This is already in your playlist Road trip.");
+  // Spotify's buttons; the safe one is the highlighted, focused one.
+  assert.equal((await dlg.locator(".pill.ghost").textContent()).trim(), "Add anyway");
+  assert.equal((await dlg.locator(".pill.primary").textContent()).trim(), "Don't add");
+  await p.waitForFunction(() => document.activeElement?.textContent?.trim() === "Don't add");
+  await dlg.locator("button", { hasText: "Don't add" }).click();
+  await dlg.waitFor({ state: "detached" });
+  await addRowsTo(p, "Road trip", 0);
+  await p.waitForFunction(() => document.activeElement?.closest(".dialog"));
+  await p.keyboard.press("Escape");
+  await dlg.waitFor({ state: "detached" });
+  await p.waitForTimeout(200);
+  assert.deepEqual(await plAdds(p), [], "nothing added");
+  await addRowsTo(p, "Road trip", 0);
+  await dlg.locator("button", { hasText: "Add anyway" }).click();
+  await p.waitForFunction(() => (window.__PL_ADDS__ || []).length === 1);
+  assert.deepEqual(await plAdds(p), [{ id: "app:1", ids: await rowIds(p, 0, 0) }]);
+  await p.locator(".toast", { hasText: "Added to Road trip" }).waitFor();
+});
+
+await test("Already added: several songs all there say so in the plural", async (p) => {
+  await addRowsTo(p, "Road trip", 0, 2);
+  const dlg = p.locator(".dialog");
+  await dlg.locator("p", { hasText: "These are already in your playlist Road trip." }).waitFor();
+  await dlg.locator("button", { hasText: "Don't add" }).click();
+  await p.waitForTimeout(200);
+  assert.deepEqual(await plAdds(p), []);
+});
+
+await test("Already added: some of them there, Add new ones adds only the new songs", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "autumn" }).click();
+  await p.locator(".page .tl-row:not(.tl-head)").nth(11).waitFor();
+  const ids = await rowIds(p, 0, 11);
+  const inRainy = await p.evaluate(() => window.__FIX__.tracks.slice(6).map((x) => x.id));
+  // Rows with some songs Rainy day has and some it hasn't.
+  const from = ids.findIndex((id, i) => !inRainy.includes(id) && ids.slice(i).some((x) => inRainy.includes(x)));
+  const to = from + ids.slice(from).findIndex((x) => inRainy.includes(x));
+  await addRowsTo(p, "Rainy day", from, to);
+  const dlg = p.locator(".dialog");
+  await dlg.locator("p", { hasText: "Some of these are already in your playlist Rainy day." }).waitFor();
+  assert.equal((await dlg.locator(".pill.ghost").textContent()).trim(), "Add all");
+  assert.equal((await dlg.locator(".pill.primary").textContent()).trim(), "Add new ones");
+  await dlg.locator("button", { hasText: "Add new ones" }).click();
+  await p.waitForFunction(() => (window.__PL_ADDS__ || []).length === 1);
+  const fresh = ids.slice(from, to + 1).filter((x) => !inRainy.includes(x));
+  assert.ok(fresh.length >= 1);
+  assert.deepEqual(await plAdds(p), [{ id: "app:2", ids: fresh }]);
+  // "Add all" keeps the duplicates.
+  await addRowsTo(p, "Rainy day", from, to);
+  await dlg.locator("button", { hasText: "Add all" }).click();
+  await p.waitForFunction(() => (window.__PL_ADDS__ || []).length === 2);
+  assert.deepEqual((await plAdds(p))[1], { id: "app:2", ids: ids.slice(from, to + 1) });
+});
+
+await test("Already added: no question when nothing is there yet", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "autumn" }).click();
+  await p.locator(".page .tl-row:not(.tl-head)").nth(11).waitFor();
+  const ids = await rowIds(p, 0, 11);
+  const inRainy = await p.evaluate(() => window.__FIX__.tracks.slice(6).map((x) => x.id));
+  const i = ids.findIndex((x) => !inRainy.includes(x));
+  await addRowsTo(p, "Rainy day", i);
+  await p.waitForFunction(() => (window.__PL_ADDS__ || []).length === 1);
+  assert.equal(await p.locator(".dialog").count(), 0);
+  assert.deepEqual(await plAdds(p), [{ id: "app:2", ids: [ids[i]] }]);
+});
+
+await test("Already added: Saved in asks about the same song under another id and stays open", async (p) => {
+  await p.click('.playerbar button[aria-label="Add to playlist"]');
+  const panel = p.locator(".savedin");
+  const box = panel.locator(".si-row", { hasText: "Rainy day" }).locator("input");
+  await box.waitFor();
+  await box.click();
+  const dlg = p.locator(".dialog");
+  await dlg.locator("p", { hasText: "This is already in your playlist Rainy day." }).waitFor();
+  await dlg.locator("button", { hasText: "Don't add" }).click();
+  await dlg.waitFor({ state: "detached" });
+  assert.equal(await panel.count(), 1, "the panel stays open");
+  assert.equal(await box.isChecked(), false);
+  assert.deepEqual(await plAdds(p), []);
+  await box.click();
+  await dlg.locator("button", { hasText: "Add anyway" }).click();
+  await p.waitForFunction(() => (window.__PL_ADDS__ || []).length === 1);
+  assert.equal(await box.isChecked(), true);
+  assert.deepEqual(await plAdds(p), [{ id: "app:2", ids: ["plex:t0"] }]);
+}, {
+  // Rainy day holds a YouTube copy of the playing song ("Slow Lights" by Aster Vale), spelled differently.
+  init: () => {
+    const base = window.__MOCK__.playlist;
+    window.__MOCK__.playlist = (a) => {
+      const r = base(a);
+      if (a.id === "app:2") r.tracks = [{ ...r.tracks[0], id: "yt:copy", source: "youtube", title: "SLOW LIGHTS!", artist: "Aster Vale feat. Someone" }];
+      return r;
+    };
+  },
+});
 
 await browser.close();
 server.httpServer.close();

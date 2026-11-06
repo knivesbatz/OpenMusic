@@ -305,7 +305,9 @@ export function ArtistPage({ id }: { id: string }) {
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const name = data.artist?.name ?? "";
-  // Local files by this artist blend into Popular and the discography (no separate section).
+  // Local files by this artist blend into Popular and the discography (no separate section). Local
+  // copies of songs and releases already on the page took their place in the core
+  // (artist_merge::add_local), so these are only the others.
   const localTracks = data.localTracks ?? [];
   const popular = [...data.topTracks.slice(0, 5), ...localTracks, ...data.topTracks.slice(5)];
   // Albums, singles and compilations each newest first, like Spotify.

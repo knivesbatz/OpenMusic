@@ -33,7 +33,8 @@ import { confirmDialog, navigate, openMenu, toast, useUi, type LibraryTab } from
 import { useDisplayTrack } from "../store/songmeta";
 import type { BrowseCategory, HistoryEntry, HomeData, Library, MediaItem, PlayContext, Playlist, Provider, ProviderError, SearchResults, Track } from "../types";
 import { PROVIDERS } from "../types";
-import { emptyResults, isEmptyResults, mergeSearch, partErrors, type SearchParts } from "../searchMerge";
+import { useArtistLinks, useLinkRequest } from "../store/artistLinks";
+import { dedupeArtists, emptyResults, isEmptyResults, mergeSearch, partErrors, type SearchParts } from "../searchMerge";
 import { cls, isYtLiked, serviceLabel } from "../util";
 
 /** Play any card: tracks play directly, collections are fetched first. */
@@ -139,7 +140,10 @@ export function Home() {
   // Songs of a service that is off are left out (they can't play).
   const recent = (data?.recent ?? []).filter((x) => visibleId(x.id));
   const topTracks = (data?.topTracks ?? []).filter((x) => visibleId(x.id));
-  const topArtists = (lib?.artists ?? []).filter((a) => visibleId(a.id));
+  const links = useArtistLinks((s) => s.links);
+  const libArtists = (lib?.artists ?? []).filter((a) => visibleId(a.id));
+  useLinkRequest(libArtists);
+  const topArtists = dedupeArtists(libArtists, links);
 
   if (!data && !error) return <Loading />;
 
@@ -398,6 +402,9 @@ export function Search({ q }: { q: string }) {
   const full = useMerged(query, kind);
   // While a new query is on its way, the last results stay on screen.
   const last = useRef<SearchResults | null>(null);
+  const links = useArtistLinks((s) => s.links);
+  useLinkRequest(overview.res?.artists);
+  useLinkRequest(full.res?.artists);
   if (overview.res) last.current = overview.res;
   if (!query) last.current = null;
   const loading = !all || all.pending > 0;
@@ -451,7 +458,7 @@ export function Search({ q }: { q: string }) {
               </section>
             )}
           </div>
-          <CardShelf title={t("artists")} items={r.artists.map((a) => ({ type: "artist" as const, ...a }))} />
+          <CardShelf title={t("artists")} items={dedupeArtists(r.artists, links).map((a) => ({ type: "artist" as const, ...a }))} />
           <CardShelf title={t("albums")} items={r.albums.map((a) => ({ type: "album" as const, ...a }))} />
           <CardShelf title={t("playlists")} items={r.playlists.map((a) => ({ type: "playlist" as const, ...a }))} />
           <CardShelf title={t("podcasts")} items={r.podcasts.map((a) => ({ type: "podcast" as const, ...a }))} />
@@ -466,7 +473,7 @@ export function Search({ q }: { q: string }) {
       {filter !== "all" && kindLoading && fr === r && <p className="muted small">{t("loadingMore")}</p>}
       {fr && filter === "songs" && <TrackList tracks={fr.tracks} context={ctx} />}
       {fr && filter === "episodes" && <TrackList tracks={fr.episodes} context={ctx} showAlbum={false} />}
-      {fr && filter === "artists" && <Grid items={fr.artists.map((a) => ({ type: "artist" as const, ...a }))} />}
+      {fr && filter === "artists" && <Grid items={dedupeArtists(fr.artists, links).map((a) => ({ type: "artist" as const, ...a }))} />}
       {fr && filter === "albums" && <Grid items={fr.albums.map((a) => ({ type: "album" as const, ...a }))} />}
       {fr && filter === "playlists" && <Grid items={fr.playlists.map((a) => ({ type: "playlist" as const, ...a }))} />}
       {fr && filter === "podcasts" && <Grid items={fr.podcasts.map((a) => ({ type: "podcast" as const, ...a }))} />}
@@ -693,12 +700,14 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const [q, setQ] = useState("");
   const albumSort = useSettings((s) => s.albumSort);
   const artistSort = useSettings((s) => s.artistSort);
+  const links = useArtistLinks((s) => s.links);
   useAsync(() => refreshLibrary(false), []);
+  useLinkRequest(libraryCollections(lib, pls, saved, []).artists);
   const cur: LibraryTab = tab ?? "playlists";
   if (cur === "recent") return <RecentPage />;
   if (!lib && err) return <ErrorBox message={err} onRetry={() => refreshLibrary(true)} />;
 
-  const c = libraryCollections(lib, pls, saved);
+  const c = libraryCollections(lib, pls, saved, links);
   const items: MediaItem[] =
     cur === "playlists"
       ? c.playlists.map((p) => ({ type: "playlist" as const, ...p }))
@@ -748,16 +757,17 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
  * - playlists: the app's, then the services' (YouTube's Liked Music is Liked Songs instead);
  * - albums and artists: the ones saved in the app, plus YouTube Music's library (the account's
  *   own collection). Plex's library is the whole server, so its albums and artists count only
- *   once saved;
+ *   once saved. An artist saved from several sources is listed once once the backend confirms it is one artist;
  * - podcasts: followed in the app and YouTube's.
  */
-function libraryCollections(lib: Library | null, appPls: Playlist[], saved: SavedState) {
+function libraryCollections(lib: Library | null, appPls: Playlist[], saved: SavedState, links: [string, string][]) {
   const yt = <T extends { id: string }>(xs: T[] | undefined) => (xs ?? []).filter((x) => providerOfId(x.id) === "youtube");
   const shown = <T extends { id: string }>(xs: T[]) => xs.filter((x) => visibleId(x.id));
   return {
     playlists: shown(dedupe([...appPls, ...(lib?.playlists ?? [])])).filter((p) => !isYtLiked(p.id)),
     albums: shown(dedupe([...saved.albums, ...yt(lib?.albums)])),
-    artists: shown(dedupe([...saved.artists, ...yt(lib?.artists)])),
+    // Once per artist (confirmed links): the page of the one kept merges the other sources' copies.
+    artists: dedupeArtists(shown(dedupe([...saved.artists, ...yt(lib?.artists)])), links),
     podcasts: shown(dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])])),
   };
 }

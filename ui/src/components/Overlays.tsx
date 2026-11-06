@@ -232,12 +232,12 @@ export function DialogHost() {
     return () => prev?.focus();
   }, [d]);
   if (!d) return null;
-  const done = (ok: boolean) => {
+  const done = (ok: boolean | null) => {
     useUi.setState({ dialog: null });
     d.resolve(ok, value, choice);
   };
   return (
-    <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && done(false)}>
+    <div className="modal-bg" onMouseDown={(e) => e.target === e.currentTarget && done(null)}>
       <div
         ref={ref}
         className="dialog"
@@ -245,7 +245,7 @@ export function DialogHost() {
         aria-modal="true"
         aria-labelledby="dlg-title"
         onKeyDown={(e) => {
-          if (e.key === "Escape") done(false);
+          if (e.key === "Escape") done(null);
           if (e.key === "Tab") {
             const f = [...ref.current!.querySelectorAll<HTMLElement>("input, select, button")];
             const i = f.indexOf(document.activeElement as HTMLElement);
@@ -276,7 +276,7 @@ export function DialogHost() {
         )}
         <div className="dialog-actions">
           <button className="pill ghost" onClick={() => done(false)}>
-            {t("cancel")}
+            {d.cancel ?? t("cancel")}
           </button>
           <button className={cls("pill", d.danger ? "danger" : "primary")} onClick={() => done(true)}>
             {d.confirm}

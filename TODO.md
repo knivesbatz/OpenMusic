@@ -360,7 +360,12 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 ## 2.0.0 — OpenSpot
 - ✅ One app (OpenSpot) for YouTube Music + Plex: Provider per id, Settings → Services switches,
   per-provider sign-in/auth/errors/cache, fan-out home/library/liked with per-provider errors,
-  per-provider search merged in the UI (searchMerge.ts), source badges when both are on
+  per-provider search merged in the UI (searchMerge.ts); visible source badges removed (data-source only)
+- ✅ Merged artist pages (both services on): artist_merge.rs merges YouTube/Plex/local by artist_key
+  plus a shared song or release; lists drop only pairs the core confirmed (artist_links /
+  artist_link_check, store/artistLinks.ts). One service on: pages and lists as in 1.6.1
+- ✅ "Already added" warning before adding duplicates to a playlist (duplicates.ts)
+- ✅ Hidden playlists are left out of the Profile page; green icon restored
 - ✅ Migration: identifier stays app.openmusic.ytspot (YTSpot upgrades in place); migrate.rs imports
   PLEXSpot's data dir/DB/files/secrets once on desktop; NSIS hooks retire the old apps; macOS
   bundle rename; legacy YTSpot_/PLEXSpot_ alias assets on every 2.x release

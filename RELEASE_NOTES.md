@@ -8,8 +8,13 @@ YTSpot and PLEXSpot are now one app: **OpenSpot**. It plays YouTube Music and Pl
 - **Settings → Services.** There is an on/off switch for each service, plus its account and
   Sign in / Sign out. Switching a service off hides it everywhere (Home, Search, Your Library,
   Browse) but keeps you signed in, so turning it back on is instant.
-- **Combined search.** One list with results from both services. When both are on, a tiny
-  badge shows where each result comes from.
+- **Combined search.** One list with results from both services.
+- **One page per artist.** With both services on, an artist like Weezer has one page with their
+  YouTube Music, Plex and local songs and albums together, and duplicates left out. An artist is
+  merged only when OpenSpot finds a song or album they share, so two different bands with the
+  same name stay apart. Lists show a merged artist once.
+- **"Already added" warning.** Adding a song to a playlist that already has it asks first (Add
+  anyway, or Don't add), as Spotify does. Adding several songs offers to add only the new ones.
 - **Home, Your Library and Liked Songs** show both services together. Browse all has a group
   for each service.
 - **Mixed queues.** A Plex song can play right after a YouTube one. Crossfade and gapless
@@ -30,6 +35,10 @@ YTSpot and PLEXSpot are now one app: **OpenSpot**. It plays YouTube Music and Pl
 - **PLEXSpot on Android** can't update itself into a different app. Install OpenSpot (the
   `OpenSpot_2.0.0_android-arm64.apk` file), sign in to Plex in it, then uninstall PLEXSpot.
 - **Discord** shows OpenSpot.
+
+## Fixes
+- A hidden playlist no longer shows on your Profile page.
+- The app icon is green again.
 
 ## Also in 1.6.1
 - **Your Library on phones** is now always the newer layout (your picture, "Your Library", search

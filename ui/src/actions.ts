@@ -9,10 +9,11 @@ import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from 
 import { loadProfile, openExternal, useProfile } from "./store/profile";
 import { capsOf, isOn, sourceOf } from "./store/providers";
 import { useSettings } from "./store/settings";
-import { confirmDialog, formDialog, navigate, promptDialog, toast, useUi, type MenuHead, type MenuItem } from "./store/ui";
+import { confirmDialog, formDialog, navigate, pickDialog, promptDialog, toast, useUi, type MenuHead, type MenuItem } from "./store/ui";
 import type { Album, Artist, Playlist, Podcast, Provider, Track, YtPrivacy } from "./types";
 import { PROVIDERS } from "./types";
 import { serviceLabel } from "./util";
+import { duplicatesIn, uniqueSongs } from "./duplicates";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 import * as I from "./components/Icons";
 import { displayTrack } from "./store/songmeta";
@@ -100,9 +101,41 @@ export async function createPlaylist(tracks: Track[] = []): Promise<Playlist | n
   }
 }
 
-export async function addToPlaylist(pl: Playlist, tracks: Track[]) {
+// ---- duplicates (Spotify's "Already added") -----------------------------------------------------
+
+/**
+ * Before songs go into a playlist (app or YouTube): when it holds some of them already, ask like
+ * Spotify ("Already added": Add anyway / Don't add; some of them: Add all / Add new ones).
+ * Returns the songs to add (each once: repeats within `tracks` are dropped), [] for none. Asks nothing when none of them is there (or when the
+ * playlist can't be read: the add goes ahead as asked).
+ */
+export async function skipDuplicates(playlistId: string, name: string, tracks: Track[]): Promise<Track[]> {
+  // A song twice in the batch (or its YouTube and Plex copies side by side) goes in once.
+  tracks = uniqueSongs(tracks);
+  if (!tracks.length) return tracks;
+  let existing: Track[];
   try {
-    await api.plAdd(pl.id, tracks);
+    existing = (await api.playlist(playlistId)).tracks;
+  } catch {
+    return tracks;
+  }
+  const dups = new Set(duplicatesIn(existing, tracks));
+  if (!dups.size) return tracks;
+  if (dups.size === tracks.length) {
+    const body = t(tracks.length === 1 ? "alreadyInPlaylistOne" : "alreadyInPlaylistAll", { name });
+    const pick = await pickDialog({ title: t("alreadyAdded"), body, cancel: t("addAnyway"), confirm: t("dontAdd") });
+    return pick === false ? tracks : [];
+  }
+  const pick = await pickDialog({ title: t("someAlreadyAdded"), body: t("alreadyInPlaylistSome", { name }), cancel: t("addAllAnyway"), confirm: t("addNewOnes") });
+  if (pick === null) return [];
+  return pick ? tracks.filter((x) => !dups.has(x)) : tracks;
+}
+
+export async function addToPlaylist(pl: Playlist, tracks: Track[]) {
+  const todo = await skipDuplicates(pl.id, pl.title, tracks);
+  if (!todo.length) return;
+  try {
+    await api.plAdd(pl.id, todo);
     toast(t("addedToPlaylist", { name: pl.title }));
   } catch (e) {
     toast(localError(e));

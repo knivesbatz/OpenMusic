@@ -28,6 +28,10 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 uuid = { version = "1", features = ["v4"] }
 # Artwork is shrunk to the size shown before it is cached (decode JPEG/PNG/WebP, encode JPEG).
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+# Artist names are matched across providers after NFD (artist_merge.rs), like the UI's artistKey.
+# Both already come in through url -> idna; no new crates.
+icu_normalizer = { version = "2", default-features = false, features = ["compiled_data"] }
+icu_properties = { version = "2", default-features = false, features = ["compiled_data"] }
 
 # Desktop only: single instance, launch at startup, OS credential store. On Android, secrets live
 # in the app's private storage (see secrets.rs).
