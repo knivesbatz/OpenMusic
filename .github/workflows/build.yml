@@ -303,6 +303,9 @@ jobs:
             $oldExe = Join-Path $env:LOCALAPPDATA "$n\$n.exe"
             if (!(Test-Path $oldExe)) { throw "$n $legacyVer did not install to $oldExe" }
             if (!(Test-Path "$uninst\$n")) { throw "$n $legacyVer wrote no Uninstall key" }
+            # No network for the old app: it would update itself from the latest release while
+            # this test installs OpenSpot (two installers at once hang).
+            New-NetFirewallRule -DisplayName "install-test $n" -Direction Outbound -Program $oldExe -Action Block | Out-Null
             Start-Process $oldExe | Out-Null
             $db = Join-Path (DataDir $n) 'library.db'
             for ($i = 0; $i -lt 60 -and !(Test-Path $db); $i++) { Start-Sleep -Seconds 1 }
@@ -311,6 +314,10 @@ jobs:
             Write-Host "$n $legacyVer installed and running"
           }
           Start-Sleep -Seconds 5
+
+          # An update the old app started anyway (it ran before the firewall rule applied) would
+          # run its own installer next to ours.
+          Get-Process | Where-Object { $_.Name -like '*_x64-setup' } | ForEach-Object { Write-Host "stopping $($_.Name)"; Stop-Process -Id $_.Id -Force }
 
           # 3. Install OpenSpot while the old apps still run, as their updater does.
           $new = Get-ChildItem new -Filter *.exe | Select-Object -First 1
