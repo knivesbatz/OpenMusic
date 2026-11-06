@@ -55,3 +55,7 @@ export const serviceLabel = (p: Provider) => (p === "youtube" ? "YouTube Music" 
 
 /** YouTube Music's own Liked Music playlist: shown as Liked Songs, never in playlist lists. */
 export const isYtLiked = (id: string) => /^yt:(VL)?LM$/.test(id);
+
+/** Window event for the F / Ctrl+F shortcut: a page with a "Search in playlist" box opens it and
+ * calls preventDefault() on the event. */
+export const FIND_EVENT = "openmusic:find-in-list";

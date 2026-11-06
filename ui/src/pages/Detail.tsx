@@ -18,7 +18,7 @@ import { useMe } from "../store/profile";
 import { navigate, openMenu, toast } from "../store/ui";
 import type { Album, Artist, PlayContext, Track } from "../types";
 import { partErrors } from "../searchMerge";
-import { cls, fmtTime, totalDuration } from "../util";
+import { cls, FIND_EVENT, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
 
 export function Hero({
@@ -137,6 +137,23 @@ function PhoneFindBar({ id, tracks, value, onChange }: { id: string; tracks: Tra
       </button>
     </div>
   );
+}
+
+/** F / Ctrl+F (App.tsx) opens this page's "Search in playlist" box and puts the cursor in it. */
+function useFindShortcut(setFind: (f: (v: string | null) => string | null) => void) {
+  useEffect(() => {
+    const on = (e: Event) => {
+      e.preventDefault();
+      setFind((v) => v ?? "");
+      setTimeout(() => {
+        const input = document.querySelector<HTMLInputElement>(".pl-find input, .pl-findfield input");
+        input?.focus();
+        input?.select();
+      });
+    };
+    addEventListener(FIND_EVENT, on);
+    return () => removeEventListener(FIND_EVENT, on);
+  }, [setFind]);
 }
 
 /** Spotify's search-in-playlist: an icon that opens a filter box. */
@@ -412,6 +429,7 @@ export function PlaylistPage({ id }: { id: string }) {
   const sort = usePlaylistSort(id);
   const compact = useSettings((s) => s.compactTracks);
   const [find, setFind] = useState<string | null>(null);
+  useFindShortcut(setFind);
   const rows = useMemo(() => {
     const sorted = sortTracks(data?.tracks ?? [], sort);
     const q = (find ?? "").trim().toLowerCase();
@@ -682,6 +700,7 @@ function MergedLikedPage() {
   const sort = usePlaylistSort("liked");
   const compact = useSettings((s) => s.compactTracks);
   const [find, setFind] = useState<string | null>(null);
+  useFindShortcut(setFind);
   const rows = useMemo(() => {
     const sorted = sortTracks(tracks, sort);
     const q = (find ?? "").trim().toLowerCase();

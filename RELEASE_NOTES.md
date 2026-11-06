@@ -37,6 +37,7 @@ YTSpot and PLEXSpot are now one app: **OpenSpot**. It plays YouTube Music and Pl
 - **Discord** shows OpenSpot.
 
 ## Fixes
+- Pressing **F** (or **Ctrl+F**) on a playlist or Liked Songs opens Search in playlist.
 - A hidden playlist no longer shows on your Profile page.
 - The app icon is green again.
 

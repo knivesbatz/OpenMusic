@@ -381,6 +381,25 @@ await test("search inside a playlist filters its songs", async (p) => {
   await p.waitForSelector("text=No songs match");
 });
 
+await test("F and Ctrl+F open Search in playlist with the cursor in it; elsewhere F does nothing", async (p) => {
+  await p.locator(".lib-list .side-item", { hasText: "Road trip" }).click();
+  await p.waitForSelector(".tl-row:not(.tl-head)");
+  await p.locator("body").click({ position: { x: 5, y: 300 } }).catch(() => {});
+  await p.keyboard.press("f");
+  await p.waitForFunction(() => document.activeElement?.matches(".pl-find input"));
+  await p.keyboard.type("paper");
+  assert.equal(await p.inputValue(".pl-find input"), "paper", "the F itself isn't typed into the box");
+  await p.keyboard.press("Escape");
+  await p.waitForSelector(".pl-find input", { state: "detached" });
+  await p.keyboard.press("Control+f");
+  await p.waitForFunction(() => document.activeElement?.matches(".pl-find input"));
+  // On Home, F opens nothing.
+  await p.keyboard.press("Escape");
+  await p.click('button[aria-label="Home"]');
+  await p.keyboard.press("f");
+  assert.equal(await p.locator(".pl-find input").count(), 0);
+});
+
 await test("What's New shows releases from followed artists and the latest releases", async (p) => {
   await p.click('.topbar button[aria-label="What\'s New"]');
   await p.waitForSelector("h1:has-text(\"What's New\")");

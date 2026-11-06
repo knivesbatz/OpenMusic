@@ -26,7 +26,7 @@ import { BrowseCategoryPage, HistoryPage, Home, LibraryPage, Search, WhatsNewPag
 import { ProfileEditDialog, ProfilePage } from "./pages/Profile";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
 import { Connect } from "./pages/Login";
-import { cls, spaceTogglesPlayback } from "./util";
+import { cls, FIND_EVENT, spaceTogglesPlayback } from "./util";
 
 // Rarely used pages load on demand to keep startup light.
 const Manage = () => import("./pages/Manage");
@@ -83,6 +83,13 @@ function Page() {
 /** Buttons react to Space on key-up as well; swallow it there too. */
 function onSpaceUp(e: KeyboardEvent) {
   if (spaceTogglesPlayback(e)) (e.preventDefault(), e.stopPropagation());
+}
+
+/** Ask the open page to show its "Search in playlist" box; false when it has none. */
+function openFindInList(): boolean {
+  const ev = new CustomEvent(FIND_EVENT, { cancelable: true });
+  dispatchEvent(ev);
+  return ev.defaultPrevented;
 }
 
 function isTyping(e: KeyboardEvent) {
@@ -173,7 +180,17 @@ export function App() {
         setTimeout(() => document.getElementById("global-search")?.focus());
         return;
       }
+      // Ctrl+F (as in Spotify), or F alone, opens "Search in playlist" on a playlist or Liked Songs.
+      const findKey = e.key.toLowerCase() === "f" && !e.altKey && !e.shiftKey;
+      if (findKey && ctrl) {
+        if (openFindInList()) e.preventDefault();
+        return;
+      }
       if (isTyping(e)) return;
+      if (findKey && !ctrl && !e.repeat && openFindInList()) {
+        e.preventDefault();
+        return;
+      }
       if (ctrl && e.key === "ArrowRight") P.next();
       else if (ctrl && e.key === "ArrowLeft") P.previous();
       else if (ctrl && e.key === "ArrowUp") (e.preventDefault(), useSettings.getState().set({ volume: Math.min(1, useSettings.getState().volume + 0.1) }));
