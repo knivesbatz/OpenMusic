@@ -12,7 +12,7 @@ OpenSpot 2.0 replaces the two 1.x apps, YTSpot (YouTube Music) and PLEXSpot (Ple
 - the Mac disk image (`OpenSpot_<version>_universal.dmg`, for Apple silicon and Intel Macs, macOS 11 or later);
 - the Android APK (`OpenSpot_<version>_android-arm64.apk`).
 
-The Windows and Mac apps check for a new version when they start and update themselves. The Android app tells you when there's a new one. Files named `YTSpot_*` and `PLEXSpot_*` on the release are the same OpenSpot builds, published under the old names so that 1.x apps find the update.
+The Windows and Mac apps check for a new version when they start and update themselves. The Android app tells you when there's a new one.
 
 **Installing on a Mac:** open the `.dmg` and drag OpenSpot into Applications. The app isn't notarized by Apple (that needs a paid developer account), so the first time, macOS says it can't check the app. Open **System Settings → Privacy & Security**, scroll down, click **Open Anyway** next to OpenSpot, then confirm. After that it opens normally.
 

@@ -2698,7 +2698,7 @@ dependencies = [
 
 [[package]]
 name = "openmusic-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "futures-util",
  "hex",
@@ -2735,7 +2735,7 @@ dependencies = [
 
 [[package]]
 name = "openspot"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "openmusic-core",
  "tauri",
@@ -4311,7 +4311,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-openmusic-media"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "log",
  "serde",

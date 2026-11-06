@@ -161,8 +161,7 @@ jobs:
           path: target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
-  # Android APK. Optional on pull requests and branch builds; a release needs it (the YTSpot 1.x
-  # Android app updates through the YTSpot_ copy of this APK).
+  # Android APK. Optional on pull requests and branch builds; a release needs it.
   android:
     needs: versions
     runs-on: ubuntu-latest
@@ -424,11 +423,7 @@ jobs:
         with:
           path: installers
           merge-multiple: true
-      - name: Add the legacy names and check every asset
-        # YTSpot and PLEXSpot 1.x find updates by their own name (releases/latest, "<productName>_"
-        # + "_x64-setup.exe" / "_android-arm64.apk"), so every 2.x release also carries the OpenSpot
-        # files under those names. No PLEXSpot APK: PLEXSpot for Android is another package, which
-        # can't update into OpenSpot (its users install OpenSpot; see RELEASE_NOTES.md).
+      - name: Check every asset
         run: |
           set -e
           V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
@@ -437,15 +432,16 @@ jobs:
           for f in "OpenSpot_${V}_x64-setup.exe" "OpenSpot_${V}_android-arm64.apk"; do
             if [ ! -s "$f" ]; then echo "::error::Missing $f"; exit 1; fi
           done
-          cp "OpenSpot_${V}_x64-setup.exe" "YTSpot_${V}_x64-setup.exe"
-          cp "OpenSpot_${V}_x64-setup.exe" "PLEXSpot_${V}_x64-setup.exe"
-          cp "OpenSpot_${V}_android-arm64.apk" "YTSpot_${V}_android-arm64.apk"
-          missing=0
-          for f in "OpenSpot_${V}_x64-setup.exe" "OpenSpot_${V}_android-arm64.apk" \
-                   "YTSpot_${V}_x64-setup.exe" "YTSpot_${V}_android-arm64.apk" "PLEXSpot_${V}_x64-setup.exe"; do
-            if [ -s "$f" ]; then echo "ok $f"; else echo "::error::Missing $f"; missing=1; fi
-          done
-          exit $missing
+      - name: Remove old-name files from this release
+        # 2.0.0 first went out with YTSpot_/PLEXSpot_ copies; releases carry OpenSpot files only.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null |
+            grep -E '^(YTSpot|PLEXSpot)_' | while read -r a; do
+              echo "deleting $a"; gh release delete-asset "$TAG" "$a" --repo "$GITHUB_REPOSITORY" -y
+            done || true
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -455,15 +451,12 @@ jobs:
           files: |
             installers/OpenSpot_*_x64-setup.exe
             installers/OpenSpot_*_android-arm64.apk
-            installers/YTSpot_*_x64-setup.exe
-            installers/YTSpot_*_android-arm64.apk
-            installers/PLEXSpot_*_x64-setup.exe
           body_path: RELEASE_NOTES.md
           prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
           fail_on_unmatched_files: true
       - name: Build the Mac disk images for this release
         # macOS runners can queue for a long time, so they never hold up this release: macos.yml
-        # builds them separately and adds them (with their legacy names) to it.
+        # builds them separately and adds them to it.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag || github.ref_name }}

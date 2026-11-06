@@ -71,11 +71,8 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
   and `ui/package.json` (plus the top of `ui/package-lock.json`). CI fails unless they match each
   other and the release tag.
   - The updater compares against the Cargo version.
-- 1.x apps find updates by their own name. So every 2.x release also publishes the OpenSpot files under
-  legacy names, and CI fails if one is missing:
-  - `YTSpot_<v>_x64-setup.exe`, `YTSpot_<v>_android-arm64.apk` and `YTSpot_<v>_universal.dmg`;
-  - `PLEXSpot_<v>_x64-setup.exe` and `PLEXSpot_<v>_universal.dmg`.
-- There is no PLEXSpot APK alias, because PLEXSpot for Android is a different package.
+- Releases carry OpenSpot files only (`OpenSpot_<v>_…`). There are no YTSpot_/PLEXSpot_ copies, so
+  1.x apps don't update themselves; their users install OpenSpot (data carries over).
 - The release job never deletes v1.6.1, which is the install test's upgrade fixture.
 
 ## Working in a cloud session (Linux, no display)
@@ -95,8 +92,8 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
   `app.openmusic.*` data, except PLEXSpot's folders when "Delete app data" is ticked on uninstall.
 - The Mac disk image (`OpenSpot_<v>_universal.dmg`, artifact `openspot-macos`) comes from
   `.github/workflows/macos.yml`. It also runs the core tests on macOS.
-  - build.yml's release job starts macos.yml with the release tag. macos.yml adds the disk image and
-    its legacy copies to that release, so a slow macOS runner never holds up a release.
+  - build.yml's release job starts macos.yml with the release tag. macos.yml adds the disk image to
+    that release, so a slow macOS runner never holds up a release.
   - On macOS the UI is served from `http://localhost:47321` (`ui_url`, tauri-plugin-localhost,
     `capabilities/macos.json`). Keep window URLs going through `ui_url`.
   - The app is ad-hoc signed and not notarized, so users click Open Anyway the first time.

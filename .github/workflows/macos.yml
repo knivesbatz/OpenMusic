@@ -83,22 +83,12 @@ jobs:
         with:
           name: openspot-macos
           path: dmg
-      - name: Add the legacy names and check every disk image
-        # YTSpot and PLEXSpot 1.x look for "<productName>_*_universal.dmg" in the latest release, so
-        # every 2.x release also carries the OpenSpot disk image under those names.
+      - name: Check the disk image
         run: |
           set -e
           V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
-          cd dmg
-          ls -l
-          if [ ! -s "OpenSpot_${V}_universal.dmg" ]; then echo "::error::Missing OpenSpot_${V}_universal.dmg"; exit 1; fi
-          cp "OpenSpot_${V}_universal.dmg" "YTSpot_${V}_universal.dmg"
-          cp "OpenSpot_${V}_universal.dmg" "PLEXSpot_${V}_universal.dmg"
-          missing=0
-          for f in "OpenSpot_${V}_universal.dmg" "YTSpot_${V}_universal.dmg" "PLEXSpot_${V}_universal.dmg"; do
-            if [ -s "$f" ]; then echo "ok $f"; else echo "::error::Missing $f"; missing=1; fi
-          done
-          exit $missing
+          ls -l dmg
+          if [ ! -s "dmg/OpenSpot_${V}_universal.dmg" ]; then echo "::error::Missing OpenSpot_${V}_universal.dmg"; exit 1; fi
       - name: Add the disk images to the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,10 +96,9 @@ jobs:
         run: |
           set -e
           V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
-          gh release upload "$TAG" "dmg/OpenSpot_${V}_universal.dmg" "dmg/YTSpot_${V}_universal.dmg" "dmg/PLEXSpot_${V}_universal.dmg" \
-            --repo "$GITHUB_REPOSITORY" --clobber
-          # Check the release really has all three.
+          gh release upload "$TAG" "dmg/OpenSpot_${V}_universal.dmg" --repo "$GITHUB_REPOSITORY" --clobber
+          # Check the release really has it.
           assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
-          for f in "OpenSpot_${V}_universal.dmg" "YTSpot_${V}_universal.dmg" "PLEXSpot_${V}_universal.dmg"; do
+          for f in "OpenSpot_${V}_universal.dmg"; do
             echo "$assets" | grep -qxF "$f" || { echo "::error::$f is not on release $TAG"; exit 1; }
           done

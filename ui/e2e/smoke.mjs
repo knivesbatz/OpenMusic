@@ -1158,6 +1158,17 @@ await test("Android: a new version found at startup is downloaded and installed 
   },
 });
 
+await test("Phone: no empty mini player while nothing is playing; it appears once a song plays", async (p) => {
+  await p.setViewportSize({ width: 390, height: 844 });
+  await p.locator(".mobile-tabs").waitFor();
+  assert.ok(!(await p.locator(".playerbar").isVisible()), "an empty mini player shows");
+  await p.click('.mobile-tabs button:has-text("Your Library")');
+  await p.locator("#main").getByText("Road trip", { exact: true }).first().click();
+  await p.locator(".detail .tl-row:not(.tl-head)").first().dblclick();
+  await p.locator(".playerbar .pb-meta").waitFor();
+  assert.ok(await p.locator(".playerbar").isVisible());
+}, { ready: "#main", init: () => (window.__MOCK__.queue_load = null) });
+
 await test("Phone: library tabs, Find in playlist + Sort sheet, pinned bar with play", async (p) => {
   await p.setViewportSize({ width: 390, height: 844 });
   // Three tabs, no Create.

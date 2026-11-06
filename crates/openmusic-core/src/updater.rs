@@ -14,8 +14,7 @@ use crate::error::{Error, Result};
 
 const LATEST: &str = "https://api.github.com/repos/knivesbatz/OpenMusic/releases/latest";
 
-/// Release assets of this app start with this (`OpenSpot_2.0.0_x64-setup.exe`). The release also
-/// carries `YTSpot_…` / `PLEXSpot_…` copies for 1.x apps, which look for their own names.
+/// Release assets of this app start with this (`OpenSpot_2.0.0_x64-setup.exe`).
 pub const ASSET_PREFIX: &str = "OpenSpot_";
 
 #[derive(Debug, Clone, Default, Serialize)]
