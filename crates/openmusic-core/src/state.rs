@@ -115,9 +115,8 @@ impl Services {
     }
 
     /// The switches for a data dir that has none saved yet (first 2.0 start, or a fresh install).
-    /// YouTube is on for anyone who used YTSpot (its own settings, a cookie, local-only mode or a
-    /// YouTube account name, all taken before the PLEXSpot import merged anything in). Plex is on
-    /// when a Plex account or token is there (after the import).
+    /// YouTube is on when this data dir was used before (its settings, a cookie, local-only mode or
+    /// a YouTube account name). Plex is on when a Plex account or token is there.
     pub fn initial(f: &InitialFacts) -> Services {
         Services {
             youtube: f.had_own_settings || f.had_yt_cookie || f.had_local_only || f.yt_account,
@@ -383,9 +382,9 @@ mod tests {
         assert_eq!(f(true, false, false, false, false, false), Services { youtube: true, plex: false });
         // YTSpot local files only.
         assert_eq!(f(false, false, true, false, false, false), Services { youtube: true, plex: false });
-        // PLEXSpot only: a fresh YTSpot dir, the import brought the Plex account in.
+        // Plex only.
         assert_eq!(f(false, false, false, false, true, true), Services { youtube: false, plex: true });
-        // macOS: the token comes later, the imported account name is enough.
+        // A Plex account name without a token yet is enough.
         assert_eq!(f(false, false, false, false, true, false), Services { youtube: false, plex: true });
         // Both apps.
         assert_eq!(f(true, true, false, true, true, true), Services { youtube: true, plex: true });

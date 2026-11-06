@@ -1,6 +1,10 @@
-# OpenSpot 2.1.0
+# OpenSpot 2.1.1
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.1.1
+- The YTSpot / PLEXSpot import is gone: OpenSpot no longer looks for, removes or imports from the
+  retired 1.x apps.
 
 ## New in 2.1.0
 - **Always show Plex / YouTube Music albums, per artist.** An artist page's ••• menu (next to

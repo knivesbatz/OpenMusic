@@ -3,8 +3,7 @@
 //! Each provider has a switch in Settings → Services (`state::Services`); items carry their
 //! provider in their id (`state::Provider::of_id`).
 //!
-//! The identifier stays `app.openmusic.ytspot` (YTSpot 1.x installs upgrade in place: same data
-//! dir, credentials and webview profile); PLEXSpot's data is imported once (`migrate.rs`).
+//! The identifier stays `app.openmusic.ytspot` (the data dir, credentials and webview profile).
 
 pub mod art;
 pub mod artist_merge;
@@ -17,7 +16,6 @@ pub mod error;
 pub mod lastfm;
 pub mod local;
 pub mod lyrics;
-pub mod migrate;
 pub mod model;
 pub mod safe_mode;
 pub mod names;
@@ -54,14 +52,14 @@ fn read_secret<T>(r: Result<Option<T>, error::Error>, name: &str, errored: &mut 
 
 /// The saved service switches, or the defaults for this data dir ([`Services::initial`]), saved
 /// only when `settled`.
-fn decide_services(db: &db::Db, before: &migrate::Before, yt_cookie: bool, plex_token: bool, settled: bool) -> error::Result<Services> {
+fn decide_services(db: &db::Db, yt_cookie: bool, plex_token: bool, settled: bool) -> error::Result<Services> {
     if let Some(s) = db.kv_get::<Services>("services")? {
         return Ok(s);
     }
     let s = Services::initial(&state::InitialFacts {
-        had_own_settings: before.had_own_settings,
-        had_yt_cookie: before.had_yt_cookie || yt_cookie,
-        had_local_only: before.had_local_only,
+        had_own_settings: db.kv_get::<serde_json::Value>("settings")?.is_some(),
+        had_yt_cookie: yt_cookie,
+        had_local_only: db.kv_get::<bool>("ui.localOnly")? == Some(true),
         yt_account: db.kv_get::<String>("yt.account")?.is_some(),
         plex_account: db.kv_get::<String>("plex.account")?.is_some(),
         plex_token,
@@ -86,11 +84,6 @@ fn init_state(app: &tauri::AppHandle) -> Result<Arc<AppState>, Box<dyn std::erro
     }
     let db = db::Db::open(&dirs.data.join("library.db"))?;
     let secrets = secrets::Secrets::new(&app.config().identifier, &dirs.data);
-    // What this data dir held before the PLEXSpot import merged anything into it.
-    let before = migrate::before(&dirs.data, &db, &secrets);
-    // The one-time PLEXSpot import. Never fails (each step logs and retries next start); it runs
-    // before the clientId is read so Plex keeps PLEXSpot's device identity.
-    migrate::run(&dirs.data, &db, &secrets);
     let _ = db.cache_prune();
     let client_id: String = match db.kv_get("clientId")? {
         Some(id) => id,
@@ -118,10 +111,9 @@ fn init_state(app: &tauri::AppHandle) -> Result<Arc<AppState>, Box<dyn std::erro
         log::warn!("plex.session: {e}");
         None
     });
-    // Decided for good only from a credential store that answered and once the PLEXSpot import
-    // can no longer bring a Plex sign-in in (deferred or failed); otherwise again next start.
-    let settled = !secret_error && !migrate::import_pending(&dirs.data, &db);
-    let services = decide_services(&db, &before, yt_cookie.is_some(), plex_token.is_some(), settled)?;
+    // Decided for good only from a credential store that answered; otherwise again next start.
+    let settled = !secret_error;
+    let services = decide_services(&db, yt_cookie.is_some(), plex_token.is_some(), settled)?;
 
     let mut ytm = ytm::Ytm::new(http.clone(), yt_cookie, &language);
     ytm.page_id = db.kv_get::<String>("yt.pageId")?;
@@ -145,116 +137,6 @@ fn init_state(app: &tauri::AppHandle) -> Result<Arc<AppState>, Box<dyn std::erro
         offline_until: Mutex::new([None; 2]),
         allowed: std::sync::OnceLock::new(),
     }))
-}
-
-/// macOS: the PLEXSpot sign-in comes from the keychain after the window shows, so its prompts
-/// are explained by the app behind them and never hold up the start. Runs on its own database
-/// connection (the prompts can wait for the user). When it brought a Plex sign-in, Plex connects.
-#[cfg(target_os = "macos")]
-fn import_secrets_later(app: tauri::AppHandle, state: Arc<AppState>) {
-    tauri::async_runtime::spawn(async move {
-        let st = state.clone();
-        let _ = tauri::async_runtime::spawn_blocking(move || match db::Db::open(&st.dirs.data.join("library.db")) {
-            Ok(db) => migrate::run_secrets_later(&st.dirs.data, &db, &st.secrets),
-            Err(e) => migrate::log_note(&st.dirs.data, &format!("PLEXSpot sign-in import: {e}")),
-        })
-        .await;
-        if state.plex_session.read().await.is_none() {
-            if let Ok(Some(sess)) = state.secrets.get_json::<plex::Session>("plex.session") {
-                *state.plex_session.write().await = Some(sess);
-                if state.on(Provider::Plex) {
-                    let _ = commands::plex_reconnect(&app, &state).await;
-                }
-                let _ = app.emit("auth-changed", serde_json::json!({ "provider": Provider::Plex }));
-            }
-        }
-    });
-}
-
-/// macOS: the 1.x updater swapped the new version into `YTSpot.app` / `PLEXSpot.app`. Before any
-/// window opens, rename this bundle to `OpenSpot.app` in the same folder, or when one is already
-/// there, move this copy to the Trash, then start `OpenSpot.app` and quit. A 1.x "launch at
-/// startup" entry is replaced by OpenSpot's on that next start. Best effort: on any error the app
-/// keeps running from where it is. Returns true when this process should quit.
-#[cfg(target_os = "macos")]
-fn rename_bundle_once(app: &tauri::AppHandle) -> bool {
-    use std::process::Command;
-    let Some(bundle) = std::env::current_exe()
-        .and_then(|e| e.canonicalize())
-        .ok()
-        .and_then(|e| e.ancestors().find(|p| p.extension().is_some_and(|x| x == "app")).map(|p| p.to_path_buf()))
-    else {
-        return false;
-    };
-    let name = bundle.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-    if !matches!(name.as_str(), "YTSpot.app" | "PLEXSpot.app") {
-        return false;
-    }
-    let Some(parent) = bundle.parent() else { return false };
-    let target = parent.join("OpenSpot.app");
-    // No logger is installed: failures go to crash.log (shown in Settings).
-    let warn = |msg: String| match app.path().app_data_dir() {
-        Ok(dir) => {
-            let _ = std::fs::create_dir_all(&dir);
-            migrate::log_note(&dir, &msg)
-        }
-        Err(_) => log::warn!("{msg}"),
-    };
-    if target.exists() {
-        // A second copy with the same identity: it would compete with OpenSpot.app for the
-        // single-instance lock, Launch Services and updates.
-        let script = format!(r#"tell application "Finder" to delete POSIX file {:?}"#, bundle.to_string_lossy());
-        match Command::new("/usr/bin/osascript").args(["-e", &script]).output() {
-            Ok(o) if o.status.success() => {}
-            Ok(o) => {
-                warn(format!("moving {name} to the Trash failed: {}", String::from_utf8_lossy(&o.stderr).trim()));
-                return false;
-            }
-            Err(e) => {
-                warn(format!("moving {name} to the Trash failed: {e}"));
-                return false;
-            }
-        }
-    } else if let Err(e) = std::fs::rename(&bundle, &target) {
-        warn(format!("renaming {name} to OpenSpot.app failed: {e}"));
-        return false;
-    }
-    // A 1.x launch-at-startup entry points at the old name: OpenSpot registers its own on the
-    // next start (from the new path).
-    let agents = std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join("Library/LaunchAgents"));
-    let mut had_autostart = false;
-    for old in ["YTSpot.plist", "PLEXSpot.plist"] {
-        if let Some(path) = agents.as_ref().map(|d| d.join(old)).filter(|p| p.exists()) {
-            had_autostart = true;
-            let _ = std::fs::remove_file(path);
-        }
-    }
-    if had_autostart {
-        if let Ok(dir) = app.path().app_data_dir() {
-            let _ = std::fs::create_dir_all(&dir);
-            let _ = std::fs::write(dir.join(AUTOSTART_MARKER), b"");
-        }
-    }
-    // Started once this process is gone (the single-instance lock would hand it straight back).
-    let _ = Command::new("/bin/sh").arg("-c").arg("sleep 1.5; /usr/bin/open \"$0\"").arg(&target).spawn();
-    true
-}
-
-/// Written by `rename_bundle_once` when a 1.x launch-at-startup entry was removed.
-#[cfg(target_os = "macos")]
-const AUTOSTART_MARKER: &str = "autostart.reregister";
-
-#[cfg(target_os = "macos")]
-fn reregister_autostart(app: &tauri::AppHandle) {
-    use tauri_plugin_autostart::ManagerExt;
-    let Ok(dir) = app.path().app_data_dir() else { return };
-    let marker = dir.join(AUTOSTART_MARKER);
-    if marker.exists() {
-        if let Err(e) = app.autolaunch().enable() {
-            log::warn!("launch at startup: {e}");
-        }
-        let _ = std::fs::remove_file(marker);
-    }
 }
 
 /// Append panics to `crash.log` in the app data folder (shown in Settings) so a crash on a user's
@@ -337,12 +219,6 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
         .setup(move |app| {
             let handle = app.handle().clone();
             install_crash_log(&handle);
-            #[cfg(target_os = "macos")]
-            if rename_bundle_once(&handle) {
-                std::process::exit(0);
-            }
-            #[cfg(target_os = "macos")]
-            reregister_autostart(&handle);
             let state = init_state(&handle)?;
             *state_slot.lock().unwrap() = Some(state.clone());
             if let Some(mode) = safe_mode::decide(&state.dirs.data) {
@@ -366,8 +242,6 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             #[cfg(windows)]
             let main = main.decorations(false);
             let _main = main.build()?;
-            #[cfg(target_os = "macos")]
-            import_secrets_later(handle.clone(), state.clone());
             // Windows: headphone and media keys, the media flyout (see smtc.rs).
             #[cfg(windows)]
             smtc::init(&handle, &_main);

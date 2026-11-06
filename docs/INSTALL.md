@@ -24,20 +24,12 @@ Settings → Services. Each service has an on/off switch there.
 Run the newer installer; it replaces the program files and keeps your data (playlists, settings,
 downloads, sign-in).
 
-**From YTSpot or PLEXSpot 1.x.** The 1.x apps update to OpenSpot on their own, or you can run the
-OpenSpot installer. It closes YTSpot and PLEXSpot, uninstalls them (their Start menu and desktop
-shortcuts go too), and moves "Launch at startup" to OpenSpot. It never deletes their data: OpenSpot
-uses YTSpot's data as it is and, on first start, imports PLEXSpot's library, downloads, settings and
-Plex sign-in once. PLEXSpot's old data folder is kept as a backup. Pin OpenSpot to the taskbar again
-if you had pinned an old app.
-
-CI installs YTSpot and PLEXSpot 1.6.1 and then the new build on a clean Windows runner for every build,
-checks that the old apps are gone and their data kept, launches OpenSpot and uninstalls it again.
+CI installs the new build on a clean Windows runner for every build, launches it and uninstalls it
+again.
 
 ## Uninstall
 Settings → Apps → Installed apps → OpenSpot → Uninstall (or run `uninstall.exe` in the install
-folder). Your data is kept in case you reinstall, unless you tick "Delete app data" (which also removes
-PLEXSpot's old data folders). To start completely fresh, see below.
+folder). Your data is kept in case you reinstall, unless you tick "Delete app data". To start completely fresh, see below.
 
 ## Where data lives
 | What | Location |
@@ -46,10 +38,8 @@ PLEXSpot's old data folders). To start completely fresh, see below.
 | Offline downloads (Plex) | `%APPDATA%\app.openmusic.ytspot\downloads` |
 | Artwork cache | `%LOCALAPPDATA%\app.openmusic.ytspot\art` (bounded; Settings → Storage → Clear cache) |
 | Sign-in tokens and cookies, Last.fm keys | Windows Credential Manager → Windows Credentials, entries named `app.openmusic.ytspot` |
-| PLEXSpot 1.x data (imported once, kept as a backup) | `%APPDATA%\app.openmusic.plexspot` |
 
-The folder names still say `ytspot`: OpenSpot keeps YTSpot's internal identifier, so YTSpot users
-upgrade in place.
+The folder names still say `ytspot`: that's OpenSpot's internal identifier.
 
 "Clear cache" removes artwork and metadata caches only. It never deletes app playlists, downloads or
 your local music files.

@@ -1,8 +1,8 @@
 # OpenMusic: OpenSpot
 
 **OpenSpot** is one Spotify-style music client for YouTube Music, Plex and local files
-(`apps/openspot`, identifier `app.openmusic.ytspot`). Since 2.0.0 it replaces the two 1.x apps,
-YTSpot (YouTube Music) and PLEXSpot (Plex).
+(`apps/openspot`, identifier `app.openmusic.ytspot`). It replaced the retired 1.x apps YTSpot and
+PLEXSpot; nothing in the code supports or imports from them any more.
 
 The product spec is in `docs/SPEC.md`. Progress and the prioritized backlog are in `TODO.md`, and the
 design is in `docs/ARCHITECTURE.md`. **Read TODO.md first** when you resume work.
@@ -11,7 +11,7 @@ design is in `docs/ARCHITECTURE.md`. **Read TODO.md first** when you resume work
 
 ```
 crates/openmusic-core/   Rust: all shared logic (providers, DB, local files, Last.fm, downloads,
-                         art cache, PLEXSpot import, Tauri commands). `run(ctx)` starts the app.
+                         art cache, Tauri commands). `run(ctx)` starts the app.
 crates/tauri-plugin-openmusic-media/   Android media notification, widgets and self-update
                          (Kotlin namespace app.openmusic.media).
 apps/openspot/src-tauri/ The app crate: main.rs/lib.rs + tauri.conf.json + icons + capabilities +
@@ -48,9 +48,8 @@ The identifier stays `app.openmusic.ytspot`. It is never shown to users, but Tau
 - the Android package (same signing key);
 - the single-instance lock.
 
-Keeping it lets YTSpot users upgrade in place on Windows, macOS and Android. The macOS UI port stays
-47321. PLEXSpot data (`app.openmusic.plexspot`) is imported once by `migrate.rs`. Don't change the
-identifier.
+Changing it would lose every install's data and sign-in. The macOS UI port stays 47321. Don't change
+the identifier.
 
 ## Commands
 
@@ -75,8 +74,7 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
   and `ui/package.json` (plus the top of `ui/package-lock.json`). CI fails unless they match each
   other and the release tag.
   - The updater compares against the Cargo version.
-- Releases carry OpenSpot files only (`OpenSpot_<v>_…`). There are no YTSpot_/PLEXSpot_ copies, so
-  1.x apps don't update themselves; their users install OpenSpot (data carries over).
+- Releases carry OpenSpot files only (`OpenSpot_<v>_…`).
 - The release job keeps only the newest release.
 
 ## Working in a cloud session (Linux, no display)
@@ -89,8 +87,8 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
   - Or push a tag `vX.Y.Z` to publish a GitHub release.
 - install-test does a fresh silent install of the new build, starts it (it must create its library and
   keep running) and uninstalls it (the data must stay).
-- The NSIS hooks are in `apps/openspot/src-tauri/installer/hooks.nsh`. They never touch
-  `app.openmusic.*` data, except PLEXSpot's folders when "Delete app data" is ticked on uninstall.
+- The NSIS hook is in `apps/openspot/src-tauri/installer/hooks.nsh` (it only clears the "Launch at
+  startup" Task Manager state on uninstall).
 - The Mac disk image (`OpenSpot_<v>_universal.dmg`, artifact `openspot-macos`) comes from
   `.github/workflows/macos.yml`. It also runs the core tests on macOS.
   - build.yml's release job starts macos.yml with the release tag. macos.yml adds the disk image to

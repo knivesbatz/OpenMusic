@@ -250,8 +250,6 @@ jobs:
           if-no-files-found: error
 
   # A fresh silent install of the new build: it starts, creates its library, and uninstalls cleanly.
-  # Both check that the old programs are gone (Uninstall keys, folders, processes), that their data
-  # is kept, that "Launch at startup" moved to OpenSpot and that OpenSpot imports PLEXSpot's data.
   install-test:
     needs: bundle
     runs-on: windows-latest
@@ -361,16 +359,6 @@ jobs:
           for f in "OpenSpot_${V}_x64-setup.exe" "OpenSpot_${V}_android-arm64.apk"; do
             if [ ! -s "$f" ]; then echo "::error::Missing $f"; exit 1; fi
           done
-      - name: Remove old-name files from this release
-        # 2.0.0 first went out with YTSpot_/PLEXSpot_ copies; releases carry OpenSpot files only.
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag || github.ref_name }}
-        run: |
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null |
-            grep -E '^(YTSpot|PLEXSpot)_' | while read -r a; do
-              echo "deleting $a"; gh release delete-asset "$TAG" "$a" --repo "$GITHUB_REPOSITORY" -y
-            done || true
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
