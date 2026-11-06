@@ -366,9 +366,9 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   artist_link_check, store/artistLinks.ts). One service on: pages and lists as in 1.6.1
 - ✅ "Already added" warning before adding duplicates to a playlist (duplicates.ts)
 - ✅ Hidden playlists are left out of the Profile page; green icon restored
-- ✅ Migration: identifier stays app.openmusic.ytspot (YTSpot upgrades in place); migrate.rs imports
-  PLEXSpot's data dir/DB/files/secrets once on desktop; NSIS hooks retire the old apps; macOS
-  bundle rename; legacy YTSpot_/PLEXSpot_ alias assets on every 2.x release
+- ✅ Identifier stays app.openmusic.ytspot. The YTSpot/PLEXSpot migration (migrate.rs PLEXSpot
+  import, NSIS hooks retiring the old apps, macOS bundle rename, YTSpot_/PLEXSpot_ release copies)
+  was removed in 2.1.1: the 1.x apps are retired
 - 🟡 Not verified against real accounts or on Windows/macOS/Android devices: provider flows, the
   NSIS hooks (first run in CI), keychain import prompts, mixed-queue playback in the background on
   Android

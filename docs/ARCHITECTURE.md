@@ -26,9 +26,8 @@ removed it: both providers live in one process, and every command picks its prov
 **Identifier.** The identifier stays `app.openmusic.ytspot`, the old YTSpot one. It is never shown to
 users. Tauri derives from it the data dir (`%APPDATA%\app.openmusic.ytspot`), the WebView2/WKWebView
 profile (YouTube's Google cookies), the keyring service name, the Android package and the
-single-instance lock. Keeping it lets YTSpot users upgrade in place on every platform (same data,
-sign-in, Android package and signing key) and the macOS UI port stays 47321. PLEXSpot data
-(`app.openmusic.plexspot`) is imported once on desktop by `migrate.rs`.
+single-instance lock. Changing it would lose every install's data and sign-in, so it stays; the macOS UI
+port stays 47321.
 
 **Services.** `AppState.services` (`{ youtube, plex }`, kv `services`) holds the on/off switch of each
 provider. A provider that is off keeps its sign-in but is never called: fan-out commands (home,
@@ -53,7 +52,7 @@ Rust `commands.rs` dispatches on id prefixes (`Provider::of_id`):
 - `plex.rs`: plex.tv PIN auth, `/api/v2/resources` discovery, parallel connection probing (local >
   remote > relay), library/search/playlists/hubs, stream URLs (direct or universal transcode for
   Low/Medium), `/:/scrobble` to keep Plex play state in sync, and `/:/rate` for likes. The device is
-  `X-Plex-Product: OpenSpot`; PLEXSpot's client id is kept, so plex.tv sees the same device.
+  `X-Plex-Product: OpenSpot`.
 - `ytm.rs`: InnerTube `WEB_REMIX` JSON endpoints with the user's own Google session cookies
   (SAPISIDHASH auth), captured from a Google sign-in webview. Parsers search for renderer objects
   anywhere in the response, so small layout changes don't break them. **Unofficial**: there is no
@@ -68,21 +67,12 @@ Rust `commands.rs` dispatches on id prefixes (`Provider::of_id`):
 item (Download only on Plex items, Delete from YouTube only on `yt:` playlists), so unsupported
 controls are hidden or explained rather than faked.
 
-## Updates and migration from 1.x
+## Updates
 
-- Releases carry `OpenSpot_` assets only. 1.x apps look for their own names, so they don't
-  update themselves to OpenSpot: their users install it (the data carries over).
-- PLEXSpot for Android is another package (`app.openmusic.plexspot`),
-  which can't update into OpenSpot. Those users install OpenSpot and sign in to Plex again.
-- Windows: the installer's NSIS hooks (`apps/openspot/src-tauri/installer/hooks.nsh`) close YTSpot
-  and PLEXSpot, run their uninstallers silently (found through their HKCU Uninstall keys), move the
-  "Launch at startup" entry to OpenSpot, and never touch app data. OpenSpot's own uninstaller also
-  removes PLEXSpot's old data folders when "Delete app data" is ticked.
-- macOS: the 1.x updater swaps the bundle in place, so OpenSpot may first run as `YTSpot.app` or
-  `PLEXSpot.app`. It renames itself to `OpenSpot.app` and relaunches, or, when `OpenSpot.app` already
-  exists next to it, moves the old copy to the Trash and opens `OpenSpot.app`.
-- CI's install test is a fresh install of the new build; upgrades from YTSpot/PLEXSpot 1.x are no
-  longer tested.
+- Releases carry `OpenSpot_` assets only.
+- Windows: the installer's NSIS hook (`apps/openspot/src-tauri/installer/hooks.nsh`) only clears
+  Task Manager's "Launch at startup" state on uninstall.
+- CI's install test is a fresh silent install of the new build, a launch and an uninstall.
 
 ## Playback
 

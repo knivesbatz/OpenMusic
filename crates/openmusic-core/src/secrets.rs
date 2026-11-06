@@ -1,8 +1,7 @@
 //! Credentials. On desktop they live in the OS credential store (Windows Credential Manager via
-//! `keyring`), namespaced by the app identifier so YTSpot and PLEXSpot never see each other's
-//! tokens. Android has no keyring backend, so there they are kept in a file in the app's private
-//! storage, which other apps cannot read. Nothing secret goes to SQLite. The one-time PLEXSpot
-//! import (migrate.rs) reads the old app's entries through a second `Secrets` for its identifier.
+//! `keyring`), namespaced by the app identifier. Android has no keyring backend, so there they are
+//! kept in a file in the app's private storage, which other apps cannot read. Nothing secret goes
+//! to SQLite.
 
 use crate::error::{Error, Result};
 
@@ -117,8 +116,7 @@ impl Secrets {
 /// Large values are written one at a time (a cookie refresh and a sign-in must not interleave).
 static LARGE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The operations the large-value helpers (and the PLEXSpot import in migrate.rs, which copies
-/// between two credential stores) need. Tests use an in-memory map.
+/// The operations the large-value helpers need. Tests use an in-memory map.
 pub(crate) trait Store {
     fn get(&self, name: &str) -> Result<Option<String>>;
     fn set(&self, name: &str, value: &str) -> Result<()>;

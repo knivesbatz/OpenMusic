@@ -4,8 +4,6 @@
 
 A Spotify-style music player for **Windows**, **macOS** and **Android** that plays **YouTube Music**, **Plex** and your own music files in one app. It is built on a Rust + Tauri 2 core and a React UI (`apps/openspot`).
 
-OpenSpot 2.0 replaces the two 1.x apps, YTSpot (YouTube Music) and PLEXSpot (Plex). See [Coming from YTSpot or PLEXSpot](#coming-from-ytspot-or-plexspot).
-
 **Download:** [latest release](https://github.com/knivesbatz/OpenMusic/releases/latest). It has:
 
 - the Windows installer (`OpenSpot_<version>_x64-setup.exe`);
@@ -33,18 +31,6 @@ With both services on:
 - **Search** shows one combined list. Each row has a small badge for the service it came from.
 - **Home** shows your Plex shelves first, then YouTube Music's recommendations.
 - **Liked Songs** combines your YouTube likes and your rated Plex tracks.
-
-## Coming from YTSpot or PLEXSpot
-
-- **YTSpot (Windows, macOS, Android):** YTSpot updates to OpenSpot on its own, or you can install OpenSpot over it. You keep your playlists, settings, downloads and YouTube sign-in, because OpenSpot uses YTSpot's data.
-- **PLEXSpot on Windows and macOS:** PLEXSpot also updates to OpenSpot on its own. On first start, OpenSpot imports PLEXSpot's data once:
-  - app playlists, history, saved albums and artists, folders and settings;
-  - downloads and the Plex sign-in, so plex.tv keeps seeing the same device.
-
-  On a Mac, OpenSpot may ask once for access to PLEXSpot's saved sign-in in the keychain. If you deny it, sign in to Plex again under Settings → Services. PLEXSpot's old data folder stays where it is, as a backup.
-- **PLEXSpot on Android:** PLEXSpot for Android can't update itself to OpenSpot, because Android treats them as different apps. Install OpenSpot from the release page and sign in to Plex again. Uninstall PLEXSpot when you're done with it. Its app playlists can't be moved automatically.
-- **Windows:** the OpenSpot installer removes YTSpot and PLEXSpot, including their Start menu and desktop shortcuts. It keeps their data. "Launch at startup" carries over. Pin OpenSpot to the taskbar again if you had pinned an old app.
-- **macOS:** if an old app updated itself, it renames itself to OpenSpot.app on first start. If you also had the other 1.x app, its copy goes to the Trash once OpenSpot.app exists.
 
 ## Screenshots
 
