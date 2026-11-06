@@ -6,7 +6,7 @@ import { api, errorMessage, inTauri, setPartErrorHandler } from "../api";
 import type { Album, AppInfo, Artist, AuthAll, AuthStatus, Library, Playlist, Podcast, Provider, ProviderError, Services, Track } from "../types";
 import { PROVIDERS } from "../types";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { translate } from "../i18n";
+import { localError, translate } from "../i18n";
 import { useSettings } from "./settings";
 import { navigate, toast } from "./ui";
 import { loadFolders } from "./folders";
@@ -156,7 +156,7 @@ export async function setService(p: Provider, on: boolean) {
       await api.servicesSet(next);
     } catch (e) {
       onServicesChanged(before);
-      toast(errorMessage(e));
+      toast(localError(e));
       return;
     }
   }
@@ -257,7 +257,7 @@ export async function boot() {
     libraryInflight = null;
     refreshLibrary(false);
   });
-  listen("liked-changed", refreshLiked);
+  listen("liked-changed", onLikedChanged);
   useSettings.subscribe((s, prev) => {
     if (s.privateSession !== prev.privateSession) toast(translate(s.language, s.privateSession ? "privateSessionOn" : "privateSessionOff"));
   });
@@ -297,7 +297,7 @@ export function refreshLibrary(refresh: boolean): Promise<void> {
       refreshLiked();
     })
     .catch((e) => {
-      if (libraryInflight === mine) useApp.setState({ libraryError: errorMessage(e) });
+      if (libraryInflight === mine) useApp.setState({ libraryError: localError(e) });
     })
     .finally(() => {
       if (libraryInflight === mine) libraryInflight = null;
@@ -315,15 +315,51 @@ export async function refreshPlaylists() {
   }
 }
 
-/** Like state comes from the providers that are on; failures keep what we have (e.g. offline). */
-export async function refreshLiked() {
-  if (!inTauri) return;
-  if (!caps().favorites) return useApp.setState({ liked: new Set() });
-  try {
-    useApp.setState({ liked: new Set(await api.likedIds()) });
-  } catch {
-    /* keep previous */
+/** A like fetch this slow ran into the core's wait for a service (60 s). */
+const LIKED_SLOW_MS = 45_000;
+let likedInflight: Promise<void> | null = null;
+let likedAgain = false;
+/** The last like fetch waited out a slow service, and was itself started by "liked-changed": that
+ * service's late answer comes back as another "liked-changed", which must not start the next one. */
+let likedEcho = false;
+
+/** Like state comes from the providers that are on; failures keep what we have (e.g. offline).
+ * Calls made while one is on its way share it, and one more fetch follows it. */
+export function refreshLiked(fromEvent = false): Promise<void> {
+  if (!inTauri) return Promise.resolve();
+  if (likedInflight) {
+    likedAgain = true;
+    return likedInflight;
   }
+  const started = Date.now();
+  const mine = (async () => {
+    if (!caps().favorites) return useApp.setState({ liked: new Set() });
+    try {
+      useApp.setState({ liked: new Set(await api.likedIds()) });
+    } catch {
+      /* keep previous */
+    }
+  })().finally(() => {
+    likedEcho = fromEvent && Date.now() - started > LIKED_SLOW_MS;
+    likedInflight = null;
+    if (likedAgain) {
+      likedAgain = false;
+      void refreshLiked();
+    }
+  });
+  likedInflight = mine;
+  return mine;
+}
+
+
+/** A service's likes arrived after the merged answer stopped waiting: fetch them, unless this is
+ * the echo of a fetch that this event started (that would loop for as long as the service stays slow). */
+function onLikedChanged() {
+  if (likedEcho && !likedInflight) {
+    likedEcho = false;
+    return;
+  }
+  void refreshLiked(true);
 }
 
 export async function refreshSaved() {

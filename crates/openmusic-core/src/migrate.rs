@@ -15,7 +15,9 @@
 //!   bring up a keychain prompt, so this step runs from [`run_secrets_later`] once the window shows.
 //!
 //! Each step has its own kv marker (`migrated.plexspot.db`, `.files`, `.secrets`), set only when the
-//! step succeeded, so a failed step is tried again at the next start. Nothing here ever fails the
+//! step succeeded, so a failed step is tried again at the next start (the database marker is
+//! written in the import's own transaction). On macOS the secrets step is tried once: a denied
+//! keychain prompt is not shown again at every start, it means "sign in to Plex again". Nothing here ever fails the
 //! app's start: errors go to crash.log. After every step has succeeded, the copied PLEXSpot
 //! credentials and its `updates/` folder are deleted; its library.db stays as a safety copy.
 
@@ -38,10 +40,12 @@ const MARK_FILES: &str = "migrated.plexspot.files";
 const MARK_SECRETS: &str = "migrated.plexspot.secrets";
 /// Set once every step succeeded and the leftovers were cleaned up.
 const MARK_DONE: &str = "migrated.plexspot";
+/// The [`Before`] facts, saved the first time they are taken while the import is pending.
+const MARK_BEFORE: &str = "migrated.plexspot.before";
 
 /// Facts about this data folder recorded before the import (the services defaults are computed
 /// from them, so imported PLEXSpot settings never switch YouTube Music on).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Before {
     /// kv `settings` existed (YTSpot was used here).
     pub had_own_settings: bool,
@@ -51,8 +55,27 @@ pub struct Before {
     pub had_local_only: bool,
 }
 
-pub fn before(db: &Db, ours: &Secrets) -> Before {
-    before_with(db, ours)
+/// The facts as they were before the import: taken now and saved while the import is pending, so
+/// a later start (after the import merged PLEXSpot's settings in) still sees them.
+pub fn before(data_dir: &Path, db: &Db, ours: &Secrets) -> Before {
+    before_saved(db, ours, !cfg!(mobile) && sibling(data_dir).is_some())
+}
+
+fn before_saved(db: &Db, ours: &impl Store, has_plexspot: bool) -> Before {
+    if let Ok(Some(saved)) = db.kv_get::<Before>(MARK_BEFORE) {
+        return saved;
+    }
+    let facts = before_with(db, ours);
+    if has_plexspot && !marked(db, MARK_DB) {
+        let _ = db.kv_set(MARK_BEFORE, &facts);
+    }
+    facts
+}
+
+/// Whether the PLEXSpot database import may still change what this folder holds (it has not run
+/// yet, was deferred or failed): nothing should be decided for good from it until then.
+pub fn import_pending(data_dir: &Path, db: &Db) -> bool {
+    !cfg!(mobile) && sibling(data_dir).is_some() && !marked(db, MARK_DB)
 }
 
 fn before_with(db: &Db, ours: &impl Store) -> Before {
@@ -75,8 +98,9 @@ pub fn run(data_dir: &Path, db: &Db, ours: &Secrets) {
 }
 
 /// macOS: the secrets step (and the cleanup that follows a full import), run after the main
-/// window is shown, because reading PLEXSpot's keychain items asks the user. A denial only means
-/// "sign in to Plex again"; it is retried at the next start. Elsewhere this does nothing.
+/// window is shown, because reading PLEXSpot's keychain items asks the user. Tried once: after a
+/// denial the step is marked done (with the error) and the prompts never come back; it only means
+/// "sign in to Plex again". Elsewhere this does nothing.
 pub fn run_secrets_later(data_dir: &Path, db: &Db, ours: &Secrets) {
     if cfg!(mobile) || !cfg!(target_os = "macos") {
         return;
@@ -86,7 +110,7 @@ pub fn run_secrets_later(data_dir: &Path, db: &Db, ours: &Secrets) {
         return;
     }
     let theirs = Secrets::new(PLEXSPOT_ID, &theirs_dir);
-    secrets_step(data_dir, &theirs_dir, db, ours, &theirs);
+    secrets_step(data_dir, &theirs_dir, db, ours, &theirs, true);
     cleanup(data_dir, &theirs_dir, db, &theirs);
 }
 
@@ -105,9 +129,8 @@ fn run_with(data_dir: &Path, theirs_dir: &Path, db: &Db, ours: &impl Store, thei
         return;
     }
     if !marked(db, MARK_DB) {
-        match import_db(db, theirs_dir) {
-            Ok(mtime) => mark(data_dir, db, MARK_DB, json!({ "at": now(), "mtime": mtime })),
-            Err(e) => note(data_dir, &format!("database import failed: {e}")),
+        if let Err(e) = import_db(db, theirs_dir) {
+            note(data_dir, &format!("database import failed: {e}"));
         }
     }
     // Files only after the rows: the moved downloads' rows must be here to be rewritten.
@@ -118,17 +141,24 @@ fn run_with(data_dir: &Path, theirs_dir: &Path, db: &Db, ours: &impl Store, thei
         }
     }
     if secrets_now {
-        secrets_step(data_dir, theirs_dir, db, ours, theirs);
+        secrets_step(data_dir, theirs_dir, db, ours, theirs, false);
     }
     cleanup(data_dir, theirs_dir, db, theirs);
 }
 
-fn secrets_step(data_dir: &Path, theirs_dir: &Path, db: &Db, ours: &impl Store, theirs: &impl Store) {
+/// `once`: a failure still marks the step done (macOS, where each read is a keychain prompt the
+/// user may have denied). Otherwise a failure is retried at the next start.
+fn secrets_step(data_dir: &Path, theirs_dir: &Path, db: &Db, ours: &impl Store, theirs: &impl Store, once: bool) {
     if marked(db, MARK_DONE) || marked(db, MARK_SECRETS) {
         return;
     }
-    match import_secrets(db, theirs_dir, ours, theirs) {
-        Ok(copied) => mark(data_dir, db, MARK_SECRETS, json!({ "at": now(), "copied": copied })),
+    let mut copied = Vec::new();
+    match import_secrets(db, theirs_dir, ours, theirs, &mut copied) {
+        Ok(()) => mark(data_dir, db, MARK_SECRETS, json!({ "at": now(), "copied": copied })),
+        Err(e) if once => {
+            note(data_dir, &format!("sign-in import failed, not tried again (sign in to Plex again): {e}"));
+            mark(data_dir, db, MARK_SECRETS, json!({ "at": now(), "copied": copied, "error": true }));
+        }
         Err(e) => note(data_dir, &format!("sign-in import failed (sign in to Plex again if it persists): {e}")),
     }
 }
@@ -175,14 +205,20 @@ fn mark(data_dir: &Path, db: &Db, key: &str, value: Value) {
 
 /// Failures go to crash.log (shown in Settings) like other diagnostics. Never a secret value.
 fn note(data_dir: &Path, msg: &str) {
+    log_note(data_dir, &format!("PLEXSpot import: {msg}"));
+}
+
+/// Appends a line to crash.log in `data_dir` (no logger is installed, so `log::warn!` alone would
+/// go nowhere). Never a secret value.
+pub(crate) fn log_note(data_dir: &Path, msg: &str) {
     use std::io::Write;
-    log::warn!("PLEXSpot import: {msg}");
+    log::warn!("{msg}");
     let path = data_dir.join("crash.log");
     if std::fs::metadata(&path).map(|m| m.len() > 1_000_000).unwrap_or(false) {
         let _ = std::fs::remove_file(&path);
     }
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "[{}] v{} PLEXSpot import: {msg}", now(), env!("CARGO_PKG_VERSION"));
+        let _ = writeln!(f, "[{}] v{} {msg}", now(), env!("CARGO_PKG_VERSION"));
     }
 }
 
@@ -206,12 +242,14 @@ fn plexspot_running() -> bool {
 
 // ---- database -------------------------------------------------------------------------------
 
-/// Merges PLEXSpot's library.db into ours in one transaction. Returns the file's mtime (unix
-/// seconds), kept in the marker. A missing database counts as imported.
-fn import_db(db: &Db, theirs_dir: &Path) -> Result<Option<i64>> {
+/// Merges PLEXSpot's library.db into ours in one transaction, which also sets the marker (with
+/// the file's mtime), so the import and its marker are never apart. A missing database counts as
+/// imported.
+fn import_db(db: &Db, theirs_dir: &Path) -> Result<()> {
     let path = theirs_dir.join("library.db");
     if !path.exists() {
-        return Ok(None);
+        db.kv_set(MARK_DB, &json!({ "at": now(), "mtime": null }))?;
+        return Ok(());
     }
     let mtime = std::fs::metadata(&path)
         .and_then(|m| m.modified())
@@ -221,8 +259,9 @@ fn import_db(db: &Db, theirs_dir: &Path) -> Result<Option<i64>> {
     let src = open_theirs(&path)?;
     let tx = db.conn.unchecked_transaction()?;
     merge(db, &src)?;
+    db.kv_set(MARK_DB, &json!({ "at": now(), "mtime": mtime }))?;
     tx.commit()?;
-    Ok(mtime)
+    Ok(())
 }
 
 /// Read-only: PLEXSpot's folder is left exactly as it was (no schema migration runs there).
@@ -284,7 +323,13 @@ fn merge(db: &Db, src: &Connection) -> Result<()> {
         copy_table(src, dst, table, &[], "")?;
     }
     copy_table(src, dst, "scrobbles", &["id"], "ORDER BY id")?;
+    let last_ours: i64 = dst.query_row("SELECT COALESCE(MAX(id), 0) FROM history", [], |r| r.get(0))?;
     if copy_table(src, dst, "history", &["id"], "ORDER BY id")? > 0 {
+        // Plays of a PLEXSpot playlist that got a new id point at that id (only the rows just
+        // copied: ours with the same id are our own playlist's).
+        for (old, new) in &remap {
+            dst.execute("UPDATE history SET context_id=?2 WHERE context_id=?1 AND id>?3", rusqlite::params![old, new, last_ours])?;
+        }
         // Ids give the history its order (newest = highest), so renumber both apps' plays by time.
         dst.execute_batch(
             "CREATE TEMP TABLE migrate_history AS
@@ -382,6 +427,7 @@ fn merge_kv(db: &Db, src: &Connection, remap: &HashMap<String, String>) -> Resul
             "clientId" => (!ours_has_plex).then_some(value),
             k if k.starts_with("plex.") || k.starts_with("ui.plex.") => (!ours_has_plex).then_some(value),
             "ui.profile" => profile_empty(mine.as_ref()).then_some(value),
+            "queue" => mine.is_none().then(|| remap_queue(value, remap)),
             _ => mine.is_none().then_some(value),
         };
         if let Some(v) = merged {
@@ -389,6 +435,19 @@ fn merge_kv(db: &Db, src: &Connection, remap: &HashMap<String, String>) -> Resul
         }
     }
     Ok(())
+}
+
+/// A saved queue (ui/src/player/engine.ts) whose context is a remapped playlist points at its
+/// new id.
+fn remap_queue(mut queue: Value, remap: &HashMap<String, String>) -> Value {
+    if let Some(ctx) = queue.get_mut("context").and_then(|c| c.as_object_mut()) {
+        if ctx.get("kind").and_then(|k| k.as_str()) == Some("playlist") {
+            if let Some(new) = ctx.get("id").and_then(|i| i.as_str()).and_then(|id| remap.get(id)) {
+                ctx.insert("id".into(), Value::String(new.clone()));
+            }
+        }
+    }
+    queue
 }
 
 fn profile_empty(p: Option<&Value>) -> bool {
@@ -589,9 +648,9 @@ const LARGE_SECRETS: &[&str] = &["plex.session", "lastfm.keys"];
 
 /// Copies the Plex sign-in and the Last.fm connection into empty slots. Each is a group, written
 /// with its "present" entry (plex.token, lastfm.sk) last, so an interrupted copy is redone whole
-/// at the next start. Any error fails the step. Returns the names copied.
-fn import_secrets(db: &Db, theirs_dir: &Path, ours: &impl Store, theirs: &impl Store) -> Result<Vec<String>> {
-    let mut copied = Vec::new();
+/// at the next start. Any error fails the step. The names copied are added to `copied` (also
+/// the ones copied before an error).
+fn import_secrets(db: &Db, theirs_dir: &Path, ours: &impl Store, theirs: &impl Store, copied: &mut Vec<String>) -> Result<()> {
 
     if ours.get("plex.token")?.is_none() {
         if let Some(token) = theirs.get("plex.token")? {
@@ -609,10 +668,12 @@ fn import_secrets(db: &Db, theirs_dir: &Path, ours: &impl Store, theirs: &impl S
     }
 
     // Only what is needed is read from PLEXSpot: on macOS each existing item it reads may ask.
-    let their_sk = if ours.get("lastfm.sk")?.is_none() { theirs.get("lastfm.sk")? } else { None };
+    // Nothing of Last.fm is copied over a session of ours: its key belongs to our API keys.
+    let our_sk = ours.get("lastfm.sk")?;
+    let their_sk = if our_sk.is_none() { theirs.get("lastfm.sk")? } else { None };
     let mut our_keys = secrets::get_large(ours, "lastfm.keys")?;
-    let their_keys = if our_keys.is_none() || their_sk.is_some() { secrets::get_large(theirs, "lastfm.keys")? } else { None };
-    if our_keys.is_none() {
+    let their_keys = if our_sk.is_none() && (our_keys.is_none() || their_sk.is_some()) { secrets::get_large(theirs, "lastfm.keys")? } else { None };
+    if our_keys.is_none() && our_sk.is_none() {
         if let Some(k) = &their_keys {
             secrets::set_large(ours, "lastfm.keys", k)?;
             copied.push("lastfm.keys".to_string());
@@ -628,7 +689,7 @@ fn import_secrets(db: &Db, theirs_dir: &Path, ours: &impl Store, theirs: &impl S
             db.kv_set("lastfm.user", &user)?;
         }
     }
-    Ok(copied)
+    Ok(())
 }
 
 /// One kv value from PLEXSpot's database (read-only).
@@ -918,7 +979,7 @@ mod tests {
         assert!(e.kv(MARK_DB).is_some() && e.kv(MARK_FILES).is_some());
         assert!(e.kv(MARK_SECRETS).is_none() && e.kv(MARK_DONE).is_none());
         assert!(e.ours_store.map.borrow().is_empty());
-        secrets_step(&e.ours_dir, &e.theirs_dir, &e.ours, &e.ours_store, &e.theirs_store);
+        secrets_step(&e.ours_dir, &e.theirs_dir, &e.ours, &e.ours_store, &e.theirs_store, true);
         cleanup(&e.ours_dir, &e.theirs_dir, &e.ours, &e.theirs_store);
         assert_eq!(e.ours_store.get("plex.token").unwrap().as_deref(), Some("tok"));
         assert!(e.kv(MARK_DONE).is_some());
@@ -932,7 +993,7 @@ mod tests {
                 std::fs::write(dir.join("downloads/plex_2.flac"), b"ours").unwrap();
                 o.conn.execute(
                     "INSERT INTO downloads(track_id,track_json,status,path,updated_at) VALUES('plex:2','{}','done',?1,1)",
-                    [dir.join("downloads/plex_2.flac").to_string_lossy()],
+                    [dir.join("downloads").join("plex_2.flac").to_string_lossy()],
                 ).unwrap();
             },
             |t, dir| {
@@ -954,12 +1015,13 @@ mod tests {
         );
         e.run(true);
         let path = |id: &str| -> String { e.ours.conn.query_row("SELECT path FROM downloads WHERE track_id=?1", [id], |r| r.get(0)).unwrap() };
-        let moved = e.ours_dir.join("downloads/plex_1.flac");
+        // Built with join per component: the import writes native separators (`\` on Windows).
+        let moved = e.ours_dir.join("downloads").join("plex_1.flac");
         assert_eq!(path("plex:1"), moved.to_string_lossy());
         assert_eq!(std::fs::read(&moved).unwrap(), b"one");
         assert!(!e.theirs_dir.join("downloads/plex_1.flac").exists());
         // Ours wins on the same track: our file and row stay, theirs is left in place.
-        assert_eq!(path("plex:2"), e.ours_dir.join("downloads/plex_2.flac").to_string_lossy());
+        assert_eq!(path("plex:2"), e.ours_dir.join("downloads").join("plex_2.flac").to_string_lossy());
         assert_eq!(std::fs::read(e.ours_dir.join("downloads/plex_2.flac")).unwrap(), b"ours");
         assert!(e.theirs_dir.join("downloads/plex_2.flac").exists());
         assert!(!e.ours_dir.join("downloads/plex_3.flac.part").exists());
@@ -1046,6 +1108,131 @@ mod tests {
         assert_eq!(e.ours_store.get("lastfm.sk").unwrap(), None, "their session belongs to another API key");
         assert_eq!(e.kv("lastfm.user"), None);
         assert!(e.kv(MARK_SECRETS).is_some());
+    }
+
+    #[test]
+    fn lastfm_keys_never_join_a_session_of_ours() {
+        // YTSpot connected with the built-in keys (a session, no custom keys); PLEXSpot had custom
+        // keys. Copying them would pair our session with another API key and disconnect it.
+        let e = env(|_, _| {}, |_, _| {});
+        e.ours_store.set("lastfm.sk", "mine").unwrap();
+        secrets::set_large(&e.theirs_store, "lastfm.keys", "{\"apiKey\":\"theirs\"}").unwrap();
+        e.run(true);
+        assert_eq!(secrets::get_large(&e.ours_store, "lastfm.keys").unwrap(), None);
+        assert_eq!(e.ours_store.get("lastfm.sk").unwrap().as_deref(), Some("mine"));
+        assert!(e.kv(MARK_SECRETS).is_some());
+    }
+
+    #[test]
+    fn a_denied_keychain_is_asked_once_on_macos() {
+        let e = env(|_, _| {}, |_, _| {});
+        plexspot_signed_in(&e.theirs_store);
+        e.run(false);
+        e.theirs_store.fail.set(true); // the user clicked Deny
+        secrets_step(&e.ours_dir, &e.theirs_dir, &e.ours, &e.ours_store, &e.theirs_store, true);
+        let mark = e.kv(MARK_SECRETS).expect("marked after the first try");
+        assert_eq!(mark["error"], json!(true));
+        assert_eq!(mark["copied"], json!([]));
+        // Not read again: the prompt would come back.
+        e.theirs_store.fail.set(false);
+        secrets_step(&e.ours_dir, &e.theirs_dir, &e.ours, &e.ours_store, &e.theirs_store, true);
+        assert_eq!(e.ours_store.get("plex.token").unwrap(), None);
+        // The import finishes; PLEXSpot's own entries stay (nothing was copied).
+        cleanup(&e.ours_dir, &e.theirs_dir, &e.ours, &e.theirs_store);
+        assert!(e.kv(MARK_DONE).is_some());
+        assert_eq!(e.theirs_store.get("plex.token").unwrap().as_deref(), Some("tok"));
+    }
+
+    #[test]
+    fn the_db_marker_commits_with_the_import() {
+        // A PLEXSpot database whose kv table can't be read: the import fails after the playlists
+        // were merged, and neither the rows nor the marker stay.
+        let e = env(|_, _| {}, |t, _| {
+            t.playlist_import("app:p", "P", None, &[track("plex:1", Source::Plex)]).unwrap();
+            t.conn.execute_batch("DROP TABLE kv; CREATE TABLE kv(key TEXT PRIMARY KEY);").unwrap();
+        });
+        e.run(true);
+        assert!(e.kv(MARK_DB).is_none());
+        assert!(e.ours.playlists().unwrap().is_empty(), "rolled back with the marker");
+        assert!(import_pending(&e.ours_dir, &e.ours));
+
+        let e = env(|_, _| {}, |t, _| {
+            t.playlist_import("app:p", "P", None, &[]).unwrap();
+        });
+        assert!(import_pending(&e.ours_dir, &e.ours));
+        e.run(true);
+        assert!(e.kv(MARK_DB).unwrap().get("mtime").is_some_and(|m| m.is_i64()));
+        assert!(!import_pending(&e.ours_dir, &e.ours));
+    }
+
+    #[test]
+    fn services_wait_for_a_deferred_or_failed_import() {
+        // A PLEXSpot user: the first start can't import (PLEXSpot still running on macOS, or its
+        // database is locked), so nothing of Plex is here yet.
+        let e = env(|_, _| {}, |t, _| {
+            t.kv_set("settings", &json!({"language": "ja"})).unwrap();
+            t.kv_set("plex.account", &"Bob").unwrap();
+        });
+        let start = |import: bool| {
+            let before = before_saved(&e.ours, &e.ours_store, true);
+            if import {
+                e.run(false);
+            }
+            let settled = !import_pending(&e.ours_dir, &e.ours);
+            crate::decide_services(&e.ours, &before, false, false, settled).unwrap()
+        };
+        assert_eq!(start(false), crate::Services { youtube: false, plex: false });
+        assert_eq!(e.kv("services"), None, "not saved while the import is pending");
+        // The next start imports: Plex is on, and the imported settings don't turn YouTube on.
+        assert_eq!(start(true), crate::Services { youtube: false, plex: true });
+        assert_eq!(e.kv("services"), Some(json!({"youtube": false, "plex": true})));
+    }
+
+    #[test]
+    fn before_facts_survive_the_import() {
+        // A PLEXSpot-only user whose keychain failed at the first start (services not saved):
+        // at the second start the merged settings must not count as YTSpot's.
+        let e = env(|_, _| {}, |t, _| {
+            t.kv_set("settings", &json!({"language": "ja"})).unwrap();
+            t.kv_set("plex.account", &"Bob").unwrap();
+        });
+        let first = before_saved(&e.ours, &e.ours_store, true);
+        e.run(true);
+        assert!(e.kv("settings").is_some());
+        let second = before_saved(&e.ours, &e.ours_store, true);
+        assert_eq!(second, first);
+        assert!(!second.had_own_settings);
+        let s = crate::decide_services(&e.ours, &second, false, true, true).unwrap();
+        assert_eq!(s, crate::Services { youtube: false, plex: true });
+        // Without PLEXSpot nothing is saved: the facts are always this folder's own.
+        let db = Db::open_in_memory().unwrap();
+        before_saved(&db, &Mem::default(), false);
+        assert!(db.kv_get::<Value>(MARK_BEFORE).unwrap().is_none());
+    }
+
+    #[test]
+    fn remapped_playlists_in_history_and_queue() {
+        let ctx_of = |title: &str| crate::db::PlayContext { kind: "playlist".into(), id: "app:dup".into(), title: title.into(), artwork: None };
+        let e = env(
+            |o, _| {
+                o.playlist_import("app:dup", "Mine", None, &[track("yt:a", Source::Youtube)]).unwrap();
+                o.record_play(&track("yt:a", Source::Youtube), Some(&ctx_of("Mine"))).unwrap();
+            },
+            |t, _| {
+                t.playlist_import("app:dup", "Theirs", None, &[track("plex:1", Source::Plex)]).unwrap();
+                t.record_play(&track("plex:1", Source::Plex), Some(&ctx_of("Theirs"))).unwrap();
+                t.kv_set("queue", &json!({"tracks": [], "index": 0, "context": {"kind": "playlist", "id": "app:dup", "title": "Theirs"}})).unwrap();
+            },
+        );
+        e.run(true);
+        let moved = e.ours.playlists().unwrap().into_iter().find(|p| p.title == "Theirs").unwrap().id;
+        assert_ne!(moved, "app:dup");
+        let ctx = |track: &str| -> String {
+            e.ours.conn.query_row("SELECT context_id FROM history WHERE track_id=?1", [track], |r| r.get(0)).unwrap()
+        };
+        assert_eq!(ctx("yt:a"), "app:dup", "our own plays stay ours");
+        assert_eq!(ctx("plex:1"), moved);
+        assert_eq!(e.kv("queue").unwrap()["context"]["id"], json!(moved));
     }
 
     #[test]

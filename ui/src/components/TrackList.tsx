@@ -1,4 +1,5 @@
 // Virtualized track table used by albums, playlists, artist pages, search, local files and liked.
+import { sourceOf } from "../store/providers";
 import { createContext, memo, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { canLikeTrack, providerOfId, trackHead, trackMenu, type TrackMenuOpts } from "../actions";
@@ -13,7 +14,6 @@ import type { PlayContext, Provider, Track } from "../types";
 import { cls, fmtMs, isTouch, serviceLabel } from "../util";
 import { Art, ArtistName, TitleText, useDownloaded, useProvidersKey } from "./common";
 import { likeOrOpen } from "./SavedIn";
-import { SourceBadge } from "./SourceBadge";
 import { IClock, IHeart, IHeartFill, IMore, IPlay } from "./Icons";
 
 /** The main view's scroll container; lists virtualize against it. */
@@ -198,6 +198,7 @@ const Row = memo(function Row(p: RowProps) {
       aria-selected={p.selected}
       aria-disabled={row.unplayable || undefined}
       title={row.unplayable && row.provider ? t("rowServiceOff", { service: serviceLabel(row.provider) }) : undefined}
+      data-source={sourceOf(tr.id) ?? undefined}
       className={cls("tl-row", p.selected && "selected", isCurrent && "current", !p.showAlbum && "no-album", p.dragOver && "drop-before", p.dropAfter && "drop-after", row.dim && "dim")}
       style={{ transform: `translateY(${p.top}px)` }}
       onClick={(e) => (isTouch() ? play() : p.onSelect(e))}
@@ -236,7 +237,6 @@ const Row = memo(function Row(p: RowProps) {
         <span className="tl-text">
           <span className="name">
             <TitleText text={tr.title} />
-            <SourceBadge id={tr.id} after />
           </span>
           <span className="sub">
             {tr.explicit && <span className="badge">{t("explicit")}</span>}

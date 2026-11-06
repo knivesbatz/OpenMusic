@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyResults, interleave, isEmptyResults, matchClass, mergeSearch, partErrors, pickTop } from "./searchMerge";
+import { artistKey, dedupeArtists, linkCandidates, emptyResults, interleave, isEmptyResults, matchClass, mergeSearch, partErrors, pickTop } from "./searchMerge";
 import type { MediaItem, Playlist, SearchResults, Track } from "./types";
 
 const track = (id: string, title: string, source: Track["source"] = id.startsWith("plex:") ? "plex" : id.startsWith("yt:") ? "youtube" : "local"): Track => ({
@@ -44,6 +44,97 @@ describe("pickTop", () => {
   });
 });
 
+describe("artistKey / dedupeArtists", () => {
+  it("matches names exactly, ignoring case, diacritics, punctuation and a leading The", () => {
+    expect(artistKey("Weezer")).toBe(artistKey("WEEZER"));
+    expect(artistKey("The Beatles")).toBe(artistKey("beatles"));
+    expect(artistKey("Beyoncé")).toBe("beyonce");
+    expect(artistKey("Sigur Rós")).toBe("sigur ros");
+    expect(artistKey("AC/DC")).toBe(artistKey("AC-DC"));
+    expect(artistKey("Simon & Garfunkel")).toBe(artistKey("Simon and Garfunkel"));
+    expect(artistKey("Mötley Crüe")).toBe("motley crue");
+    expect(artistKey("Røyksopp")).toBe("royksopp");
+    expect(artistKey("The The")).toBe("the");
+    expect(artistKey("ガガガSP")).toBe("ガガガsp");
+    expect(artistKey("ガガガSP")).not.toBe(artistKey("カカカSP"));
+    expect(artistKey("Weezer")).not.toBe(artistKey("Weezer Tribute"));
+    expect(artistKey("!!!")).toBe("");
+  });
+
+  it("matches Rust's artist_key (artist_merge.rs SHARED_ARTIST_KEYS)", () => {
+    const shared: [string, string][] = [
+      ["Weezer", "weezer"],
+      ["The Beatles", "beatles"],
+      ["The The", "the"],
+      ["Beyoncé", "beyonce"],
+      ["Sigur Rós", "sigur ros"],
+      ["Mötley Crüe", "motley crue"],
+      ["Røyksopp", "royksopp"],
+      ["Sơn Tùng M-TP", "son tung m tp"],
+      ["Son Tung M-TP", "son tung m tp"],
+      ["Đen Vâu", "den vau"],
+      ["Simon & Garfunkel", "simon and garfunkel"],
+      ["AC/DC", "ac dc"],
+      ["  Guns N' Roses ", "guns n roses"],
+      ["Beyonce\u0301", "beyonce"],
+      ["ガガガSP", "ガガガsp"],
+      ["カカカSP", "カカカsp"],
+      ["宇多田ヒカル", "宇多田ヒカル"],
+      ["ΣΙΓΜΑΣ", "σιγμας"],
+      ["Straße", "strasse"],
+      ["!!!", ""],
+    ];
+    for (const [name, key] of shared) expect(artistKey(name), name).toBe(key);
+  });
+
+  it("drops nothing on a name alone (YouTube's two Nirvanas, a namesake on Plex)", () => {
+    const xs = [
+      { id: "yt:UC1", name: "Nirvana" },
+      { id: "yt:UC2", name: "Nirvana" },
+      { id: "plex:1", name: "Nirvana" },
+    ];
+    expect(dedupeArtists(xs, [])).toBe(xs);
+    expect(dedupeArtists(xs, [["yt:other", "plex:9"]])).toEqual(xs);
+  });
+
+  it("keeps the first of each confirmed pair across providers and local files", () => {
+    const xs = [
+      { id: "yt:UC1", name: "Weezer" },
+      { id: "plex:9", name: "weezer" },
+      { id: "local-artist:Weezer", name: "Weezer" },
+      { id: "plex:2", name: "The Pixies" },
+      { id: "yt:UC2", name: "Pixies" },
+      { id: "yt:UC3", name: "Weezer Tribute" },
+    ];
+    const links: [string, string][] = [
+      ["local-artist:Weezer", "yt:UC1"],
+      ["local-artist:Weezer", "plex:9"],
+      ["yt:UC2", "plex:2"],
+    ];
+    expect(dedupeArtists(xs, links).map((a) => a.id)).toEqual(["yt:UC1", "plex:2", "yt:UC3"]);
+  });
+
+  it("asks about names another source also lists", () => {
+    const xs = [
+      { id: "yt:UC1", name: "Nirvana" },
+      { id: "yt:UC2", name: "Nirvana" },
+      { id: "yt:w", name: "Weezer" },
+      { id: "local-artist:Weezer", name: "WEEZER" },
+      { id: "plex:p", name: "The Pixies" },
+      { id: "yt:p", name: "Pixies" },
+    ];
+    expect(linkCandidates(xs)).toEqual(["yt:w", "local-artist:Weezer", "plex:p", "yt:p"]);
+  });
+
+  it("leaves artists to the list (search keeps every source's artists)", () => {
+    const yt = res({ artists: [{ id: "yt:w", name: "Weezer" }, { id: "yt:r", name: "Rivers Cuomo" }] });
+    const plex = res({ artists: [{ id: "plex:w", name: "Weezer" }, { id: "plex:p", name: "Pixies" }] });
+    const local = res({ artists: [{ id: "local-artist:Weezer", name: "WEEZER" }] });
+    const r = mergeSearch("we", { youtube: yt, plex, local });
+    expect(r.artists.map((a) => a.id)).toEqual(["plex:w", "yt:w", "plex:p", "yt:r", "local-artist:Weezer"]);
+  });
+});
+
 describe("mergeSearch", () => {
   it("keeps a single provider's answer as it is (its own Top result, its order)", () => {
     const yt = res({ top: album("yt:x", "Something else"), tracks: [track("yt:1", "One"), track("yt:2", "Two")], playlists: [pl("yt:PL1", "Mix")] });
@@ -67,6 +158,7 @@ describe("mergeSearch", () => {
     const plex = res({ top: artist("plex:a", "MUSE"), artists: [{ id: "plex:a", name: "MUSE" }] });
     const r = mergeSearch("muse", { youtube: yt, plex });
     expect(r.top).toBe(plex.top);
+    // One Muse: its page merges YouTube's.
     expect(r.artists.map((a) => a.id)).toEqual(["plex:a", "yt:a"]);
   });
 
@@ -82,6 +174,7 @@ describe("mergeSearch", () => {
     const r = mergeSearch("road", { youtube: yt, local });
     expect(r.tracks.map((t) => t.id)).toEqual(["yt:1", "local:1"]);
     expect(r.playlists.map((p) => p.id)).toEqual(["app:1", "yt:PL1"]);
+    // The local artist of the same name is on yt:a's page.
     expect(r.artists.map((a) => a.id)).toEqual(["yt:a", "local-artist:Road"]);
   });
 

@@ -1,8 +1,9 @@
+import { sourceOf } from "../store/providers";
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 import { api, artUrl, inTauri } from "../api";
-import { useT, type Key } from "../i18n";
+import { localError, useT, type Key } from "../i18n";
 import { displayText } from "../romaji";
 import { isMobileApp, useApp } from "../store/app";
 import { caps } from "../store/providers";
@@ -16,7 +17,6 @@ import { PROVIDERS } from "../types";
 import { useDisplayTrack } from "../store/songmeta";
 import { cls, isTouch, serviceLabel } from "../util";
 import { IMusic, IPlay } from "./Icons";
-import { SourceBadge } from "./SourceBadge";
 
 export const Art = memo(function Art({
   src,
@@ -102,6 +102,7 @@ export const Card = memo(function Card({
   return (
     <div
       className="card"
+      data-source={sourceOf(item.id) ?? undefined}
       role="button"
       tabIndex={0}
       onClick={() => openItem(item)}
@@ -124,7 +125,6 @@ export const Card = memo(function Card({
         {item.type === "artist" ? <ArtistName name={title} /> : <TitleText text={title} />}
       </div>
       <div className="card-sub">
-        <SourceBadge id={item.id} />
         <JpText text={itemSubtitle(item, t)} />
       </div>
     </div>
@@ -199,7 +199,7 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): { data: T | 
     setState((s) => ({ ...s, loading: true, error: null }));
     fn().then(
       (data) => my === tok.current && setState({ data, error: null, loading: false }),
-      (e) => my === tok.current && setState({ data: null, error: e?.message ?? String(e), loading: false }),
+      (e) => my === tok.current && setState({ data: null, error: localError(e), loading: false }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, n]);

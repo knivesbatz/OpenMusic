@@ -284,6 +284,8 @@ jobs:
           $exe = Join-Path $dir "$($conf.mainBinaryName).exe"
           $uninst = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
           $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          # A fresh CI user profile may not have the Run key yet.
+          if (!(Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
           $legacyVer = $env:LEGACY_TAG.TrimStart('v')
           $old = if ($env:FROM -eq 'ytspot') { @('YTSpot', 'PLEXSpot') } else { @('PLEXSpot') }
           function DataDir($n) { Join-Path $env:APPDATA "app.openmusic.$($n.ToLower())" }

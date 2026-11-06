@@ -1,6 +1,6 @@
 // Which services are on, what they can do and where an item comes from. Foundation for OpenSpot:
 // every "is this YouTube or Plex?" question goes through here instead of a per-app flavor.
-import type { Capabilities, Provider, Track } from "../types";
+import type { AuthAll, Capabilities, Provider, Track } from "../types";
 import { PROVIDERS } from "../types";
 import { useApp } from "./app";
 
@@ -45,9 +45,21 @@ export function signedIn(p: Provider): boolean {
  * without an account). */
 export const usable = (p: Provider) => isOn(p) && (p === "youtube" || signedIn("plex"));
 
-/** No provider can show anything although one is on (e.g. only Plex is on and its sign-in is
- * gone): the UI offers "Reconnect Plex" instead of an empty app. */
-export const needsReconnect = () => anyOn() && !PROVIDERS.some(usable);
+type ReconnectState = { services: Partial<Record<Provider, boolean>> | null; auth: AuthAll | null; localOnly?: boolean };
+
+/** No provider can show anything although one is on (e.g. only Plex is on and its sign-in or its
+ * server is gone): like PLEXSpot 1.6.1, the app opens on the Connect page (Plex's server list, or
+ * Sign in to Plex) instead of an empty app. Not before the sign-in state is known, and not after
+ * "local files only" was chosen. */
+export function reconnectNeeded(s: ReconnectState): boolean {
+  if (!s.auth || s.localOnly) return false;
+  const on = PROVIDERS.filter((p) => s.services?.[p]);
+  const plexReady = !!s.auth.plex?.signedIn && !s.auth.plex.needsServer;
+  return on.length > 0 && !on.some((p) => p === "youtube" || plexReady);
+}
+export const needsReconnect = () => reconnectNeeded(useApp.getState());
+/** needsReconnect(), re-rendering when it changes. */
+export const useNeedsReconnect = () => useApp(reconnectNeeded);
 
 /** The provider answered its last request (connection-changed / browser online events). */
 export const isOnline = (p: Provider) => useApp.getState().online?.[p] !== false;

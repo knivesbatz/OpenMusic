@@ -97,6 +97,10 @@ pub fn now() -> i64 {
 
 pub struct Db {
     pub conn: Connection,
+    /// Per provider (`Provider::index`): bumped by every [`Db::cache_clear_provider`] (sign-in,
+    /// sign-out, user/server/account switches), so a fetch that started before can skip writing
+    /// the previous account's data back (see [`Db::generation`]).
+    generation: [std::sync::atomic::AtomicU64; 2],
 }
 
 impl Db {
@@ -113,7 +117,7 @@ impl Db {
         conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;",
         )?;
-        let mut db = Db { conn };
+        let mut db = Db { conn, generation: Default::default() };
         db.migrate()?;
         Ok(db)
     }
@@ -182,6 +186,20 @@ impl Db {
         Ok(())
     }
 
+    /// Unexpired cache entries whose keys match the LIKE `pattern` and whose values read as `T`.
+    pub fn cache_like<T: DeserializeOwned>(&self, pattern: &str) -> Result<Vec<(String, T)>> {
+        let mut st = self.conn.prepare("SELECT key, value FROM cache WHERE key LIKE ?1 AND expires_at > ?2")?;
+        let rows = st.query_map(params![pattern, now()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (k, v) = row?;
+            if let Ok(x) = serde_json::from_str(&v) {
+                out.push((k, x));
+            }
+        }
+        Ok(out)
+    }
+
     pub fn cache_clear(&self) -> Result<()> {
         self.conn.execute("DELETE FROM cache", [])?;
         Ok(())
@@ -195,12 +213,26 @@ impl Db {
     /// Clear one provider's cached responses (keys `yt:…` / `plex:…`), and for Plex the cached
     /// library listing. The other provider's entries, translations and name aliases stay.
     pub fn cache_clear_provider(&self, p: crate::state::Provider) -> Result<()> {
+        self.generation[p.index()].fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // The prefixes hold no LIKE wildcards.
         self.conn.execute("DELETE FROM cache WHERE key LIKE ?1", [format!("{}%", p.cache_prefix())])?;
+        // What's New's "from artists you follow" mixes both providers' albums.
+        self.conn.execute("DELETE FROM cache WHERE key LIKE 'newreleases:followed:%'", [])?;
+        // Merged artist pages (`merged:artist:<id>|<other id>`) hold both providers' items.
+        self.conn.execute("DELETE FROM cache WHERE key LIKE 'merged:%'", [])?;
+        // Artist matches from this provider's ids (`plex:artistmatch:yt:UC1`) go with it too.
+        self.conn.execute("DELETE FROM cache WHERE key LIKE ?1", [format!("%artistmatch:{}%", p.cache_prefix())])?;
         if p == crate::state::Provider::Plex {
             self.kv_delete("plex.library")?;
         }
         Ok(())
+    }
+
+    /// How many times this provider's cache was cleared since the app started. A fetch reads it
+    /// before it starts and writes its result only while it is unchanged (read and write under
+    /// the same database lock).
+    pub fn generation(&self, p: crate::state::Provider) -> u64 {
+        self.generation[p.index()].load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Clear the cache except entries whose keys start with one of `keep`.
@@ -678,7 +710,12 @@ mod tests {
             db.cache_put(k, &1, 600).unwrap();
         }
         db.kv_set("plex.library", &("fp", 1)).unwrap();
+        db.cache_put("newreleases:followed:11", &1, 600).unwrap();
+        let (yt_gen, plex_gen) = (db.generation(crate::state::Provider::YouTube), db.generation(crate::state::Provider::Plex));
         db.cache_clear_provider(crate::state::Provider::Plex).unwrap();
+        assert_eq!(db.generation(crate::state::Provider::Plex), plex_gen + 1);
+        assert_eq!(db.generation(crate::state::Provider::YouTube), yt_gen);
+        assert!(db.cache_get::<i32>("newreleases:followed:11", true).unwrap().is_none(), "the mixed followed list goes too");
         assert!(db.cache_get::<i32>("plex:home", true).unwrap().is_none());
         assert!(db.cache_get::<i32>("plex:browsePage:plex-genre:1", true).unwrap().is_none());
         assert!(db.kv_get::<(String, i32)>("plex.library").unwrap().is_none(), "Plex's library listing goes too");
@@ -690,6 +727,27 @@ mod tests {
         }
         db.cache_delete("tr:ja:x").unwrap();
         assert!(db.cache_get::<i32>("tr:ja:x", true).unwrap().is_none());
+    }
+
+    #[test]
+    fn merged_artist_pages_go_with_either_provider() {
+        let db = Db::open_in_memory().unwrap();
+        for p in crate::state::Provider::ALL {
+            db.cache_put("merged:artist:yt:UC1|plex:9", &1, 600).unwrap();
+            db.cache_put("lyrics:local:1", &1, 600).unwrap();
+            db.cache_clear_provider(p).unwrap();
+            assert!(db.cache_get::<i32>("merged:artist:yt:UC1|plex:9", true).unwrap().is_none(), "{p:?}");
+            assert_eq!(db.cache_get::<i32>("lyrics:local:1", true).unwrap(), Some(1));
+        }
+        // An artist match goes with the provider of either id.
+        use crate::state::Provider;
+        for (p, key) in [(Provider::YouTube, "plex:artistmatch:yt:UC1"), (Provider::Plex, "yt:artistmatch:plex:9")] {
+            db.cache_put(key, &Some("x"), 600).unwrap();
+            db.cache_put("yt:artistmatch:local-artist:W", &Some("yt:UC1"), 600).unwrap();
+            db.cache_clear_provider(p).unwrap();
+            assert!(db.cache_get::<Option<String>>(key, true).unwrap().is_none(), "{key}");
+            assert_eq!(db.cache_like::<Option<String>>("yt:artistmatch:local-%").unwrap().len(), usize::from(p == Provider::Plex));
+        }
     }
 
     #[test]

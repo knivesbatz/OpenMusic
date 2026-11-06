@@ -65,7 +65,10 @@ interface Dialog {
   input?: { label: string; value: string };
   /** A pick-one list under the input, e.g. a playlist's visibility. */
   choice?: { label: string; value: string; options: { value: string; label: string }[] };
-  resolve: (ok: boolean, value?: string, choice?: string) => void;
+  /** The left-hand button's label ("Cancel" when left out). */
+  cancel?: string;
+  /** true: the right-hand button; false: the left-hand one; null: Escape or a click outside. */
+  resolve: (ok: boolean | null, value?: string, choice?: string) => void;
 }
 
 interface UiState {
@@ -174,7 +177,13 @@ export function openMenu(e: { clientX: number; clientY: number; preventDefault()
 export const closeMenu = () => useUi.setState({ menu: null });
 
 export function confirmDialog(opts: Omit<Dialog, "resolve" | "input">): Promise<boolean> {
-  return new Promise((resolve) => useUi.setState({ dialog: { ...opts, resolve: (ok) => resolve(ok) } }));
+  return new Promise((resolve) => useUi.setState({ dialog: { ...opts, resolve: (ok) => resolve(!!ok) } }));
+}
+
+/** Two named answers (Spotify's "Add anyway" / "Don't add"): true for the right-hand, highlighted
+ * button (`confirm`), false for the left-hand one (`cancel`), null for Escape or a click outside. */
+export function pickDialog(opts: Omit<Dialog, "resolve" | "input" | "choice" | "danger"> & { cancel: string }): Promise<boolean | null> {
+  return new Promise((resolve) => useUi.setState({ dialog: { ...opts, resolve } }));
 }
 
 export function promptDialog(opts: Omit<Dialog, "resolve">): Promise<string | null> {

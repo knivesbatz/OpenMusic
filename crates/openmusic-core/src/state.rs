@@ -74,7 +74,7 @@ impl Provider {
         }
     }
 
-    fn index(self) -> usize {
+    pub(crate) fn index(self) -> usize {
         match self {
             Provider::YouTube => 0,
             Provider::Plex => 1,

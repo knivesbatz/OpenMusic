@@ -18,7 +18,7 @@ use crate::db::PlayContext;
 use crate::error::{Error, Result};
 use crate::model::*;
 use crate::state::{item_key, AppState, Provider, Services};
-use crate::{art, downloads, lastfm, local, lyrics, plex, ytm};
+use crate::{art, artist_merge, downloads, lastfm, local, lyrics, plex, ytm};
 
 type S<'a> = State<'a, Arc<AppState>>;
 
@@ -330,9 +330,13 @@ pub async fn plex_reconnect(app: &AppHandle, state: &AppState) -> Result<()> {
             emit_connection(app, Provider::Plex, true);
             Ok(())
         }
+        // Only an unreachable server is "offline"; a refused token is a sign-in problem.
         Err(e) => {
-            state.mark_offline(Provider::Plex);
-            emit_connection(app, Provider::Plex, false);
+            match &e {
+                Error::Offline(_) if state.mark_offline(Provider::Plex) => emit_connection(app, Provider::Plex, false),
+                Error::AuthExpired(_) => emit_for(app, "auth-expired", Provider::Plex),
+                _ => {}
+            }
             Err(e)
         }
     }
@@ -868,9 +872,11 @@ where
     }
     let (a, st) = (app.clone(), state.clone());
     let task = async move { fetch_recovering(&a, &st, p, &fetch).await };
-    let a = app.clone();
+    let (a, st) = (app.clone(), state.clone());
+    let gen = state.db().generation(p);
     let late = move |r: Result<T>| {
-        if let (Ok(_), Some(event)) = (r, late_event) {
+        // Not after a sign-out or account switch: that result belongs to the previous account.
+        if let (Ok(_), Some(event), true) = (r, late_event, st.db().generation(p) == gen) {
             emit_for(&a, event, p);
         }
     };
@@ -881,6 +887,17 @@ where
         Some(Err(e)) => failed(ProviderError::of(p, &e)),
         None => failed(ProviderError { provider: p, code: "timeout".into(), message: format!("{} is taking too long", p.label()) }),
     }
+}
+
+/// Write a fetch's result only while the provider's account is the one the fetch started with
+/// (`gen` from [`Db::generation`] before the fetch): a sign-out or account switch since then
+/// cleared the cache, and the previous account's data must not come back.
+fn put_current(st: &AppState, p: Provider, gen: u64, write: impl FnOnce(&crate::db::Db) -> Result<()>) -> Result<()> {
+    let db = st.db();
+    if db.generation(p) == gen {
+        write(&db)?;
+    }
+    Ok(())
 }
 
 /// Merge parts in order: `add` takes each value; returns whether any was stale and the errors.
@@ -1079,7 +1096,9 @@ fn provider_of(state: &AppState, id: &str) -> Result<Provider> {
     Ok(p)
 }
 
-/// Add local files by the same artist name to a provider artist page.
+/// Add local files by the same artist name to a provider artist page (`local_tracks` /
+/// `local_albums`, listed apart), as in 1.6.1. Every artist page that isn't merged across sources
+/// gets its local files this way, and so do What's New and artist cards.
 fn with_local(state: &AppState, mut page: ArtistPage) -> Result<ArtistPage> {
     if let Some(name) = page.artist.as_ref().map(|a| a.name.clone()).filter(|n| !n.trim().is_empty()) {
         let db = state.db();
@@ -1089,9 +1108,338 @@ fn with_local(state: &AppState, mut page: ArtistPage) -> Result<ArtistPage> {
     Ok(page)
 }
 
+/// Local files by every local artist whose name is `name` after normalizing ([`artist_merge::artist_key`]:
+/// "Beatles" is "The Beatles"), each once.
+fn local_by_key(db: &crate::db::Db, name: &str) -> Result<(Vec<Track>, Vec<Album>)> {
+    let key = artist_merge::artist_key(name);
+    let mut names = vec![name.trim().to_lowercase()];
+    for a in local::artists(db)? {
+        let n = a.name.trim().to_lowercase();
+        if artist_merge::artist_key(&a.name) == key && !names.contains(&n) {
+            names.push(n);
+        }
+    }
+    let (mut tracks, mut albums): (Vec<Track>, Vec<Album>) = (Vec::new(), Vec::new());
+    for n in &names {
+        for t in local::tracks_by_artist_name(db, n)? {
+            if !tracks.iter().any(|x| x.id == t.id) {
+                tracks.push(t);
+            }
+        }
+        for a in local::albums_by_artist_name(db, n)? {
+            if !albums.iter().any(|x| x.id == a.id) {
+                albums.push(a);
+            }
+        }
+    }
+    Ok((tracks, albums))
+}
+
+/// A merged page's local files (both services on only): a local copy of a song or release already
+/// on the page takes its place (see [`artist_merge::add_local`]); the rest are listed apart.
+fn with_local_merged(state: &AppState, page: ArtistPage) -> Result<ArtistPage> {
+    match page.artist.as_ref().map(|a| a.name.clone()).filter(|n| !artist_merge::artist_key(n).is_empty()) {
+        Some(name) => {
+            let (tracks, albums) = local_by_key(&state.db(), &name)?;
+            Ok(artist_merge::add_local(page, tracks, albums))
+        }
+        None => with_local(state, page),
+    }
+}
+
+/// Artists are merged across sources (one Weezer page for YouTube Music, Plex and local files, one
+/// card per artist in lists) only while both YouTube Music and Plex are on. With one service on,
+/// artist pages and lists are exactly as in 1.6.1: no extra search, local files listed apart.
+pub(crate) fn merging(state: &AppState) -> bool {
+    Provider::ALL.into_iter().all(|p| state.on(p))
+}
+
+/// An artist page; with both services on, the same artist from the other sources is merged in.
 #[tauri::command]
 pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPage> {
-    artist_page(&app, &state, &id).await
+    if merging(&state) {
+        merged_artist(&app, state.inner(), &id).await
+    } else {
+        artist_page(&app, &state, &id).await
+    }
+}
+
+/// How long an artist page waits for the other provider's copy of the artist. Past it the page
+/// shows without it; the fetch still finishes and is cached for the next visit.
+const MERGE_WAIT: Duration = Duration::from_secs(6);
+
+/// How long a match (or "no match") between two sources' artists is kept.
+const MATCH_TTL: i64 = 6 * 3600;
+
+/// Cache key of a merged artist page: both providers' ids. `Db::cache_clear_provider` clears
+/// every `merged:` entry, so either provider's clear drops it.
+fn merged_key(id: &str, other_id: &str) -> String {
+    format!("merged:artist:{id}|{other_id}")
+}
+
+/// The artist page of `id` merged with the artist of the same (normalized, exact) name on the
+/// other providers (both on): the other provider for a provider id, both for a local artist (Plex
+/// first). The primary page leads; see [`artist_merge::merge_pages`]. Only called while
+/// [`merging`].
+pub(crate) async fn merged_artist(app: &AppHandle, state: &Arc<AppState>, id: &str) -> Result<ArtistPage> {
+    let primary = Provider::of_id(id);
+    let mut page = match primary {
+        None => artist_page(app, state, id).await?,
+        Some(_) => provider_artist(app, state, id).await?,
+    };
+    let Some(name) = page.artist.as_ref().map(|a| a.name.clone()).filter(|n| !artist_merge::artist_key(n).is_empty()) else {
+        return finish_artist(state, primary, page);
+    };
+    let mut others: Vec<Provider> = Provider::ALL.into_iter().filter(|o| Some(*o) != primary && state.on(*o)).collect();
+    others.sort_by_key(|o| *o != Provider::Plex);
+    // One other provider: the merged page may be cached already (the match is, from before).
+    let single = match (primary, others.as_slice()) {
+        (Some(p), [o]) => Some((p, *o)),
+        _ => None,
+    };
+    if let Some(c) = cached_merge(state, single.map(|(_, o)| o), id)? {
+        return Ok(c);
+    }
+    let gens = single.map(|(p, o)| {
+        let db = state.db();
+        (db.generation(p), db.generation(o))
+    });
+    let mut merged_with = None;
+    // Asked together (a local artist's page asks both providers); merged in `others`' order.
+    let found = futures_util::future::join_all(others.iter().map(|o| counterpart(app, state, *o, id, &name, &page))).await;
+    for (oid, other) in found.into_iter().flatten() {
+        page = artist_merge::merge_pages(page, other);
+        merged_with = Some(oid);
+    }
+    if let (Some((p, o)), Some((g1, g2)), Some(oid)) = (single, gens, merged_with) {
+        let db = state.db();
+        if db.generation(p) == g1 && db.generation(o) == g2 {
+            db.cache_put(&merged_key(id, &oid), &page, 6 * 3600)?;
+        }
+    }
+    finish_artist(state, primary, page)
+}
+
+/// The merged page of provider artist `id` with its match on provider `other`, from the cache
+/// (local files added), when both are cached.
+fn cached_merge(state: &AppState, other: Option<Provider>, id: &str) -> Result<Option<ArtistPage>> {
+    let Some(o) = other else { return Ok(None) };
+    // Each lookup is its own statement: the database lock must be released before
+    // `with_local_merged` takes it again (a guard in an `if let` scrutinee lives through the block).
+    let matched = linked(&state.db(), o, id);
+    let Some(oid) = matched else { return Ok(None) };
+    let hit = state.db().cache_get::<ArtistPage>(&merged_key(id, &oid), false)?;
+    match hit {
+        Some(c) => with_local_merged(state, c).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Provider pages get local files added; a local artist's page has them already.
+fn finish_artist(state: &AppState, primary: Option<Provider>, page: ArtistPage) -> Result<ArtistPage> {
+    match primary {
+        Some(_) => with_local_merged(state, page),
+        None => Ok(page),
+    }
+}
+
+/// Cache key of "which artist on provider `o` is the one of `id`": the matched id once confirmed
+/// (same name and a shared song or release), or null for no match. Only confirmed matches are
+/// written, so these entries are the links [`artist_links`] answers from.
+fn match_key(o: Provider, id: &str) -> String {
+    o.key(&format!("artistmatch:{id}"))
+}
+
+/// Confirmed matches from the cache, as id pairs (unexpired, "no match" left out).
+fn confirmed_links(db: &crate::db::Db) -> Vec<(String, String)> {
+    Provider::ALL
+        .into_iter()
+        .flat_map(|o| db.cache_like::<Option<String>>(&match_key(o, "%")).unwrap_or_default())
+        .filter_map(|(k, v)| Some((k.split_once("artistmatch:")?.1.to_string(), v?)))
+        .collect()
+}
+
+/// The ids linked to one another by confirmed matches, directly or through a third (YouTube's
+/// Weezer and Plex's are both the local Weezer's). A group with two artists of one provider is
+/// left out: which of the two is meant can't be told.
+fn link_groups(db: &crate::db::Db) -> Vec<Vec<String>> {
+    let mut groups: Vec<Vec<String>> = Vec::new();
+    for (a, b) in confirmed_links(db) {
+        let ia = groups.iter().position(|g| g.contains(&a));
+        let ib = groups.iter().position(|g| g.contains(&b));
+        match (ia, ib) {
+            (Some(i), Some(j)) if i != j => {
+                let moved = groups.remove(j.max(i));
+                groups[j.min(i)].extend(moved);
+            }
+            (Some(_), Some(_)) => {}
+            (Some(i), None) => groups[i].push(b),
+            (None, Some(j)) => groups[j].push(a),
+            (None, None) => groups.push(vec![a, b]),
+        }
+    }
+    groups.retain(|g| Provider::ALL.into_iter().all(|p| g.iter().filter(|x| Provider::of_id(x) == Some(p)).count() <= 1));
+    groups
+}
+
+/// The artist on provider `o` that a confirmed match links to `id`, if any.
+fn linked(db: &crate::db::Db, o: Provider, id: &str) -> Option<String> {
+    let groups = link_groups(db);
+    let g = groups.iter().find(|g| g.iter().any(|x| x == id))?;
+    g.iter().find(|x| Provider::of_id(x) == Some(o)).cloned()
+}
+
+/// Pairs of `ids` that are the same artist, from confirmed matches in the cache only (nothing is
+/// fetched): each pair is the first of its group in `ids` and another.
+fn links_among(db: &crate::db::Db, ids: &[String]) -> Vec<[String; 2]> {
+    let mut out = Vec::new();
+    for g in link_groups(db) {
+        let mut present: Vec<&String> = Vec::new();
+        for id in ids.iter().filter(|i| g.contains(i)) {
+            if !present.contains(&id) {
+                present.push(id);
+            }
+        }
+        if let Some((first, rest)) = present.split_first() {
+            out.extend(rest.iter().map(|r| [(*first).clone(), (*r).clone()]));
+        }
+    }
+    out
+}
+
+/// Which of these artists (in a list on screen) are the same artist, as pairs: only matches
+/// confirmed before (an artist page visit or [`artist_link_check`]); answered from the cache.
+/// Nothing while one service is off (lists are as in 1.6.1).
+#[tauri::command]
+pub async fn artist_links(state: S<'_>, ids: Vec<String>) -> Result<Vec<[String; 2]>> {
+    Ok(artist_links_for(&state, &ids))
+}
+
+fn artist_links_for(state: &AppState, ids: &[String]) -> Vec<[String; 2]> {
+    if !merging(state) {
+        return Vec::new();
+    }
+    links_among(&state.db(), ids)
+}
+
+/// At most this many artists are checked per [`artist_link_check`] call.
+const LINK_CHECK_MAX: usize = 20;
+
+/// Artists being checked now (a list shown twice doesn't check them twice at once).
+static LINK_CHECKS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// Find out in the background whether artists in a list (up to 20; the UI passes only names more
+/// than one source lists) are the same artist on the other sources, so the list can show each
+/// once. One at a time, each answer cached for 6 hours; emits `artist-links-changed` when a new
+/// match was confirmed. Does nothing while one service is off.
+#[tauri::command]
+pub async fn artist_link_check(app: AppHandle, state: S<'_>, ids: Vec<String>) -> Result<()> {
+    let st = state.inner().clone();
+    if !merging(&st) {
+        return Ok(());
+    }
+    let ids: Vec<String> = ids.into_iter().filter(|i| i.starts_with("yt:") || i.starts_with("plex:") || i.starts_with("local-artist:")).take(LINK_CHECK_MAX).collect();
+    tauri::async_runtime::spawn(async move {
+        let mut changed = false;
+        for id in ids {
+            if !merging(&st) {
+                break;
+            }
+            {
+                let mut busy = LINK_CHECKS.lock().unwrap_or_else(|e| e.into_inner());
+                if busy.contains(&id) {
+                    continue;
+                }
+                busy.push(id.clone());
+            }
+            changed |= check_links(&app, &st, &id).await;
+            LINK_CHECKS.lock().unwrap_or_else(|e| e.into_inner()).retain(|x| *x != id);
+        }
+        if changed {
+            let _ = app.emit("artist-links-changed", ());
+        }
+    });
+    Ok(())
+}
+
+/// Whether provider `o`'s artist for `id` is known already: linked, or "no match" cached.
+fn match_known(db: &crate::db::Db, o: Provider, id: &str) -> bool {
+    linked(db, o, id).is_some() || db.cache_get::<Option<String>>(&match_key(o, id), false).ok().flatten().is_some()
+}
+
+/// Look for `id`'s artist on each other provider not answered yet; true when one was confirmed.
+async fn check_links(app: &AppHandle, st: &Arc<AppState>, id: &str) -> bool {
+    let primary = Provider::of_id(id);
+    let todo: Vec<Provider> = {
+        let db = st.db();
+        Provider::ALL.into_iter().filter(|o| Some(*o) != primary && !match_known(&db, *o, id)).collect()
+    };
+    if todo.is_empty() {
+        return false;
+    }
+    let page = match primary {
+        None => artist_page(app, st, id).await,
+        Some(_) => provider_artist(app, st, id).await,
+    };
+    let Some(name) = page.as_ref().ok().and_then(|p| p.artist.as_ref()).map(|a| a.name.clone()) else { return false };
+    let page = page.unwrap_or_default();
+    let mut found = false;
+    for o in todo {
+        found |= find_match(app, st, o, id, &name, &page).await.is_some();
+    }
+    found
+}
+
+/// [`find_match`], waited for up to [`MERGE_WAIT`] (it still finishes and is cached afterwards).
+async fn counterpart(app: &AppHandle, state: &Arc<AppState>, o: Provider, id: &str, name: &str, page: &ArtistPage) -> Option<(String, ArtistPage)> {
+    let (a, st, id, name, mine) = (app.clone(), state.clone(), id.to_string(), name.to_string(), page.clone());
+    let work = async move { find_match(&a, &st, o, &id, &name, &mine).await };
+    detached(MERGE_WAIT, work, |_| {}).await.flatten()
+}
+
+/// The artist on provider `o` that is the artist of `id` (whose page is `mine`), with its page: a
+/// match confirmed before (see [`linked`]), or else the one artist of exactly this name in `o`'s
+/// search (see [`artist_merge::find_artist`]) that shares a song or release with `mine` (Japan's
+/// Ghost is not Sweden's, see [`artist_merge::corroborated`]). The answer, "no match" included,
+/// is cached for 6 hours. Any failure means no match (and nothing cached).
+async fn find_match(app: &AppHandle, st: &Arc<AppState>, o: Provider, id: &str, name: &str, mine: &ArtistPage) -> Option<(String, ArtistPage)> {
+    let key = match_key(o, id);
+    let known = {
+        let db = st.db();
+        match linked(&db, o, id) {
+            Some(oid) => Some(Some(oid)),
+            None => db.cache_get::<Option<String>>(&key, false).ok().flatten(),
+        }
+    };
+    let offline_without = |oid: &str| st.is_offline(o) && st.db().cache_get::<ArtistPage>(&item_key("artist", oid), false).ok().flatten().is_none();
+    match known {
+        Some(Some(oid)) => {
+            if offline_without(&oid) {
+                return None;
+            }
+            let page = provider_artist(app, st, &oid).await.ok()?;
+            return Some((oid, page));
+        }
+        Some(None) => return None,
+        None if st.is_offline(o) => return None,
+        None => {}
+    }
+    let gen = st.db().generation(o);
+    // YouTube's general search lists few artists; its artist filter lists more.
+    let kind = (o == Provider::YouTube).then_some("artists");
+    let res = provider_search(app, st, o, name, kind).await.ok()?;
+    let top = match &res.top {
+        Some(MediaItem::Artist(x)) => Some(x),
+        _ => None,
+    };
+    let Some(oid) = artist_merge::find_artist(top.into_iter().chain(&res.artists), name).map(|x| x.id.clone()) else {
+        let _ = put_current(st, o, gen, |db| db.cache_put(&key, &None::<String>, MATCH_TTL));
+        return None;
+    };
+    let page = provider_artist(app, st, &oid).await.ok()?;
+    let same = artist_merge::corroborated(mine, &page);
+    let _ = put_current(st, o, gen, |db| db.cache_put(&key, &same.then(|| oid.clone()), MATCH_TTL));
+    same.then_some((oid, page))
 }
 
 pub(crate) async fn artist_page(app: &AppHandle, state: &AppState, id: &str) -> Result<ArtistPage> {
@@ -1107,12 +1455,20 @@ pub(crate) async fn artist_page(app: &AppHandle, state: &AppState, id: &str) -> 
             ..Default::default()
         });
     }
+    let page = provider_artist(app, state, id).await?;
+    with_local(state, page)
+}
+
+/// A provider's artist page as the provider has it (no local files, nothing merged), cached for
+/// 6 hours.
+async fn provider_artist(app: &AppHandle, state: &AppState, id: &str) -> Result<ArtistPage> {
     let p = provider_of(state, id)?;
     let key = item_key("artist", id);
     let cached = state.db().cache_get::<ArtistPage>(&key, false)?;
     if let Some(page) = cached {
-        return with_local(state, page);
+        return Ok(page);
     }
+    let gen = state.db().generation(p);
     let page = match p {
         Provider::Plex => {
             let sess = state.plex_session().await?;
@@ -1120,8 +1476,8 @@ pub(crate) async fn artist_page(app: &AppHandle, state: &AppState, id: &str) -> 
         }
         Provider::YouTube => yt_call!(app, state, |y| y.artist(id))?,
     };
-    state.db().cache_put(&key, &page, 6 * 3600)?;
-    with_local(state, page)
+    put_current(state, p, gen, |db| db.cache_put(&key, &page, 6 * 3600))?;
+    Ok(page)
 }
 
 /// Recent albums and singles from these artists (released this year or last), newest first.
@@ -1196,15 +1552,16 @@ pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result
         let fetch = move |app: AppHandle, st: Arc<AppState>| {
             let key = k.clone();
             async move {
+                let gen = st.db().generation(p);
                 let shelves = match p {
                     Provider::Plex => {
                         let sess = st.plex_session().await?;
                         let mut shelves = Vec::new();
-                        let latest = st.plex.latest_releases(&sess).await;
+                        let latest = st.plex.latest_releases(&sess).await?;
                         if !latest.is_empty() {
                             shelves.push(Shelf { title: "latestReleases".into(), subtitle: None, items: latest.into_iter().map(MediaItem::Album).collect() });
                         }
-                        let added = st.plex.recently_added(&sess).await;
+                        let added = st.plex.recently_added(&sess).await?;
                         if !added.is_empty() {
                             shelves.push(Shelf { title: "recentlyAdded".into(), subtitle: None, items: added.into_iter().map(MediaItem::Album).collect() });
                         }
@@ -1215,7 +1572,7 @@ pub async fn new_releases(app: AppHandle, state: S<'_>, refresh: bool) -> Result
                         yt_call!(app, st, |y| y.new_releases())?
                     }
                 };
-                st.db().cache_put(&key, &shelves, 3600)?;
+                put_current(&st, p, gen, |db| db.cache_put(&key, &shelves, 3600))?;
                 Ok(shelves)
             }
         };
@@ -1303,15 +1660,17 @@ async fn library_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refre
                 }
             }
             let fetch = |app: AppHandle, st: Arc<AppState>| async move {
+                let gen = st.db().generation(Provider::YouTube);
                 st.yt_account().await?;
                 let l = yt_call!(app, st, |y| y.library())?;
-                st.db().cache_put("yt:library", &l, 15 * 60)?;
+                put_current(&st, Provider::YouTube, gen, |db| db.cache_put("yt:library", &l, 15 * 60))?;
                 Ok(l)
             };
             provider_part(app, state, p, WAIT_LONG, Some("library-changed"), fetch, |st| st.db().cache_get("yt:library", true).ok().flatten()).await
         }
         Provider::Plex => {
             let fetch = move |_app: AppHandle, st: Arc<AppState>| async move {
+                let gen = st.db().generation(Provider::Plex);
                 let sess = st.plex_session().await?;
                 // Incremental sync: reuse the cached library while the server's content
                 // fingerprint is unchanged.
@@ -1322,7 +1681,7 @@ async fn library_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refre
                     _ => {
                         let lib = st.plex.library(&sess).await?;
                         if let Some(fp) = fp {
-                            st.db().kv_set("plex.library", &(fp, &lib))?;
+                            put_current(&st, Provider::Plex, gen, |db| db.kv_set("plex.library", &(fp, &lib)))?;
                         }
                         lib
                     }
@@ -2149,8 +2508,8 @@ pub fn htpc_autostart_set(_app: AppHandle, _enabled: bool) -> Result<()> {
 /// tracks. Cached under `<provider>:liked`; `rate` drops it.
 async fn liked_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh: bool) -> Option<Part<Vec<Track>>> {
     let key = p.key("liked");
-    if !refresh && state.on(p) {
-        if let Some(t) = state.db().cache_get::<Vec<Track>>(&key, false).ok().flatten() {
+    if !refresh {
+        if let Some(t) = liked_cached(state, p) {
             return Some(Part { value: t, stale: false, error: None });
         }
     }
@@ -2158,10 +2517,13 @@ async fn liked_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh
     let fetch = move |app: AppHandle, st: Arc<AppState>| {
         let key = k.clone();
         async move {
+            let gen = st.db().generation(p);
             let tracks = match p {
                 Provider::Plex => {
                     let sess = st.plex_session().await?;
-                    st.plex.liked_tracks(&sess).await
+                    // Fallible: an outage is an error (stale cache shown, reconnect tried), never
+                    // an empty list cached for 15 minutes.
+                    st.plex.liked_tracks(&sess).await?
                 }
                 Provider::YouTube => {
                     st.yt_account().await?;
@@ -2169,11 +2531,19 @@ async fn liked_part(app: &AppHandle, state: &Arc<AppState>, p: Provider, refresh
                     yt_call!(app, st, |y| y.playlist("yt:LM"))?.tracks
                 }
             };
-            st.db().cache_put(&key, &tracks, 15 * 60)?;
+            put_current(&st, p, gen, |db| db.cache_put(&key, &tracks, 15 * 60))?;
             Ok(tracks)
         }
     };
     provider_part(app, state, p, WAIT_LONG, Some("liked-changed"), fetch, move |st| st.db().cache_get(&key, true).ok().flatten()).await
+}
+
+/// A provider's fresh cached liked songs (`<provider>:liked`), while its switch is on.
+fn liked_cached(state: &AppState, p: Provider) -> Option<Vec<Track>> {
+    if !state.on(p) {
+        return None;
+    }
+    state.db().cache_get::<Vec<Track>>(&p.key("liked"), false).ok().flatten()
 }
 
 /// Liked Songs from every provider that is on: YouTube's first (newest like first), then Plex's.
@@ -2200,9 +2570,12 @@ pub async fn liked_tracks(app: AppHandle, state: S<'_>, refresh: bool) -> Result
 }
 
 /// Track ids the user has liked on the providers that are on, so the UI can show the like state.
+/// Served from the `<provider>:liked` cache (`rate` drops it): the UI calls this on every
+/// `liked-changed`, which a late fetch emits after filling that cache, so refetching here would
+/// start the same slow fetch again and again.
 #[tauri::command]
 pub async fn liked_ids(app: AppHandle, state: S<'_>) -> Result<Vec<String>> {
-    Ok(liked_merged(&app, state.inner(), true).await.tracks.into_iter().map(|t| t.id).collect())
+    Ok(liked_merged(&app, state.inner(), false).await.tracks.into_iter().map(|t| t.id).collect())
 }
 
 // ---- saved albums / artists ("Your Library") -----------------------------------------------
@@ -2443,7 +2816,14 @@ pub async fn browse_art(app: AppHandle, state: S<'_>, id: String) -> Result<Opti
 pub async fn profile_info(app: AppHandle, state: S<'_>) -> Result<ProfileInfo> {
     let yt_err = match state.yt_account().await {
         Ok(_) => match yt_call!(app, state, |y| y.profile()) {
-            Ok(p) => return Ok(p),
+            Ok(mut p) => {
+                // Playlists hidden in the app stay hidden on the profile too.
+                if let Some(pls) = p.public_playlists.as_mut() {
+                    let hidden = state.db().hidden_playlists()?;
+                    pls.retain(|pl| !hidden.contains(&pl.id));
+                }
+                return Ok(p);
+            }
             Err(e) => e,
         },
         Err(e) => e,
@@ -2944,6 +3324,142 @@ mod tests {
         assert!(matches!(error_of(expired), Error::AuthExpired(Some(Provider::YouTube))));
     }
 
+    fn switches(state: &AppState, youtube: bool, plex: bool) {
+        *state.services.write().unwrap() = Services { youtube, plex };
+    }
+
+    /// A Weezer page from YouTube with "Buddy Holly" and a 2026 album "Blue", and the same song
+    /// and album (no year) as local files.
+    fn weezer_with_local_copies() -> (AppState, ArtistPage) {
+        let state = crate::state::test_state();
+        state
+            .db()
+            .conn
+            .execute(
+                "INSERT INTO local_tracks(id,path,folder,mtime,size,title,artist,album,album_artist,missing) VALUES('local:1','/m/1.mp3','f',0,0,'Buddy Holly','Weezer','Blue',NULL,0)",
+                [],
+            )
+            .unwrap();
+        let yt = |id: &str, title: &str| -> Track { serde_json::from_value(json!({ "id": id, "source": "youtube", "title": title, "artist": "Weezer" })).unwrap() };
+        let page = ArtistPage {
+            artist: Some(Artist { id: "yt:UC1".into(), name: "Weezer".into(), artwork: None }),
+            top_tracks: vec![yt("yt:a", "Buddy Holly"), yt("yt:b", "Say It Ain't So")],
+            albums: vec![Album { id: "yt:A".into(), title: "Blue".into(), artist: "Weezer".into(), artist_id: None, year: Some(2026), artwork: None, kind: None }],
+            ..Default::default()
+        };
+        (state, page)
+    }
+
+    fn ids_of<T>(xs: &[T], id: impl Fn(&T) -> &str) -> Vec<String> {
+        xs.iter().map(|x| id(x).to_string()).collect()
+    }
+
+    #[test]
+    fn with_one_service_on_local_files_are_listed_apart_as_in_1_6_1() {
+        let (state, page) = weezer_with_local_copies();
+        for (youtube, plex) in [(true, false), (false, true), (false, false)] {
+            switches(&state, youtube, plex);
+            assert!(!merging(&state), "no merging with one service on");
+            let p = with_local(&state, page.clone()).unwrap();
+            assert_eq!(ids_of(&p.top_tracks, |t| &t.id), ["yt:a", "yt:b"], "the YouTube song stays");
+            assert_eq!(ids_of(&p.albums, |a| &a.id), ["yt:A"]);
+            assert_eq!(ids_of(&p.local_tracks, |t| &t.id), ["local:1"], "the local copy is listed apart");
+            assert_eq!(p.local_albums.len(), 1);
+            assert!(artist_links_for(&state, &["yt:UC1".into(), "local-artist:Weezer".into()]).is_empty());
+        }
+        // Both on: the merged page plays the local copy in the YouTube song's place.
+        switches(&state, true, true);
+        assert!(merging(&state));
+        let p = with_local_merged(&state, page).unwrap();
+        assert_eq!(ids_of(&p.top_tracks, |t| &t.id), ["local:1", "yt:b"]);
+        assert!(p.local_tracks.is_empty());
+    }
+
+    #[test]
+    fn whats_new_uses_the_plain_artist_page() {
+        let (state, page) = weezer_with_local_copies();
+        switches(&state, true, true);
+        // followed_releases reads artist_page, which adds local files apart (with_local): the
+        // YouTube album stays, even with both services on.
+        let plain = with_local(&state, page.clone()).unwrap();
+        assert_eq!(ids_of(&recent_releases(vec![plain], 2026), |a| &a.id), ["yt:A"]);
+        // The merged page would have swapped in the local album (no year): the release would be lost.
+        let merged = with_local_merged(&state, page).unwrap();
+        assert!(recent_releases(vec![merged], 2026).is_empty());
+        // And neither path reaches the merge: artist_page and followed_releases stay plain.
+        let src = include_str!("commands.rs");
+        let body = |from: &str, to: &str| {
+            let start = src.find(from).unwrap();
+            &src[start..start + src[start..].find(to).unwrap()]
+        };
+        for f in [body("async fn followed_releases(", "\n}\n"), body("pub(crate) async fn artist_page(", "\n}\n"), body("async fn artist_card(", "\n}\n")] {
+            assert!(f.contains("artist_page(") || f.contains("with_local(state, page)"), "{f}");
+            assert!(!f.contains("merged") && !f.contains("add_local"), "{f}");
+        }
+    }
+
+    #[test]
+    fn artist_links_come_from_confirmed_matches_in_the_cache_only() {
+        let state = crate::state::test_state();
+        switches(&state, true, true);
+        {
+            let db = state.db();
+            let put = |o: Provider, id: &str, v: Option<&str>, ttl: i64| db.cache_put(&match_key(o, id), &v.map(String::from), ttl).unwrap();
+            // YouTube's Weezer is Plex's; the local Weezer is YouTube's (so Plex's too).
+            put(Provider::Plex, "yt:UC1", Some("plex:9"), 600);
+            put(Provider::YouTube, "local-artist:Weezer", Some("yt:UC1"), 600);
+            // Ghost: no match (a namesake). Expired: not known any more.
+            put(Provider::Plex, "yt:G", None, 600);
+            put(Provider::Plex, "yt:X", Some("plex:X"), -1);
+            // Two YouTube artists on one Plex artist: can't tell which, so neither.
+            put(Provider::Plex, "yt:N1", Some("plex:N"), 600);
+            put(Provider::Plex, "yt:N2", Some("plex:N"), 600);
+        }
+        let ids: Vec<String> = ["plex:9", "yt:UC1", "local-artist:Weezer", "yt:G", "plex:G", "yt:X", "plex:X", "yt:N1", "yt:N2", "plex:N", "plex:9"].map(String::from).into();
+        assert_eq!(
+            artist_links_for(&state, &ids),
+            [["plex:9".to_string(), "yt:UC1".to_string()], ["plex:9".to_string(), "local-artist:Weezer".to_string()]]
+        );
+        // Only ids on the list are paired; an artist on its own has nothing.
+        assert!(artist_links_for(&state, &["yt:UC1".into()]).is_empty());
+        assert_eq!(artist_links_for(&state, &["local-artist:Weezer".into(), "plex:9".into()]), [["local-artist:Weezer".to_string(), "plex:9".to_string()]]);
+        let db = state.db();
+        assert_eq!(linked(&db, Provider::Plex, "local-artist:Weezer").as_deref(), Some("plex:9"), "through YouTube's");
+        assert_eq!(linked(&db, Provider::YouTube, "plex:9").as_deref(), Some("yt:UC1"), "either direction");
+        assert!(linked(&db, Provider::Plex, "yt:G").is_none() && match_known(&db, Provider::Plex, "yt:G"), "no match is known");
+        assert!(!match_known(&db, Provider::Plex, "yt:X"), "expired");
+        assert!(linked(&db, Provider::YouTube, "plex:N").is_none());
+        drop(db);
+        switches(&state, true, false);
+        assert!(artist_links_for(&state, &ids).is_empty(), "one service on: nothing is linked");
+    }
+
+    #[test]
+    fn a_cached_merged_artist_page_comes_back_without_locking_up() {
+        // with_local takes the database lock again: the lookup must not still hold it.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let state = crate::state::test_state();
+            let id = "yt:UC1";
+            assert!(cached_merge(&state, Some(Provider::Plex), id).unwrap().is_none(), "nothing cached yet");
+            assert!(cached_merge(&state, None, id).unwrap().is_none());
+            {
+                let db = state.db();
+                db.cache_put(&match_key(Provider::Plex, id), &Some("plex:9".to_string()), 600).unwrap();
+                let page = ArtistPage { artist: Some(Artist { id: id.into(), name: "Weezer".into(), artwork: None }), ..Default::default() };
+                db.cache_put(&merged_key(id, "plex:9"), &page, 600).unwrap();
+            }
+            let got = cached_merge(&state, Some(Provider::Plex), id).unwrap().map(|p| p.artist.unwrap().id);
+            // "No match" cached: nothing merged to show.
+            state.db().cache_put(&match_key(Provider::Plex, "yt:UC2"), &None::<String>, 600).unwrap();
+            let none = cached_merge(&state, Some(Provider::Plex), "yt:UC2").unwrap().is_none();
+            tx.send((got, none)).unwrap();
+        });
+        let (got, none) = rx.recv_timeout(Duration::from_secs(10)).expect("cached_merge deadlocked on the database lock");
+        assert_eq!(got.as_deref(), Some("yt:UC1"));
+        assert!(none);
+    }
+
     #[tokio::test]
     async fn detached_work_finishes_after_the_caller_stops_waiting() {
         let fast = detached(Duration::from_secs(5), async { 1 }, |_| {}).await;
@@ -2960,6 +3476,35 @@ mod tests {
         .await;
         assert_eq!(slow, None, "the caller gave up");
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), 2, "the result still arrives");
+    }
+
+    #[test]
+    fn writes_skip_after_an_account_change() {
+        let st = crate::state::test_state();
+        let gen = st.db().generation(Provider::Plex);
+        put_current(&st, Provider::Plex, gen, |db| db.cache_put("plex:liked", &1, 600)).unwrap();
+        assert_eq!(st.db().cache_get::<i32>("plex:liked", false).unwrap(), Some(1));
+        // A Home user switch while the fetch ran: its result is not written back.
+        st.db().cache_clear_provider(Provider::Plex).unwrap();
+        put_current(&st, Provider::Plex, gen, |db| db.cache_put("plex:liked", &2, 600)).unwrap();
+        assert_eq!(st.db().cache_get::<i32>("plex:liked", true).unwrap(), None);
+        // YouTube's fetches are not affected by a Plex change.
+        let yt = st.db().generation(Provider::YouTube);
+        put_current(&st, Provider::YouTube, yt, |db| db.cache_put("yt:liked", &3, 600)).unwrap();
+        assert_eq!(st.db().cache_get::<i32>("yt:liked", false).unwrap(), Some(3));
+    }
+
+    #[test]
+    fn liked_ids_are_served_from_the_cache() {
+        // liked_ids reads with refresh=false: what a late fetch just cached ends the
+        // liked-changed -> liked_ids round, instead of starting the same fetch again.
+        let st = crate::state::test_state();
+        let tracks: Vec<Track> = serde_json::from_value(json!([{ "id": "yt:a", "source": "youtube", "title": "a", "artist": "A" }])).unwrap();
+        st.db().cache_put("yt:liked", &tracks, 600).unwrap();
+        assert!(liked_cached(&st, Provider::YouTube).is_none(), "switch off: nothing");
+        st.services.write().unwrap().youtube = true;
+        assert_eq!(liked_cached(&st, Provider::YouTube).unwrap()[0].id, "yt:a");
+        assert!(liked_cached(&st, Provider::Plex).is_none());
     }
 
     #[test]

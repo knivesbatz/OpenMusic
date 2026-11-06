@@ -120,6 +120,10 @@ export const api = {
   searchKind: (query: string, kind: string, provider?: T.Provider | null) =>
     call<T.SearchResults>("search_kind", { query, kind, provider: provider ?? null }),
   artist: (id: string) => call<T.ArtistPage>("artist", { id }),
+  /** Pairs of these artists confirmed to be the same artist (cache only; none unless both services are on). */
+  artistLinks: (ids: string[]) => call<[string, string][]>("artist_links", { ids }),
+  /** Check in the background whether these artists match across sources (emits artist-links-changed). */
+  artistLinkCheck: (ids: string[]) => call<void>("artist_link_check", { ids }),
   album: (id: string) => call<T.AlbumPage>("album", { id }),
   playlist: (id: string) => call<T.PlaylistPage>("playlist", { id }),
   library: (refresh: boolean) => call<T.Library>("library", { refresh }).then(noteParts),

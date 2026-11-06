@@ -1,23 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- OpenSpot app icon: an open ring around a play triangle on a violet-to-coral tile. -->
-  <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#5B4BFF"/>
-      <stop offset="0.55" stop-color="#A63EE8"/>
-      <stop offset="1" stop-color="#FF6A6A"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="0.3" cy="0.22" r="0.75">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#tile)"/>
-  <rect x="32" y="32" width="960" height="960" rx="224" fill="url(#glow)"/>
-  <!-- Open ring: 300° of a circle, the gap at the upper right. -->
-  <circle cx="512" cy="512" r="296" fill="none" stroke="#FFFFFF" stroke-width="66"
-          stroke-linecap="round" stroke-dasharray="1520 340" transform="rotate(-20 512 512)"/>
-  <!-- A dot in the gap. -->
-  <circle cx="690" cy="276" r="40" fill="#FFFFFF"/>
-  <!-- Play triangle with rounded corners. -->
-  <path d="M452 392 L648 512 L452 632 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="44" stroke-linejoin="round"/>
+  <!-- OpenSpot app icon: YTSpot's green branding (dark tile, green disc, play triangle). -->
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="#191414"/>
+  <circle cx="512" cy="512" r="330" fill="#1DB954"/>
+  <path d="M440 372 L680 512 L440 652 Z" fill="#191414"/>
 </svg>

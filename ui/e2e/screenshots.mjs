@@ -34,7 +34,7 @@ async function open({ youtube = false, phone = false } = {}) {
 }
 const shot = (page, name) => page.screenshot({ path: `${outDir}/${name}.png` });
 
-// Desktop (Windows) — PLEXSpot.
+// Desktop (Windows) — both services on (YouTube Music and Plex).
 let page = await open();
 await shot(page, "home");
 await page.click('button[aria-label="Queue"]');
@@ -68,7 +68,7 @@ await page.waitForTimeout(1200);
 await shot(page, "fullscreen");
 await page.close();
 
-// Desktop (Windows) — YTSpot: the classic library categories, including Podcasts.
+// Desktop (Windows) — YouTube Music only: the classic library categories, including Podcasts.
 page = await open({ youtube: true });
 await page.click('.playerbar button[aria-label="Add to playlist"]');
 await page.waitForSelector(".savedin .si-row");
@@ -81,7 +81,7 @@ await page.waitForTimeout(600);
 await shot(page, "library");
 await page.close();
 
-// Phone (Android) — YTSpot library (Music / Podcasts), PLEXSpot home and song screen.
+// Phone (Android) — YouTube Music library (Music / Podcasts), then both services: home and song screen.
 page = await open({ youtube: true, phone: true });
 await page.click('.mobile-tabs button:has-text("Your Library")');
 await page.waitForSelector(".lib-row");

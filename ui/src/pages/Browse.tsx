@@ -1,7 +1,7 @@
 // Home, Search and the Library grid.
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { albumMenu, artistMenu, likedSongsAvailable, playlistMenu, podcastMenu, providerOfId, trackMenu, usableProvider, visibleId } from "../actions";
-import { api, artUrl, errorCode, errorMessage, inTauri } from "../api";
+import { albumMenu, artistMenu, likedSongsAvailable, playlistMenu, podcastMenu, providerOfId, trackMenu, usableProvider, usableProviders, visibleId } from "../actions";
+import { api, artUrl, errorCode, inTauri } from "../api";
 import {
   Art,
   Card,
@@ -19,13 +19,12 @@ import {
   usePhoneLayout,
   useProvidersKey,
 } from "../components/common";
-import { SourceBadge } from "../components/SourceBadge";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
-import { shelfTitle, translate, useT } from "../i18n";
+import { localError, shelfTitle, translate, useT } from "../i18n";
 import * as P from "../player/engine";
 import { refreshLibrary, useApp } from "../store/app";
-import { capsOf, useBothOn, useOn } from "../store/providers";
+import { capsOf, sourceOf, useBothOn, useOn } from "../store/providers";
 import { useMe } from "../store/profile";
 import { sortAlbums, sortArtists } from "../store/librarySort";
 import { setSort, setView, useFolders } from "../store/folders";
@@ -34,7 +33,8 @@ import { confirmDialog, navigate, openMenu, toast, useUi, type LibraryTab } from
 import { useDisplayTrack } from "../store/songmeta";
 import type { BrowseCategory, HistoryEntry, HomeData, Library, MediaItem, PlayContext, Playlist, Provider, ProviderError, SearchResults, Track } from "../types";
 import { PROVIDERS } from "../types";
-import { emptyResults, isEmptyResults, mergeSearch, partErrors, type SearchParts } from "../searchMerge";
+import { useArtistLinks, useLinkRequest } from "../store/artistLinks";
+import { dedupeArtists, emptyResults, isEmptyResults, mergeSearch, partErrors, type SearchParts } from "../searchMerge";
 import { cls, isYtLiked, serviceLabel } from "../util";
 
 /** Play any card: tracks play directly, collections are fetched first. */
@@ -58,7 +58,7 @@ export async function playItem(item: MediaItem) {
       return P.playTracks(a.topTracks, 0, { kind: "artist", id: item.id, title: a.artist?.name ?? item.name, artwork: a.artist?.artwork });
     }
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -108,7 +108,7 @@ export function Home() {
         homeCache.data = partErrors(d).length ? null : d;
         setData(d);
       },
-      (e) => setError(errorMessage(e)),
+      (e) => setError(localError(e)),
     );
   };
   // Again when a service is switched on or off, or signs in or out.
@@ -140,7 +140,10 @@ export function Home() {
   // Songs of a service that is off are left out (they can't play).
   const recent = (data?.recent ?? []).filter((x) => visibleId(x.id));
   const topTracks = (data?.topTracks ?? []).filter((x) => visibleId(x.id));
-  const topArtists = (lib?.artists ?? []).filter((a) => visibleId(a.id));
+  const links = useArtistLinks((s) => s.links);
+  const libArtists = (lib?.artists ?? []).filter((a) => visibleId(a.id));
+  useLinkRequest(libArtists);
+  const topArtists = dedupeArtists(libArtists, links);
 
   if (!data && !error) return <Loading />;
 
@@ -346,7 +349,7 @@ function useSearch(query: string, kind: SFilter | null, enabled: boolean): Searc
         (kind ? api.searchKind(query, kind, provider) : api.search(query, provider))
           .then(
             (r) => void (parts[src] = r),
-            (e) => void failed.push({ source: src, code: errorCode(e) ?? "network", message: errorMessage(e) }),
+            (e) => void failed.push({ source: src, code: errorCode(e) ?? "network", message: localError(e, provider ?? undefined) }),
           )
           .finally(() => {
             left--;
@@ -376,7 +379,11 @@ function useMerged(query: string, s: SearchState | null): { res: SearchResults |
     if (!s) return { res: null, errors: [], failure: null };
     const errors = providerErrors(s);
     const arrived = Object.keys(s.parts).length > 0;
-    const res = arrived ? mergeSearch(query, s.parts, errors) : null;
+    // Local files and app playlists come back from SQLite at once; they never stand alone while a
+    // service is still on its way (the spinner, or the last results, stay up as with one service).
+    const providerArrived = s.providers.some((p) => p in s.parts);
+    const providersDone = s.providers.every((p) => p in s.parts || s.failed.some((f) => f.source === p));
+    const res = arrived && (providerArrived || providersDone) ? mergeSearch(query, s.parts, errors) : null;
     const allFailed = s.providers.length > 0 && s.providers.every((p) => s.failed.some((f) => f.source === p));
     const nothing = !res || isEmptyResults(res);
     const failure = s.pending === 0 && (allFailed || (!arrived && s.failed.length > 0)) && nothing ? s.failed[0]?.message ?? null : null;
@@ -395,6 +402,9 @@ export function Search({ q }: { q: string }) {
   const full = useMerged(query, kind);
   // While a new query is on its way, the last results stay on screen.
   const last = useRef<SearchResults | null>(null);
+  const links = useArtistLinks((s) => s.links);
+  useLinkRequest(overview.res?.artists);
+  useLinkRequest(full.res?.artists);
   if (overview.res) last.current = overview.res;
   if (!query) last.current = null;
   const loading = !all || all.pending > 0;
@@ -431,12 +441,11 @@ export function Search({ q }: { q: string }) {
             {r.top && (
               <section className="top-result">
                 <h2>{t("topResult")}</h2>
-                <div className="top-card" role="button" tabIndex={0} onClick={() => openItem(r.top!)} onKeyDown={(e) => e.key === "Enter" && openItem(r.top!)} onContextMenu={(e) => cardMenu(e, r.top!)}>
+                <div className="top-card" data-source={sourceOf(r.top.id) ?? undefined} role="button" tabIndex={0} onClick={() => openItem(r.top!)} onKeyDown={(e) => e.key === "Enter" && openItem(r.top!)} onContextMenu={(e) => cardMenu(e, r.top!)}>
                   <Art src={r.top.artwork} size={240} round={r.top.type === "artist"} className="lg" />
                   <div className="top-name">{r.top.type === "artist" ? r.top.name : r.top.title}</div>
                   <div className="muted">
                     <span className="badge-pill">{t(r.top.type === "track" ? "song" : r.top.type)}</span>
-                    <SourceBadge id={r.top.id} after />
                   </div>
                   <PlayFab big label={t("play")} onClick={(e) => (e.stopPropagation(), playItem(r.top!))} />
                 </div>
@@ -449,7 +458,7 @@ export function Search({ q }: { q: string }) {
               </section>
             )}
           </div>
-          <CardShelf title={t("artists")} items={r.artists.map((a) => ({ type: "artist" as const, ...a }))} />
+          <CardShelf title={t("artists")} items={dedupeArtists(r.artists, links).map((a) => ({ type: "artist" as const, ...a }))} />
           <CardShelf title={t("albums")} items={r.albums.map((a) => ({ type: "album" as const, ...a }))} />
           <CardShelf title={t("playlists")} items={r.playlists.map((a) => ({ type: "playlist" as const, ...a }))} />
           <CardShelf title={t("podcasts")} items={r.podcasts.map((a) => ({ type: "podcast" as const, ...a }))} />
@@ -464,7 +473,7 @@ export function Search({ q }: { q: string }) {
       {filter !== "all" && kindLoading && fr === r && <p className="muted small">{t("loadingMore")}</p>}
       {fr && filter === "songs" && <TrackList tracks={fr.tracks} context={ctx} />}
       {fr && filter === "episodes" && <TrackList tracks={fr.episodes} context={ctx} showAlbum={false} />}
-      {fr && filter === "artists" && <Grid items={fr.artists.map((a) => ({ type: "artist" as const, ...a }))} />}
+      {fr && filter === "artists" && <Grid items={dedupeArtists(fr.artists, links).map((a) => ({ type: "artist" as const, ...a }))} />}
       {fr && filter === "albums" && <Grid items={fr.albums.map((a) => ({ type: "album" as const, ...a }))} />}
       {fr && filter === "playlists" && <Grid items={fr.playlists.map((a) => ({ type: "playlist" as const, ...a }))} />}
       {fr && filter === "podcasts" && <Grid items={fr.podcasts.map((a) => ({ type: "podcast" as const, ...a }))} />}
@@ -506,6 +515,15 @@ const TILE_COLORS = ["#dc148c", "#006450", "#8400e7", "#1e3264", "#e8115b", "#47
 const tileColor = (title: string) => TILE_COLORS[[...title].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % TILE_COLORS.length];
 
 const categoryCache: { list: BrowseCategory[] | null } = { list: null };
+
+/** Keeps a Browse all list for the session only when every service asked gave its part: a list
+ * missing one service (it timed out or was unreachable) is shown but asked for again next visit,
+ * so that service's genres come back once it answers (the core caches each part on its own). */
+function keepCategories(list: BrowseCategory[]): BrowseCategory[] {
+  const complete = usableProviders().every((p) => list.some((c) => providerOfId(c.id) === p));
+  categoryCache.list = complete ? list : null;
+  return list;
+}
 const tileArt = new Map<string, string | null>();
 
 /** Search with nothing typed: Spotify's "Browse all": the provider's genres, moods and sections
@@ -528,8 +546,8 @@ function BrowseEmpty() {
     setCats(null);
     setError(null);
     api.browseCategories(false).then(
-      (l) => setCats((categoryCache.list = l)),
-      (e) => setError(errorMessage(e)),
+      (l) => setCats(keepCategories(l)),
+      (e) => setError(localError(e)),
     );
   }, [usable, services]);
   const liked = likedSongsAvailable();
@@ -553,7 +571,7 @@ function BrowseEmpty() {
   // One group per service (YouTube Music's sections, moods and genres; Plex's genres), titled only
   // while both are on.
   const groups = PROVIDERS.map((p) => ({ p, list: (cats ?? []).filter((c) => providerOfId(c.id) === p) })).filter((g) => g.list.length > 0);
-  const retry = () => (setError(null), api.browseCategories(true).then((l) => setCats((categoryCache.list = l)), (e) => setError(errorMessage(e))));
+  const retry = () => (setError(null), api.browseCategories(true).then((l) => setCats(keepCategories(l)), (e) => setError(localError(e))));
   return (
     <div className="page browse-page">
       <h1>{t("browseAll")}</h1>
@@ -682,12 +700,14 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
   const [q, setQ] = useState("");
   const albumSort = useSettings((s) => s.albumSort);
   const artistSort = useSettings((s) => s.artistSort);
+  const links = useArtistLinks((s) => s.links);
   useAsync(() => refreshLibrary(false), []);
+  useLinkRequest(libraryCollections(lib, pls, saved, []).artists);
   const cur: LibraryTab = tab ?? "playlists";
   if (cur === "recent") return <RecentPage />;
   if (!lib && err) return <ErrorBox message={err} onRetry={() => refreshLibrary(true)} />;
 
-  const c = libraryCollections(lib, pls, saved);
+  const c = libraryCollections(lib, pls, saved, links);
   const items: MediaItem[] =
     cur === "playlists"
       ? c.playlists.map((p) => ({ type: "playlist" as const, ...p }))
@@ -737,16 +757,17 @@ export function LibraryPage({ tab }: { tab?: LibraryTab }) {
  * - playlists: the app's, then the services' (YouTube's Liked Music is Liked Songs instead);
  * - albums and artists: the ones saved in the app, plus YouTube Music's library (the account's
  *   own collection). Plex's library is the whole server, so its albums and artists count only
- *   once saved;
+ *   once saved. An artist saved from several sources is listed once once the backend confirms it is one artist;
  * - podcasts: followed in the app and YouTube's.
  */
-function libraryCollections(lib: Library | null, appPls: Playlist[], saved: SavedState) {
+function libraryCollections(lib: Library | null, appPls: Playlist[], saved: SavedState, links: [string, string][]) {
   const yt = <T extends { id: string }>(xs: T[] | undefined) => (xs ?? []).filter((x) => providerOfId(x.id) === "youtube");
   const shown = <T extends { id: string }>(xs: T[]) => xs.filter((x) => visibleId(x.id));
   return {
     playlists: shown(dedupe([...appPls, ...(lib?.playlists ?? [])])).filter((p) => !isYtLiked(p.id)),
     albums: shown(dedupe([...saved.albums, ...yt(lib?.albums)])),
-    artists: shown(dedupe([...saved.artists, ...yt(lib?.artists)])),
+    // Once per artist (confirmed links): the page of the one kept merges the other sources' copies.
+    artists: dedupeArtists(shown(dedupe([...saved.artists, ...yt(lib?.artists)])), links),
     podcasts: shown(dedupe([...saved.podcasts, ...(lib?.podcasts ?? [])])),
   };
 }
@@ -904,14 +925,13 @@ function LibrarySortButton({ tab }: { tab: "albums" | "artists" }) {
 
 function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; pin?: boolean; badgeId?: string; onClick: () => void; onContext?: (e: React.MouseEvent) => void }) {
   return (
-    <div className="lib-row" role="button" tabIndex={0} onClick={p.onClick} onKeyDown={(e) => e.key === "Enter" && p.onClick()} onContextMenu={p.onContext}>
+    <div className="lib-row" data-source={sourceOf(p.badgeId) ?? undefined} role="button" tabIndex={0} onClick={p.onClick} onKeyDown={(e) => e.key === "Enter" && p.onClick()} onContextMenu={p.onContext}>
       {p.icon}
       <div className="lib-row-text">
         <span className="name">{p.title}</span>
         {p.sub && (
           <span className="sub">
             {p.pin && <I.IPin size={14} className="lib-pin" />}
-            <SourceBadge id={p.badgeId} />
             {p.sub}
           </span>
         )}
@@ -973,7 +993,7 @@ export function HistoryPage() {
           setMore(page.length === HISTORY_PAGE);
         },
         (e) => {
-          toast(errorMessage(e));
+          toast(localError(e));
           setEntries((cur) => cur ?? []);
         },
       )
@@ -986,11 +1006,11 @@ export function HistoryPage() {
   const tracks = entries.map((e) => e.track);
   const remove = (indexes: number[]) => {
     const ids = new Set(indexes.map((i) => entries[i].id));
-    api.historyRemove([...ids]).then(() => setEntries((cur) => (cur ?? []).filter((e) => !ids.has(e.id))), (e) => toast(errorMessage(e)));
+    api.historyRemove([...ids]).then(() => setEntries((cur) => (cur ?? []).filter((e) => !ids.has(e.id))), (e) => toast(localError(e)));
   };
   const clear = async () => {
     if (!(await confirmDialog({ title: t("clearHistory"), body: t("clearHistoryBody"), confirm: t("clearHistory") }))) return;
-    api.historyClear().then(() => (setEntries([]), setMore(false)), (e) => toast(errorMessage(e)));
+    api.historyClear().then(() => (setEntries([]), setMore(false)), (e) => toast(localError(e)));
   };
   return (
     <div className="page history">

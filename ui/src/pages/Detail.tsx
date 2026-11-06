@@ -1,12 +1,12 @@
 // Artist, album and playlist pages.
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { albumMenu, canChangeCover, changeCover, downloadTracks, likedMenu, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
-import { api, artUrl, errorMessage, inTauri } from "../api";
+import { albumMenu, canChangeCover, changeCover, downloadTracks, likedMenu, likesOn, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
+import { api, artUrl, inTauri } from "../api";
 import { Art, ArtistName, ErrorBox, Loading, PlayFab, ProviderNotes, TitleText, useAsync, usePageTitle, usePhoneLayout, useProvidersKey } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
-import { useT } from "../i18n";
+import { localError, useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
@@ -18,7 +18,7 @@ import { useMe } from "../store/profile";
 import { navigate, openMenu, toast } from "../store/ui";
 import type { Album, Artist, PlayContext, Track } from "../types";
 import { partErrors } from "../searchMerge";
-import { cls, fmtTime, totalDuration } from "../util";
+import { cls, FIND_EVENT, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
 
 export function Hero({
@@ -137,6 +137,23 @@ function PhoneFindBar({ id, tracks, value, onChange }: { id: string; tracks: Tra
       </button>
     </div>
   );
+}
+
+/** F / Ctrl+F (App.tsx) opens this page's "Search in playlist" box and puts the cursor in it. */
+function useFindShortcut(setFind: (f: (v: string | null) => string | null) => void) {
+  useEffect(() => {
+    const on = (e: Event) => {
+      e.preventDefault();
+      setFind((v) => v ?? "");
+      setTimeout(() => {
+        const input = document.querySelector<HTMLInputElement>(".pl-find input, .pl-findfield input");
+        input?.focus();
+        input?.select();
+      });
+    };
+    addEventListener(FIND_EVENT, on);
+    return () => removeEventListener(FIND_EVENT, on);
+  }, [setFind]);
 }
 
 /** Spotify's search-in-playlist: an icon that opens a filter box. */
@@ -305,7 +322,9 @@ export function ArtistPage({ id }: { id: string }) {
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const name = data.artist?.name ?? "";
-  // Local files by this artist blend into Popular and the discography (no separate section).
+  // Local files by this artist blend into Popular and the discography (no separate section). Local
+  // copies of songs and releases already on the page took their place in the core
+  // (artist_merge::add_local), so these are only the others.
   const localTracks = data.localTracks ?? [];
   const popular = [...data.topTracks.slice(0, 5), ...localTracks, ...data.topTracks.slice(5)];
   // Albums, singles and compilations each newest first, like Spotify.
@@ -410,6 +429,7 @@ export function PlaylistPage({ id }: { id: string }) {
   const sort = usePlaylistSort(id);
   const compact = useSettings((s) => s.compactTracks);
   const [find, setFind] = useState<string | null>(null);
+  useFindShortcut(setFind);
   const rows = useMemo(() => {
     const sorted = sortTracks(data?.tracks ?? [], sort);
     const q = (find ?? "").trim().toLowerCase();
@@ -437,7 +457,7 @@ export function PlaylistPage({ id }: { id: string }) {
       reload();
       refreshPlaylists();
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
     setBusy(false);
   }
@@ -646,9 +666,20 @@ export function EpisodesPage() {
   );
 }
 
-/** Liked Songs: the songs you liked on YouTube Music and the tracks you rated on Plex, on one
- * page. Laid out like a playlist (Find in playlist, Sort, the pinned bar). */
+/** Liked Songs. When YouTube Music is the only service that keeps likes, it is YouTube's own
+ * Liked Music playlist on the playlist page, exactly as in YTSpot 1.6.1 (its cover and colour
+ * wash, owner, menu, sort and find). With Plex ratings too, both lists on one page. */
 export function LikedPage() {
+  useProvidersKey();
+  return likesOn("youtube") && !likesOn("plex") ? <PlaylistPage id={YT_LIKED} /> : <MergedLikedPage />;
+}
+
+/** YouTube Music's liked songs playlist ("Liked Music"). */
+const YT_LIKED = "yt:LM";
+
+/** The songs you liked on YouTube Music and the tracks you rated on Plex, on one page. Laid out
+ * like a playlist (Find in playlist, Sort, the pinned bar). */
+function MergedLikedPage() {
   const t = useT();
   const phone = usePhoneLayout();
   const me = useMe();
@@ -669,6 +700,7 @@ export function LikedPage() {
   const sort = usePlaylistSort("liked");
   const compact = useSettings((s) => s.compactTracks);
   const [find, setFind] = useState<string | null>(null);
+  useFindShortcut(setFind);
   const rows = useMemo(() => {
     const sorted = sortTracks(tracks, sort);
     const q = (find ?? "").trim().toLowerCase();

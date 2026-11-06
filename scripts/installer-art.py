@@ -30,9 +30,9 @@ def finish(im, w, h):
 def sidebar(app, name, tagline):
     w, h = 164, 314
     im = Image.new("RGB", (w * S, h * S), "#121212")
-    top = (124, 77, 255)
+    top = (29, 185, 84)
     px = im.load()
-    # The icon's violet fading into the dark background.
+    # Brand green fading into the dark background (as YTSpot).
     for y in range(h * S):
         t = min(1.0, y / (h * S * 0.62))
         t = t * t * (3 - 2 * t)

@@ -11,8 +11,7 @@ import type { Playlist } from "../types";
 import { cls, isTouch, isYtLiked } from "../util";
 import { Art, useCaps, useHasDownloads, useProvidersKey } from "./common";
 import * as I from "./Icons";
-import { SourceBadge } from "./SourceBadge";
-import { useOn } from "../store/providers";
+import { sourceOf, useOn } from "../store/providers";
 
 type Entry = { k: "playlist"; v: Playlist; depth?: number; folderId?: string } | { k: "folder"; v: Folder };
 type Category = { key: string; label: string; route: Route; icon: React.ReactNode };
@@ -300,6 +299,7 @@ function SideItem(p: {
 }) {
   return (
     <div
+      data-source={sourceOf(p.badgeId) ?? undefined}
       className={cls("side-item", p.active && "active", !!p.depth && !p.collapsed && "nested", p.dropMode && "drop-" + p.dropMode)}
       title={p.collapsed || p.view === "compactGrid" ? p.title : undefined}
       role="button"
@@ -321,7 +321,6 @@ function SideItem(p: {
           <span className="name">{p.title}</span>
           {/* Compact (Spotify): "Road trip • Playlist" on one line. */}
           <span className="sub">
-            <SourceBadge id={p.badgeId} />
             {p.view === "compact" ? `• ${p.sub.split(" • ")[0]}` : p.sub}
           </span>
         </div>

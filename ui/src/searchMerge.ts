@@ -8,8 +8,73 @@
 //   files);
 // - local files follow the providers' songs, albums and artists; app playlists come first among
 //   the playlists, as before.
-// There is no de-duplication across providers.
-import type { MediaItem, ProviderError, SearchResults } from "./types";
+// - artists the backend confirmed to be one artist are shown once where the list is drawn
+//   (dedupeArtists + store/artistLinks.ts); the page of the one kept merges the others.
+import type { Artist, MediaItem, ProviderError, SearchResults } from "./types";
+
+const FOLD: Record<string, string> = { æ: "ae", œ: "oe", ø: "o", ß: "ss", ł: "l", đ: "d", ð: "d", þ: "th", ı: "i", "&": " and " };
+
+/** An artist name for matching across sources, as Rust's `artist_merge::artist_key`: case,
+ * diacritics and punctuation ignored, a leading "The" optional. Empty when nothing is left. */
+export function artistKey(name: string): string {
+  const f = name
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFC")
+    .replace(/[æœøßłđðþı&]/g, (c) => FOLD[c])
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, " ")
+    .trim();
+  const rest = f.startsWith("the ") ? f.slice(4) : "";
+  return rest || f;
+}
+
+export const artistSource = (id: string) => (id.startsWith("plex:") ? "plex" : id.startsWith("yt:") ? "youtube" : "local");
+
+/**
+ * One entry per artist across sources: of two artists the backend confirmed to be the same one
+ * (`links`, from `artist_links`: same name and a shared song or release), the later is dropped,
+ * since the page of the one kept merges it. Nothing is dropped on a name alone (YouTube's two
+ * Nirvanas stay), and with no links (one service on) the list is unchanged.
+ */
+export function dedupeArtists<T extends Pick<Artist, "id">>(xs: T[], links: readonly (readonly [string, string])[]): T[] {
+  if (!links.length) return xs;
+  // Union the linked ids; each group keeps its first artist in the list.
+  const parent = new Map<string, string>();
+  const root = (x: string): string => {
+    let r = x;
+    while (parent.has(r) && parent.get(r) !== r) r = parent.get(r)!;
+    return r;
+  };
+  for (const [a, b] of links) {
+    const ra = root(a);
+    const rb = root(b);
+    if (ra !== rb) parent.set(rb, ra);
+  }
+  const linked = new Set(links.flat());
+  const kept = new Set<string>();
+  const drop = new Set<string>();
+  for (const a of xs) {
+    if (!linked.has(a.id)) continue;
+    const g = root(a.id);
+    if (kept.has(g)) drop.add(a.id);
+    else kept.add(g);
+  }
+  return drop.size ? xs.filter((a) => !drop.has(a.id)) : xs;
+}
+
+/** Artists worth asking the backend about: those whose name (artistKey) another source also
+ * lists here. Up to 20. */
+export function linkCandidates<T extends Pick<Artist, "id" | "name">>(xs: T[]): string[] {
+  const srcs = new Map<string, Set<string>>();
+  for (const a of xs) {
+    const k = artistKey(a.name);
+    if (!k) continue;
+    if (!srcs.has(k)) srcs.set(k, new Set());
+    srcs.get(k)!.add(artistSource(a.id));
+  }
+  return xs.filter((a) => (srcs.get(artistKey(a.name))?.size ?? 0) > 1).map((a) => a.id).slice(0, 20);
+}
 
 /** The parts of one search: a provider's answer, or local files + app playlists ("local"). */
 export interface SearchParts {

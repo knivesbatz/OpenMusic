@@ -2,17 +2,18 @@
 // fullscreen, cards) offers the same behavior.
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
-import { api, errorMessage, inTauri } from "./api";
-import { translate, type Key } from "./i18n";
+import { api, inTauri } from "./api";
+import { localError, translate, type Key } from "./i18n";
 import * as P from "./player/engine";
 import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
 import { loadProfile, openExternal, useProfile } from "./store/profile";
 import { capsOf, isOn, sourceOf } from "./store/providers";
 import { useSettings } from "./store/settings";
-import { confirmDialog, formDialog, navigate, promptDialog, toast, useUi, type MenuHead, type MenuItem } from "./store/ui";
+import { confirmDialog, formDialog, navigate, pickDialog, promptDialog, toast, useUi, type MenuHead, type MenuItem } from "./store/ui";
 import type { Album, Artist, Playlist, Podcast, Provider, Track, YtPrivacy } from "./types";
 import { PROVIDERS } from "./types";
 import { serviceLabel } from "./util";
+import { duplicatesIn, uniqueSongs } from "./duplicates";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 import * as I from "./components/Icons";
 import { displayTrack } from "./store/songmeta";
@@ -71,7 +72,7 @@ export async function signOutOf(p: Provider) {
   try {
     await api.signOut(p);
   } catch (e) {
-    return toast(errorMessage(e));
+    return toast(localError(e));
   }
   await api.kvSet(p === "plex" ? "plex.profileChosen" : "yt.profileChosen", false).catch(() => {});
   useProfile.setState({ info: null });
@@ -95,17 +96,49 @@ export async function createPlaylist(tracks: Track[] = []): Promise<Playlist | n
     if (tracks.length) toast(t("addedToPlaylist", { name }));
     return pl;
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
     return null;
   }
 }
 
-export async function addToPlaylist(pl: Playlist, tracks: Track[]) {
+// ---- duplicates (Spotify's "Already added") -----------------------------------------------------
+
+/**
+ * Before songs go into a playlist (app or YouTube): when it holds some of them already, ask like
+ * Spotify ("Already added": Add anyway / Don't add; some of them: Add all / Add new ones).
+ * Returns the songs to add (each once: repeats within `tracks` are dropped), [] for none. Asks nothing when none of them is there (or when the
+ * playlist can't be read: the add goes ahead as asked).
+ */
+export async function skipDuplicates(playlistId: string, name: string, tracks: Track[]): Promise<Track[]> {
+  // A song twice in the batch (or its YouTube and Plex copies side by side) goes in once.
+  tracks = uniqueSongs(tracks);
+  if (!tracks.length) return tracks;
+  let existing: Track[];
   try {
-    await api.plAdd(pl.id, tracks);
+    existing = (await api.playlist(playlistId)).tracks;
+  } catch {
+    return tracks;
+  }
+  const dups = new Set(duplicatesIn(existing, tracks));
+  if (!dups.size) return tracks;
+  if (dups.size === tracks.length) {
+    const body = t(tracks.length === 1 ? "alreadyInPlaylistOne" : "alreadyInPlaylistAll", { name });
+    const pick = await pickDialog({ title: t("alreadyAdded"), body, cancel: t("addAnyway"), confirm: t("dontAdd") });
+    return pick === false ? tracks : [];
+  }
+  const pick = await pickDialog({ title: t("someAlreadyAdded"), body: t("alreadyInPlaylistSome", { name }), cancel: t("addAllAnyway"), confirm: t("addNewOnes") });
+  if (pick === null) return [];
+  return pick ? tracks.filter((x) => !dups.has(x)) : tracks;
+}
+
+export async function addToPlaylist(pl: Playlist, tracks: Track[]) {
+  const todo = await skipDuplicates(pl.id, pl.title, tracks);
+  if (!todo.length) return;
+  try {
+    await api.plAdd(pl.id, todo);
     toast(t("addedToPlaylist", { name: pl.title }));
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -132,7 +165,7 @@ export async function toggleLike(track: Track) {
     toast(on ? t("like") : t("unlike"));
   } catch (e) {
     useApp.setState({ liked });
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -207,7 +240,7 @@ export async function downloadTracks(tracks: Track[]) {
     const n = await api.downloadTracks(eligible);
     toast(t("downloadStarted", { n }));
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -217,7 +250,7 @@ export async function startRadio(track: Track) {
     if (!tracks.length) return toast(t("empty"));
     P.playTracks([track, ...tracks.filter((x) => x.id !== track.id)], 0, { kind: "radio", id: track.id, title: track.title, artwork: track.artwork });
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -375,7 +408,7 @@ export function changeCover(pl: Playlist, onDone?: () => void) {
       await setCover(pl, Array.from(new Uint8Array(await blob.arrayBuffer())));
       onDone?.();
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
   };
   input.click();
@@ -387,7 +420,7 @@ async function setCover(pl: Playlist, image: number[] | null) {
     refreshPlaylists();
     toast(t(image ? "coverChanged" : "coverRemoved"));
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -496,7 +529,7 @@ export async function copyToYouTube(pl: Playlist) {
     const body = r.missing.length ? `${t("ytCopiedSome", { n: r.added, total: r.added + r.missing.length })}\n\n${shown}${more}` : t("ytCopiedAll", { n: r.added });
     if (await confirmDialog({ title: t("ytCopiedTitle"), body, confirm: t("openPlaylist") })) navigate({ name: "playlist", id: r.playlistId });
   } catch (e) {
-    toast(errorMessage(e), toastId);
+    toast(localError(e), toastId);
   } finally {
     stop();
     copying = false;
@@ -525,7 +558,7 @@ export async function toggleSaved(
     toast(on ? t("savedToLibrary") : t("removedFromLibrary"));
   } catch (e) {
     useApp.setState({ saved: prev });
-    toast(errorMessage(e));
+    toast(localError(e));
     refreshSaved();
   }
 }
@@ -574,7 +607,7 @@ export async function renamePlaylist(pl: Playlist) {
     await api.plUpdate(pl.id, name, pl.description ?? null);
     await refreshPlaylists();
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -585,7 +618,7 @@ export async function deletePlaylist(pl: Playlist) {
     await refreshPlaylists();
     navigate({ name: "home" }, true);
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -606,7 +639,7 @@ export async function deleteFromYouTube(pl: Playlist) {
     if (cur.name === "playlist" && cur.id === pl.id) navigate({ name: "home" }, true);
     await refreshLibrary(false);
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 
@@ -619,7 +652,7 @@ export async function hidePlaylist(pl: Playlist) {
     await refreshLibrary(false);
     navigate({ name: "home" }, true);
   } catch (e) {
-    toast(errorMessage(e));
+    toast(localError(e));
   }
 }
 

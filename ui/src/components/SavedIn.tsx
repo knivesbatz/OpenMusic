@@ -2,9 +2,9 @@
 // song. YouTube playlists (for YouTube songs, while YouTube is on with an account) come from
 // YouTube Music's own "Save to playlist" list; Plex playlists are never written.
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { canLikeTrack, createPlaylist, toggleLike } from "../actions";
-import { api, errorMessage, inTauri } from "../api";
-import { useT } from "../i18n";
+import { canLikeTrack, createPlaylist, skipDuplicates, toggleLike } from "../actions";
+import { api, inTauri } from "../api";
+import { localError, useT } from "../i18n";
 import { refreshPlaylists, useApp } from "../store/app";
 import { toast, useUi } from "../store/ui";
 import type { Track } from "../types";
@@ -77,8 +77,10 @@ export function SavedInPanel() {
 
   useEffect(() => {
     if (!open) return;
-    const down = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && close();
-    const key = (e: KeyboardEvent) => e.key === "Escape" && close();
+    // The "Already added" question opens over the panel; answering it leaves the panel open.
+    const inDialog = (e: Event) => !!(e.target as Element | null)?.closest?.(".modal-bg");
+    const down = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && !inDialog(e) && close();
+    const key = (e: KeyboardEvent) => e.key === "Escape" && !inDialog(e) && close();
     addEventListener("mousedown", down);
     addEventListener("keydown", key);
     return () => {
@@ -90,9 +92,13 @@ export function SavedInPanel() {
   if (!open) return null;
   const track = open.track;
 
+  /** Adding: false when the song (or one with its title and artist) is there and the answer is "Don't add". */
+  const wanted = async (id: string, title: string) => (await skipDuplicates(id, title, [track])).length > 0;
+
   async function toggleApp(id: string, on: boolean) {
     setBusy(id);
     try {
+      if (on && !(await wanted(id, pls.find((p) => p.id === id)?.title ?? ""))) return setBusy(null);
       if (on) await api.plAdd(id, [track]);
       else await api.plRemoveTrack(id, track.id);
       setInApp((s) => {
@@ -103,7 +109,7 @@ export function SavedInPanel() {
       });
       refreshPlaylists();
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
     setBusy(null);
   }
@@ -111,10 +117,11 @@ export function SavedInPanel() {
   async function toggleRemote(p: Remote, on: boolean) {
     setBusy(p.id);
     try {
+      if (on && !(await wanted(p.id, p.title))) return setBusy(null);
       await api.ytPlaylistEdit(p.id, track, on);
       setRemote((rs) => rs.map((r) => (r.id === p.id ? { ...r, contains: on } : r)));
     } catch (e) {
-      toast(errorMessage(e));
+      toast(localError(e));
     }
     setBusy(null);
   }

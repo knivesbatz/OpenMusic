@@ -1,4 +1,7 @@
+import { errorCode, errorMessage, errorProvider } from "./api";
 import { useSettings } from "./store/settings";
+import type { Provider } from "./types";
+import { serviceLabel } from "./util";
 
 const en = {
   // ---- OpenSpot: state, sign-in and Settings (builder A adds keys below) ----
@@ -46,7 +49,6 @@ const en = {
   noteAuthExpired: "{service}: your session expired. Sign in again in Settings → Services.",
   noteNotSignedIn: "Sign in to {service} in Settings → Services to see it here.",
   noteFailed: "{service} couldn't be loaded. Showing the rest.",
-  fromService: "From {service}",
   rowServiceOff: "{service} is off or not signed in",
   // ---- end B ----
   home: "Home",
@@ -331,6 +333,15 @@ const en = {
   statusFailed: "Failed",
   statusCancelled: "Cancelled",
   addedToPlaylist: "Added to {name}",
+  alreadyAdded: "Already added",
+  someAlreadyAdded: "Some already added",
+  alreadyInPlaylistOne: "This is already in your playlist {name}.",
+  alreadyInPlaylistAll: "These are already in your playlist {name}.",
+  alreadyInPlaylistSome: "Some of these are already in your playlist {name}.",
+  addAnyway: "Add anyway",
+  dontAdd: "Don't add",
+  addAllAnyway: "Add all",
+  addNewOnes: "Add new ones",
   addedToQueue: "Added to queue",
   trackUnavailable: "“{title}” can't be played and was skipped",
   hidden: "Playlist hidden",
@@ -593,7 +604,6 @@ const ja: Record<Key, string> = {
   noteAuthExpired: "{service}: セッションの有効期限が切れました。設定 → サービスからもう一度サインインしてください。",
   noteNotSignedIn: "ここに表示するには、設定 → サービスで{service}にサインインしてください。",
   noteFailed: "{service}を読み込めませんでした。ほかの結果を表示しています。",
-  fromService: "{service}から",
   rowServiceOff: "{service}がオフか、サインインしていません",
   // ---- end B ----
   home: "ホーム",
@@ -878,6 +888,15 @@ const ja: Record<Key, string> = {
   statusFailed: "失敗",
   statusCancelled: "キャンセル済み",
   addedToPlaylist: "{name}に追加しました",
+  alreadyAdded: "追加済みです",
+  someAlreadyAdded: "一部は追加済みです",
+  alreadyInPlaylistOne: "この曲はすでにプレイリスト「{name}」にあります。",
+  alreadyInPlaylistAll: "これらの曲はすでにプレイリスト「{name}」にあります。",
+  alreadyInPlaylistSome: "一部の曲はすでにプレイリスト「{name}」にあります。",
+  addAnyway: "それでも追加",
+  dontAdd: "追加しない",
+  addAllAnyway: "すべて追加",
+  addNewOnes: "新しい曲だけ追加",
   addedToQueue: "キューに追加しました",
   trackUnavailable: "「{title}」は再生できないためスキップしました",
   hidden: "プレイリストを非表示にしました",
@@ -1109,4 +1128,21 @@ export function shelfTitle(lang: Lang, title: string): string {
 export function useT() {
   const lang = useSettings((s) => s.language);
   return (key: Key, vars?: Record<string, string | number>) => translate(lang, key, vars);
+}
+
+/** Core error codes that name a service, shown in the UI language (with `{service}`). */
+const ERROR_KEYS: Record<string, Key> = {
+  disabled: "serviceDisabled",
+  notSignedIn: "notSignedInFor",
+  authExpired: "authExpiredFor",
+  timeout: "serviceTimedOut",
+  offline: "serviceOfflineFor",
+};
+
+/** The text to show for a failed command: a translated message for the known codes that name
+ * their service (the core's English text is never shown for those), else the core's message. */
+export function localError(e: unknown, provider?: Provider): string {
+  const key = ERROR_KEYS[errorCode(e) ?? ""];
+  const p = errorProvider(e) ?? provider;
+  return key && p ? translate(useSettings.getState().language, key, { service: serviceLabel(p) }) : errorMessage(e);
 }

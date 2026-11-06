@@ -41,7 +41,9 @@ function setRange(r: HTMLInputElement, v: string) {
   r.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-const escape = () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+// Escape goes to the focused element (dialogs such as the full-screen player listen on
+// themselves), and bubbles up from there like a real key press.
+const escape = () => (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 
 /** A dialog, profile picker or sign-in prompt opened by itself. */
 const dialogOpen = () => !!document.querySelector('.modal-bg, [role="dialog"], [role="alertdialog"]');
@@ -84,16 +86,21 @@ export async function runSelfTest() {
     });
   }
 
-  // Every other switch: held by reference, so switches appearing or moving can't shift which one
-  // the second click lands on.
-  const switches = $$('input[role="switch"]:not([data-service])') as HTMLInputElement[];
-  for (const [i, s] of switches.entries()) {
-    if (!s.isConnected || s.disabled) continue;
-    await step(`switch ${i} (${labelOf(s)})`, async () => {
+  // Every other switch, found again by its label for the second click: a click re-renders the
+  // settings (the old input can be replaced), and switches appearing or moving can't shift which
+  // one the second click lands on.
+  const others = () => $$('input[role="switch"]:not([data-service])') as HTMLInputElement[];
+  const byLabel = (label: string) => others().find((x) => labelOf(x) === label);
+  for (const [i, label] of others().map(labelOf).entries()) {
+    const s = byLabel(label);
+    if (!s || s.disabled) continue;
+    await step(`switch ${i} (${label})`, async () => {
       s.scrollIntoView({ block: "center" });
       s.click();
       await sleep(300);
-      if (s.isConnected) s.click();
+      const again = byLabel(label);
+      if (!again) throw new Error("the switch disappeared");
+      again.click();
     });
   }
 
@@ -157,6 +164,13 @@ export async function runSelfTest() {
     click('button[aria-label="Full screen"]');
     await sleep(800);
     escape();
+    await sleep(400);
+    // Still open (Escape missed it): use its own close button, and fail if it stays.
+    if (document.querySelector(".fullscreen")) {
+      document.querySelector<HTMLElement>(".fullscreen button[aria-label='Exit full screen']")?.click();
+      await sleep(400);
+    }
+    if (document.querySelector(".fullscreen")) throw new Error("the full-screen player did not close");
   });
   await step("transfer page", () => accountMenu("Transfer playlists"));
   await log("done");

@@ -18,14 +18,15 @@ import { ScrollCtx } from "./components/TrackList";
 import { useT } from "./i18n";
 import * as P from "./player/engine";
 import { isMobileApp, needsConnect, useApp } from "./store/app";
-import { useConnectFlowActive } from "./store/signin";
+import { loadServers, useConnectFlowActive, useSignIn } from "./store/signin";
+import { useNeedsReconnect } from "./store/providers";
 import { PANEL_W, SIDEBAR_W, useSettings } from "./store/settings";
 import { navigate, useUi } from "./store/ui";
 import { BrowseCategoryPage, HistoryPage, Home, LibraryPage, Search, WhatsNewPage } from "./pages/Browse";
 import { ProfileEditDialog, ProfilePage } from "./pages/Profile";
 import { AlbumPage, ArtistPage, EpisodesPage, PlaylistPage, PodcastPage } from "./pages/Detail";
 import { Connect } from "./pages/Login";
-import { cls, spaceTogglesPlayback } from "./util";
+import { cls, FIND_EVENT, spaceTogglesPlayback } from "./util";
 
 // Rarely used pages load on demand to keep startup light.
 const Manage = () => import("./pages/Manage");
@@ -84,6 +85,13 @@ function onSpaceUp(e: KeyboardEvent) {
   if (spaceTogglesPlayback(e)) (e.preventDefault(), e.stopPropagation());
 }
 
+/** Ask the open page to show its "Search in playlist" box; false when it has none. */
+function openFindInList(): boolean {
+  const ev = new CustomEvent(FIND_EVENT, { cancelable: true });
+  dispatchEvent(ev);
+  return ev.defaultPrevented;
+}
+
 function isTyping(e: KeyboardEvent) {
   const el = e.target as HTMLElement;
   return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable;
@@ -95,6 +103,16 @@ export function App() {
   const ready = useApp((s) => s.ready);
   const noService = useApp(needsConnect);
   const connectFlow = useConnectFlowActive();
+  // Only Plex is on and it has no server (or no sign-in): the Connect page, as PLEXSpot 1.6.1
+  // went straight to the server list. A token without a server opens that list once by itself.
+  const reconnect = useNeedsReconnect();
+  const plexNeedsServer = useApp((s) => !!s.auth?.plex?.signedIn && !!s.auth.plex.needsServer);
+  const serversAsked = useRef(false);
+  useEffect(() => {
+    if (!reconnect || !plexNeedsServer || serversAsked.current || useSignIn.getState().plex.active) return;
+    serversAsked.current = true;
+    void loadServers("connect");
+  }, [reconnect, plexNeedsServer]);
   const servicesEpoch = useApp((s) => s.servicesEpoch);
   const routeName = useUi((s) => s.stack[s.pos].name);
   const lyricsPanel = useUi((s) => s.lyricsPanel);
@@ -162,7 +180,17 @@ export function App() {
         setTimeout(() => document.getElementById("global-search")?.focus());
         return;
       }
+      // Ctrl+F (as in Spotify), or F alone, opens "Search in playlist" on a playlist or Liked Songs.
+      const findKey = e.key.toLowerCase() === "f" && !e.altKey && !e.shiftKey;
+      if (findKey && ctrl) {
+        if (openFindInList()) e.preventDefault();
+        return;
+      }
       if (isTyping(e)) return;
+      if (findKey && !ctrl && !e.repeat && openFindInList()) {
+        e.preventDefault();
+        return;
+      }
       if (ctrl && e.key === "ArrowRight") P.next();
       else if (ctrl && e.key === "ArrowLeft") P.previous();
       else if (ctrl && e.key === "ArrowUp") (e.preventDefault(), useSettings.getState().set({ volume: Math.min(1, useSettings.getState().volume + 0.1) }));
@@ -193,7 +221,7 @@ export function App() {
   if (!info || !ready) return <Loading />;
   // "Connect your music": nothing set up yet, or a sign-in started there is still going (the
   // Plex server list comes after Plex is signed in).
-  const needsLogin = noService || connectFlow;
+  const needsLogin = noService || connectFlow || reconnect;
 
   return (
     <div className={cls("app", htpc && "htpc", titleBar && "titled")}>
