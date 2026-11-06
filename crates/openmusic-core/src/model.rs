@@ -319,3 +319,31 @@ pub struct PlexUser {
     pub selected: bool,
 }
 
+
+/// Per-artist override (the artist page's ••• menu): always add that provider's albums of an
+/// artist of this name to the page, even while the provider is switched off (Plex still needs a
+/// sign-in). Stored in kv `artistOverrides` by [`crate::artist_merge::artist_key`].
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtistOverride {
+    #[serde(default)]
+    pub youtube: bool,
+    #[serde(default)]
+    pub plex: bool,
+}
+
+impl ArtistOverride {
+    pub fn get(&self, p: Provider) -> bool {
+        match p {
+            Provider::YouTube => self.youtube,
+            Provider::Plex => self.plex,
+        }
+    }
+
+    pub fn set(&mut self, p: Provider, on: bool) {
+        match p {
+            Provider::YouTube => self.youtube = on,
+            Provider::Plex => self.plex = on,
+        }
+    }
+}

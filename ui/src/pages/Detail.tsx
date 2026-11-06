@@ -1,12 +1,12 @@
 // Artist, album and playlist pages.
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { albumMenu, canChangeCover, changeCover, downloadTracks, likedMenu, likesOn, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
+import { albumMenu, artistMenu, canChangeCover, changeCover, downloadTracks, likedMenu, likesOn, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
 import { api, artUrl, inTauri } from "../api";
 import { Art, ArtistName, ErrorBox, Loading, PlayFab, ProviderNotes, TitleText, useAsync, usePageTitle, usePhoneLayout, useProvidersKey } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
-import { localError, useT } from "../i18n";
+import { localError, translate, useT } from "../i18n";
 import * as P from "../player/engine";
 import { usePlayer } from "../player/engine";
 import { refreshPlaylists, useApp } from "../store/app";
@@ -15,8 +15,10 @@ import { setPlaylistSort, sortTracks, usePlaylistSort, type SortKey } from "../s
 import { orderEpisodes, setOldestFirst, useOldestFirst } from "../store/podcastSort";
 import { useSettings } from "../store/settings";
 import { useMe } from "../store/profile";
-import { navigate, openMenu, toast } from "../store/ui";
-import type { Album, Artist, PlayContext, Track } from "../types";
+import { navigate, openMenu, toast, type MenuItem } from "../store/ui";
+import { refreshAllowed, serviceName, signedIn, sourceOf } from "../store/providers";
+import type { Album, Artist, ArtistOverride, PlayContext, Track } from "../types";
+import { PROVIDERS } from "../types";
 import { partErrors } from "../searchMerge";
 import { cls, FIND_EVENT, fmtTime, totalDuration } from "../util";
 import { CardShelf, Grid } from "./Browse";
@@ -233,7 +235,7 @@ function SortButton({ id, tracks }: { id: string; tracks: Track[] }) {
 export function AlbumPage({ id }: { id: string }) {
   const t = useT();
   const phone = usePhoneLayout();
-  const { data, error, loading, reload } = useAsync(() => api.album(id), [id]);
+  const { data, error, loading, reload } = useAsync(() => api.album(id).then(async (p) => (await refreshAllowed(), p)), [id]);
   usePageTitle(data?.album.title, () => data && P.playTracks(data.tracks, 0, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }), { art: data?.album.artwork, ctxId: id });
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
@@ -309,9 +311,45 @@ const navigateArtist = (id: string) => navigate({ name: "artist", id });
 
 type Disc = "popular" | "albums" | "singles" | "compilations" | "appears";
 
+/** The artist page's ••• menu: Follow, then per-artist overrides that always add the other
+ * service's albums (even while that service is off; Plex needs a sign-in). */
+async function openArtistPageMenu(e: React.MouseEvent, id: string, artist: Artist, reload: () => void) {
+  const ev = { clientX: e.clientX, clientY: e.clientY, preventDefault() {}, stopPropagation() {} };
+  e.preventDefault();
+  e.stopPropagation();
+  let ov: ArtistOverride = { youtube: false, plex: false };
+  try {
+    ov = await api.artistOverride(artist.name);
+  } catch {
+    /* none */
+  }
+  const own = sourceOf(id);
+  const items: MenuItem[] = [...artistMenu(artist)];
+  const others = PROVIDERS.filter((p) => p !== own);
+  if (others.length) items.push({ label: "", separator: true });
+  for (const p of others) {
+    const needsSignIn = p === "plex" && !signedIn("plex");
+    items.push({
+      label: translate(useSettings.getState().language, "alwaysShowAlbums", { service: serviceName(p) }),
+      checked: ov[p],
+      disabled: needsSignIn && !ov[p],
+      hint: needsSignIn && !ov[p] ? translate(useSettings.getState().language, "signInToPlexFirst") : undefined,
+      onClick: async () => {
+        try {
+          await api.setArtistOverride(artist.name, p, !ov[p]);
+          reload();
+        } catch (err) {
+          toast(localError(err));
+        }
+      },
+    });
+  }
+  openMenu(ev, items, { title: artist.name, art: artist.artwork });
+}
+
 export function ArtistPage({ id }: { id: string }) {
   const t = useT();
-  const { data, error, loading, reload } = useAsync(() => api.artist(id), [id]);
+  const { data, error, loading, reload } = useAsync(() => api.artist(id).then(async (p) => (await refreshAllowed(), p)), [id]);
   // Compilations by name from MusicBrainz (YouTube Music doesn't mark them; Plex only when tagged).
   const artistName = data?.artist?.name ?? "";
   const { data: mbCompilations } = useAsync(() => (artistName ? api.artistCompilations(artistName) : Promise.resolve([])), [artistName]);
@@ -357,7 +395,12 @@ export function ArtistPage({ id }: { id: string }) {
           {data.followers && <p className="artist-followers">{t("followersCount", { n: data.followers })}</p>}
         </div>
       </header>
-      <ActionBar tracks={popular} ctx={ctx} extra={data.artist && <FollowButton artist={data.artist} />} />
+      <ActionBar
+        tracks={popular}
+        ctx={ctx}
+        extra={data.artist && <FollowButton artist={data.artist} />}
+        onMore={data.artist ? (e) => openArtistPageMenu(e, id, data.artist!, reload) : undefined}
+      />
       {popular.length > 0 && (
         <section>
           <h2>{t("popular")}</h2>

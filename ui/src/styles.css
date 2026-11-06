@@ -509,6 +509,7 @@ p { margin: 0 0 8px; }
   .pb-line { position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; background: #ffffff33; border-radius: 1px; overflow: hidden; }
   .pb-line div { height: 100%; background: #fff; }
   .pb-art .art { width: 44px; height: 44px; }
+  .playerbar.idle { display: none; }
 
   .mobile-tabs { grid-area: tabs; display: flex; justify-content: space-around; padding: 6px 0 calc(6px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, #000 40%); }
   .mobile-tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--muted); font-size: 0.6875rem; padding: 4px 16px; }

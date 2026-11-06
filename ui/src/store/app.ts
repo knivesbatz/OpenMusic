@@ -10,7 +10,7 @@ import { localError, translate } from "../i18n";
 import { useSettings } from "./settings";
 import { navigate, toast } from "./ui";
 import { loadFolders } from "./folders";
-import { caps, serviceName, signedIn } from "./providers";
+import { caps, refreshAllowed, serviceName, signedIn } from "./providers";
 import { initSignIn, startSignIn } from "./signin";
 
 interface AppStore {
@@ -235,6 +235,7 @@ export async function boot() {
   refreshPlaylists();
   refreshSaved();
   refreshDownloaded();
+  refreshAllowed();
   loadFolders();
   listen("saved-changed", refreshSaved);
   listen("downloads-changed", refreshDownloaded);

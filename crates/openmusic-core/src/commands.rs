@@ -1090,7 +1090,7 @@ pub async fn search_kind(app: AppHandle, state: S<'_>, query: String, kind: Stri
 /// The provider of an item id, with its switch on.
 fn provider_of(state: &AppState, id: &str) -> Result<Provider> {
     let p = Provider::of_id(id).ok_or_else(|| Error::NotFound(id.to_string()))?;
-    if !state.on(p) {
+    if !state.may_use(p, id) {
         return Err(Error::Disabled(p));
     }
     Ok(p)
@@ -1157,11 +1157,117 @@ pub(crate) fn merging(state: &AppState) -> bool {
 /// An artist page; with both services on, the same artist from the other sources is merged in.
 #[tauri::command]
 pub async fn artist(app: AppHandle, state: S<'_>, id: String) -> Result<ArtistPage> {
-    if merging(&state) {
-        merged_artist(&app, state.inner(), &id).await
+    let page = if merging(&state) {
+        merged_artist(&app, state.inner(), &id).await?
     } else {
-        artist_page(&app, &state, &id).await
+        artist_page(&app, &state, &id).await?
+    };
+    Ok(with_overrides(&app, state.inner(), &id, page).await)
+}
+
+// ---- Per-artist overrides ("Always show Plex albums" in the artist page's ••• menu) ----
+
+const ARTIST_OVERRIDES: &str = "artistOverrides";
+
+fn artist_overrides(db: &crate::db::Db) -> std::collections::HashMap<String, ArtistOverride> {
+    db.kv_get(ARTIST_OVERRIDES).ok().flatten().unwrap_or_default()
+}
+
+/// The override for artists of this name.
+#[tauri::command]
+pub fn artist_override(state: S, name: String) -> Result<ArtistOverride> {
+    let key = artist_merge::artist_key(&name);
+    Ok(artist_overrides(&state.db()).get(&key).copied().unwrap_or_default())
+}
+
+/// Turn "always show `provider`'s albums" on or off for artists of this name.
+#[tauri::command]
+pub fn set_artist_override(state: S, name: String, provider: Provider, on: bool) -> Result<ArtistOverride> {
+    set_override(&state.db(), &name, provider, on)
+}
+
+fn set_override(db: &crate::db::Db, name: &str, provider: Provider, on: bool) -> Result<ArtistOverride> {
+    let key = artist_merge::artist_key(name);
+    if key.is_empty() {
+        return Err(Error::Invalid("This artist has no name to remember.".into()));
     }
+    let mut all = artist_overrides(db);
+    let mut o = all.get(&key).copied().unwrap_or_default();
+    o.set(provider, on);
+    if o == ArtistOverride::default() {
+        all.remove(&key);
+    } else {
+        all.insert(key, o);
+    }
+    db.kv_set(ARTIST_OVERRIDES, &all)?;
+    Ok(o)
+}
+
+/// Items overrides let through while their service is off (the UI shows and plays them).
+#[tauri::command]
+pub fn override_ids(state: S) -> Vec<String> {
+    state.allowed_ids()
+}
+
+/// Whether the page lists anything from provider `p` already.
+fn has_provider(page: &ArtistPage, p: Provider) -> bool {
+    let of = |id: &str| Provider::of_id(id) == Some(p);
+    page.albums.iter().chain(&page.singles).any(|a| of(&a.id)) || page.top_tracks.iter().any(|t| of(&t.id))
+}
+
+/// Add the albums (and songs) of each provider the artist's override asks for and the page
+/// doesn't have yet: the artist of exactly this name on that provider, whether or not the
+/// provider is on (Plex needs a sign-in). Any failure leaves the page as it was.
+async fn with_overrides(app: &AppHandle, st: &Arc<AppState>, id: &str, mut page: ArtistPage) -> ArtistPage {
+    let Some(name) = page.artist.as_ref().map(|a| a.name.clone()) else { return page };
+    let key = artist_merge::artist_key(&name);
+    if key.is_empty() {
+        return page;
+    }
+    let ov = artist_overrides(&st.db()).get(&key).copied().unwrap_or_default();
+    for p in Provider::ALL {
+        if !ov.get(p) || Provider::of_id(id) == Some(p) || has_provider(&page, p) {
+            continue;
+        }
+        if let Some(other) = forced_counterpart(app, st, p, &name).await {
+            page = artist_merge::merge_pages(page, other);
+        }
+    }
+    page
+}
+
+/// The artist named exactly `name` on provider `o` (no shared song needed: the user asked for
+/// it), with its page; its items are let through while `o` is off.
+async fn forced_counterpart(app: &AppHandle, st: &Arc<AppState>, o: Provider, name: &str) -> Option<ArtistPage> {
+    if st.is_offline(o) {
+        return None;
+    }
+    let key = o.key(&format!("ovsearch:{}", artist_merge::artist_key(name)));
+    let cached = st.db().cache_get::<SearchResults>(&key, false).ok().flatten();
+    let res = match cached {
+        Some(r) => r,
+        None => {
+            let gen = st.db().generation(o);
+            let r = match o {
+                Provider::YouTube => yt_call!(app, st, |y| y.search_kind(name, "artists")).ok()?,
+                Provider::Plex => {
+                    let sess = st.plex_session_any().await.ok()?;
+                    st.plex.search_limit(&sess, name, 100).await.ok()?
+                }
+            };
+            let _ = put_current(st, o, gen, |db| db.cache_put(&key, &r, MATCH_TTL));
+            r
+        }
+    };
+    let top = match &res.top {
+        Some(MediaItem::Artist(x)) => Some(x),
+        _ => None,
+    };
+    let oid = artist_merge::find_artist(top.into_iter().chain(&res.artists), name)?.id.clone();
+    st.allow([oid.clone()]);
+    let page = provider_artist(app, st, &oid).await.ok()?;
+    st.allow(page.albums.iter().chain(&page.singles).map(|a| a.id.clone()).chain(page.top_tracks.iter().map(|t| t.id.clone())));
+    Some(page)
 }
 
 /// How long an artist page waits for the other provider's copy of the artist. Past it the page
@@ -1471,7 +1577,7 @@ async fn provider_artist(app: &AppHandle, state: &AppState, id: &str) -> Result<
     let gen = state.db().generation(p);
     let page = match p {
         Provider::Plex => {
-            let sess = state.plex_session().await?;
+            let sess = state.plex_session_for(id).await?;
             state.plex.artist(&sess, id).await?
         }
         Provider::YouTube => yt_call!(app, state, |y| y.artist(id))?,
@@ -1603,17 +1709,25 @@ pub async fn album(app: AppHandle, state: S<'_>, id: String) -> Result<AlbumPage
     }
     let p = provider_of(&state, &id)?;
     let key = item_key("album", &id);
-    if let Some(page) = state.db().cache_get(&key, false)? {
-        return Ok(page);
-    }
-    let page = match p {
-        Provider::Plex => {
-            let sess = state.plex_session().await?;
-            state.plex.album(&sess, &id).await?
+    let cached = state.db().cache_get::<AlbumPage>(&key, false)?;
+    let page = match cached {
+        Some(page) => page,
+        None => {
+            let page = match p {
+                Provider::Plex => {
+                    let sess = state.plex_session_for(&id).await?;
+                    state.plex.album(&sess, &id).await?
+                }
+                Provider::YouTube => yt_call!(app, state, |y| y.album(&id))?,
+            };
+            state.db().cache_put(&key, &page, 24 * 3600)?;
+            page
         }
-        Provider::YouTube => yt_call!(app, state, |y| y.album(&id))?,
     };
-    state.db().cache_put(&key, &page, 24 * 3600)?;
+    // An album an override shows: its songs play while the service is off.
+    if !state.on(p) {
+        state.allow(page.tracks.iter().map(|t| t.id.clone()));
+    }
     Ok(page)
 }
 
@@ -1792,7 +1906,7 @@ pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Resu
             Ok(Stream::File { path, quality: "original".into(), offline: true })
         }
         Source::Plex => {
-            let sess = state.plex_session().await?;
+            let sess = state.plex_session_for(&track.id).await?;
             // Automatic: original quality on LAN, 320 kbps through remote/relay connections.
             let kbps = match quality.as_str() {
                 "low" => Some(128),
@@ -1808,7 +1922,9 @@ pub async fn resolve_stream(state: S<'_>, track: Track, quality: String) -> Resu
             Ok(Stream::Url { url: state.plex.stream_url(&sess, &track, kbps)?, quality: label, offline: false })
         }
         Source::Youtube => {
-            state.yt()?;
+            if !state.may_use(Provider::YouTube, &track.id) {
+                state.yt()?;
+            }
             let vid = track.stream_key.clone().ok_or_else(|| Error::NotFound(track.title.clone()))?;
             Ok(Stream::Youtube { video_id: song_version(&state, &vid, &track).await.unwrap_or(vid) })
         }
@@ -3396,6 +3512,40 @@ mod tests {
             assert!(f.contains("artist_page(") || f.contains("with_local(state, page)"), "{f}");
             assert!(!f.contains("merged") && !f.contains("add_local"), "{f}");
         }
+    }
+
+    #[test]
+    fn artist_overrides_are_kept_per_artist_name() {
+        let state = crate::state::test_state();
+        let db = state.db();
+        assert_eq!(set_override(&db, "The Weezer", Provider::Plex, true).unwrap(), ArtistOverride { plex: true, youtube: false });
+        assert_eq!(set_override(&db, "weezer", Provider::YouTube, true).unwrap(), ArtistOverride { plex: true, youtube: true });
+        assert_eq!(artist_overrides(&db).get("weezer"), Some(&ArtistOverride { plex: true, youtube: true }));
+        set_override(&db, "Weezer", Provider::Plex, false).unwrap();
+        set_override(&db, "Weezer", Provider::YouTube, false).unwrap();
+        assert!(artist_overrides(&db).is_empty(), "an override with nothing on is dropped");
+        assert!(set_override(&db, "!!!", Provider::Plex, true).is_err());
+    }
+
+    #[test]
+    fn overrides_let_their_items_through_while_the_service_is_off() {
+        let state = crate::state::test_state();
+        switches(&state, true, false);
+        assert!(matches!(provider_of(&state, "plex:42"), Err(Error::Disabled(Provider::Plex))));
+        state.allow(["plex:42".to_string()]);
+        assert_eq!(provider_of(&state, "plex:42").unwrap(), Provider::Plex);
+        assert!(provider_of(&state, "plex:43").is_err(), "only the items the override showed");
+        // Kept across restarts (kv), and listed for the UI.
+        let ids: Vec<String> = state.db().kv_get(crate::state::OVERRIDE_IDS).unwrap().unwrap();
+        assert_eq!(ids, ["plex:42"]);
+        assert_eq!(state.allowed_ids(), ["plex:42"]);
+    }
+
+    #[test]
+    fn has_provider_looks_at_albums_singles_and_songs() {
+        let page = ArtistPage { albums: vec![Album { id: "plex:1".into(), title: "Blue".into(), artist: "Weezer".into(), artist_id: None, year: None, artwork: None, kind: None }], ..Default::default() };
+        assert!(has_provider(&page, Provider::Plex));
+        assert!(!has_provider(&page, Provider::YouTube));
     }
 
     #[test]

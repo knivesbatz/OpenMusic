@@ -181,7 +181,8 @@ export function PlayerBar() {
 
   return (
     <footer
-      className="playerbar"
+      // Nothing playing: no mini player on phones (Spotify shows none either).
+      className={cls("playerbar", !tr && "idle")}
       aria-label={t("nowPlaying")}
       // Phone mini player: tinted with the cover's colour (a tiny cover stretched into a wash).
       style={tr?.artwork ? ({ ["--pb-wash" as string]: `url("${artUrl(tr.artwork, 60)}")` } as React.CSSProperties) : undefined}

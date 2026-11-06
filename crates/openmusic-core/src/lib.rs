@@ -143,6 +143,7 @@ fn init_state(app: &tauri::AppHandle) -> Result<Arc<AppState>, Box<dyn std::erro
         scanning: AtomicBool::new(false),
         last_yt_refresh: Mutex::new(None),
         offline_until: Mutex::new([None; 2]),
+        allowed: std::sync::OnceLock::new(),
     }))
 }
 
@@ -473,6 +474,9 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             commands::artist,
             commands::artist_links,
             commands::artist_link_check,
+            commands::artist_override,
+            commands::set_artist_override,
+            commands::override_ids,
             commands::album,
             commands::playlist,
             commands::library,

@@ -2,6 +2,8 @@
 // every "is this YouTube or Plex?" question goes through here instead of a per-app flavor.
 import type { AuthAll, Capabilities, Provider, Track } from "../types";
 import { PROVIDERS } from "../types";
+import { create } from "zustand";
+import { api } from "../api";
 import { useApp } from "./app";
 
 /** Where an item comes from, by its id prefix (always with the colon: `plex-genre:` is Plex too). */
@@ -24,6 +26,18 @@ export function providerOf(id: string | null | undefined): Provider | null {
 export const serviceName = (p: Provider) => (p === "youtube" ? "YouTube Music" : "Plex");
 
 const NONE: Capabilities = { downloads: false, qualityControl: false, podcasts: false, crossfade: false, gapless: false, favorites: false };
+
+/** Items a per-artist override ("Always show Plex albums") lets through while their service is
+ * off: they're shown and played anyway. Refreshed by refreshAllowed(). */
+export const useAllowed = create<{ ids: Set<string> }>(() => ({ ids: new Set() }));
+export const allowed = (id: string | null | undefined) => !!id && useAllowed.getState().ids.has(id);
+export async function refreshAllowed() {
+  try {
+    useAllowed.setState({ ids: new Set(await api.overrideIds()) });
+  } catch {
+    /* keep the last list */
+  }
+}
 
 /** The Settings switch for a provider (non-reactive read). */
 export const isOn = (p: Provider) => !!useApp.getState().services?.[p];
@@ -78,8 +92,8 @@ export function allOffline(): boolean {
 export function playable(t: Track | null | undefined): boolean {
   if (!t) return false;
   const s = sourceOf(t.id) ?? t.source;
-  if (s === "youtube") return ytOn();
-  if (s === "plex") return useApp.getState().downloaded.has(t.id) || (plexOn() && signedIn("plex"));
+  if (s === "youtube") return ytOn() || allowed(t.id);
+  if (s === "plex") return useApp.getState().downloaded.has(t.id) || ((plexOn() || allowed(t.id)) && signedIn("plex"));
   return true;
 }
 

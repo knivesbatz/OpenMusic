@@ -1,5 +1,5 @@
 // Virtualized track table used by albums, playlists, artist pages, search, local files and liked.
-import { sourceOf } from "../store/providers";
+import { sourceOf, useAllowed } from "../store/providers";
 import { createContext, memo, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { canLikeTrack, providerOfId, trackHead, trackMenu, type TrackMenuOpts } from "../actions";
@@ -175,7 +175,8 @@ interface RowProps {
  * it was downloaded; dimmed too while its service is unreachable. */
 function useRowState(track: Track): { provider: Provider | null; unplayable: boolean; dim: boolean } {
   const provider = providerOfId(track.id) ?? (track.source === "local" ? null : track.source);
-  const on = useApp((s) => (provider ? !!s.services?.[provider] : true));
+  const allowedHere = useAllowed((s) => s.ids.has(track.id));
+  const on = useApp((s) => (provider ? !!s.services?.[provider] : true)) || allowedHere;
   const plexReady = useApp((s) => provider !== "plex" || (!!s.auth?.plex?.signedIn && !s.auth.plex.needsServer));
   const offline = useApp((s) => (provider ? s.online?.[provider] === false : false));
   const downloaded = useDownloaded(track.id);

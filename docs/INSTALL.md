@@ -11,8 +11,7 @@
 
 ## Install
 1. Download `OpenSpot_<version>_x64-setup.exe` from the
-   [Releases](https://github.com/knivesbatz/OpenMusic/releases) page. (`YTSpot_*` and `PLEXSpot_*`
-   files there are copies of the same installer for 1.x apps that update themselves.)
+   [Releases](https://github.com/knivesbatz/OpenMusic/releases) page.
 2. Run the installer. It installs for the current user only (no administrator rights needed) into
    `%LOCALAPPDATA%\OpenSpot`, and adds Start menu and desktop shortcuts.
 3. The installers are not code-signed yet, so SmartScreen may show "Windows protected your PC". Choose

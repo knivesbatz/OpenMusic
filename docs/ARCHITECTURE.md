@@ -70,12 +70,9 @@ controls are hidden or explained rather than faked.
 
 ## Updates and migration from 1.x
 
-- 1.x apps look for `<productName>_<version>_…` assets in the latest release. Every 2.x release
-  therefore also carries the OpenSpot builds as `YTSpot_<v>_x64-setup.exe`,
-  `YTSpot_<v>_android-arm64.apk`, `YTSpot_<v>_universal.dmg`, `PLEXSpot_<v>_x64-setup.exe` and
-  `PLEXSpot_<v>_universal.dmg`. CI checks that every one is present. OpenSpot itself looks for
-  `OpenSpot_` assets.
-- There is no PLEXSpot APK alias: PLEXSpot for Android is another package (`app.openmusic.plexspot`),
+- Releases carry `OpenSpot_` assets only. 1.x apps look for their own names, so they don't
+  update themselves to OpenSpot: their users install it (the data carries over).
+- PLEXSpot for Android is another package (`app.openmusic.plexspot`),
   which can't update into OpenSpot. Those users install OpenSpot and sign in to Plex again.
 - Windows: the installer's NSIS hooks (`apps/openspot/src-tauri/installer/hooks.nsh`) close YTSpot
   and PLEXSpot, run their uninstallers silently (found through their HKCU Uninstall keys), move the
