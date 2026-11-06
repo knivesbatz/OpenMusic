@@ -124,6 +124,11 @@ export const api = {
   artistLinks: (ids: string[]) => call<[string, string][]>("artist_links", { ids }),
   /** Check in the background whether these artists match across sources (emits artist-links-changed). */
   artistLinkCheck: (ids: string[]) => call<void>("artist_link_check", { ids }),
+  /** The ••• menu's "Always show Plex / YouTube Music albums" for artists of this name. */
+  artistOverride: (name: string) => call<T.ArtistOverride>("artist_override", { name }),
+  setArtistOverride: (name: string, provider: T.Provider, on: boolean) => call<T.ArtistOverride>("set_artist_override", { name, provider, on }),
+  /** Items those overrides show and play while their service is off. */
+  overrideIds: () => call<string[]>("override_ids"),
   album: (id: string) => call<T.AlbumPage>("album", { id }),
   playlist: (id: string) => call<T.PlaylistPage>("playlist", { id }),
   library: (refresh: boolean) => call<T.Library>("library", { refresh }).then(noteParts),

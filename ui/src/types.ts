@@ -99,6 +99,12 @@ export interface SearchResults {
   errors?: ProviderError[];
 }
 
+/** Per-artist override (commands.rs `ArtistOverride`): always add that service's albums. */
+export interface ArtistOverride {
+  youtube: boolean;
+  plex: boolean;
+}
+
 export interface ArtistPage {
   artist?: Artist | null;
   description?: string | null;

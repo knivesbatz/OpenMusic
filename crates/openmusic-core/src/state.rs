@@ -169,7 +169,15 @@ pub struct AppState {
     pub last_yt_refresh: Mutex<Option<Instant>>,
     /// Per provider: skip it in fan-out commands until then (it was just unreachable).
     pub offline_until: Mutex<[Option<Instant>; 2]>,
+    /// Ids a per-artist override lets through while their service is off (kv `overrideIds`),
+    /// loaded on first use. See [`AppState::allows`].
+    pub allowed: std::sync::OnceLock<Mutex<std::collections::HashSet<String>>>,
 }
+
+/// kv key of the ids per-artist overrides let through (see [`AppState::allow`]).
+pub const OVERRIDE_IDS: &str = "overrideIds";
+/// At most this many ids are let through by overrides.
+const OVERRIDE_IDS_MAX: usize = 20_000;
 
 impl AppState {
     pub fn db(&self) -> std::sync::MutexGuard<'_, Db> {
@@ -185,6 +193,63 @@ impl AppState {
     /// Whether this provider's switch is on.
     pub fn on(&self, p: Provider) -> bool {
         self.services().get(p)
+    }
+
+    fn allowed_set(&self) -> std::sync::MutexGuard<'_, std::collections::HashSet<String>> {
+        self.allowed
+            .get_or_init(|| Mutex::new(self.db().kv_get::<Vec<String>>(OVERRIDE_IDS).ok().flatten().unwrap_or_default().into_iter().collect()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A per-artist override ("Always show Plex albums") lets this item through while its
+    /// service is off. Never call while holding the database lock.
+    pub fn allows(&self, id: &str) -> bool {
+        self.allowed_set().contains(id)
+    }
+
+    /// Let these items through while their service is off (they're on an overridden artist's
+    /// page). Kept across restarts. Never call while holding the database lock.
+    pub fn allow(&self, ids: impl IntoIterator<Item = String>) {
+        let all = {
+            let mut s = self.allowed_set();
+            let n = s.len();
+            for id in ids {
+                if s.len() >= OVERRIDE_IDS_MAX {
+                    break;
+                }
+                s.insert(id);
+            }
+            (s.len() != n).then(|| s.iter().cloned().collect::<Vec<_>>())
+        };
+        if let Some(v) = all {
+            let _ = self.db().kv_set(OVERRIDE_IDS, &v);
+        }
+    }
+
+    /// Every id overrides let through.
+    pub fn allowed_ids(&self) -> Vec<String> {
+        self.allowed_set().iter().cloned().collect()
+    }
+
+    /// Provider `p` may be asked about `id`: its switch is on, or an override lets `id` through.
+    pub fn may_use(&self, p: Provider, id: &str) -> bool {
+        self.on(p) || self.allows(id)
+    }
+
+    /// The Plex session for item `id`: as [`AppState::plex_session`], but also while Plex is off
+    /// when an override lets `id` through.
+    pub async fn plex_session_for(&self, id: &str) -> Result<plex::Session> {
+        if !self.may_use(Provider::Plex, id) {
+            return Err(Error::Disabled(Provider::Plex));
+        }
+        self.plex_session_any().await
+    }
+
+    /// The Plex session whether or not Plex is on (`NotSignedIn` without a server). Only for
+    /// per-artist overrides.
+    pub async fn plex_session_any(&self) -> Result<plex::Session> {
+        self.plex_session.read().await.clone().ok_or(Error::NotSignedIn)
     }
 
     /// YouTube Music may be used (switch on; anonymous is fine).
@@ -262,6 +327,7 @@ pub fn test_state() -> AppState {
         scanning: AtomicBool::new(false),
         last_yt_refresh: Mutex::new(None),
         offline_until: Mutex::new([None; 2]),
+        allowed: std::sync::OnceLock::new(),
     }
 }
 

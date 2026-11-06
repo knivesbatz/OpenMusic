@@ -78,6 +78,8 @@
   const signedInYt = { signedIn: true, account: "maya", server: null, serverConnection: null, needsServer: false };
   const signedInPlex = { signedIn: true, account: "demo", server: "Home server", serverConnection: "local", needsServer: false };
   const state = {
+    overrides: {},
+    allowed: new Set(),
     services: { youtube: true, plex: true },
     auth: { youtube: { ...signedInYt }, plex: { ...signedInPlex } },
     kv: kvStore,
@@ -86,6 +88,15 @@
   const yt = () => state.services.youtube;
   const plex = () => state.services.plex && state.auth.plex.signedIn;
   const ytSignedIn = () => yt() && state.auth.youtube.signedIn;
+
+  // A YouTube artist with "Always show Plex albums" on gets two Plex albums (as commands.rs
+  // with_overrides), shown and playable while Plex is off.
+  const withOverride = (page) => {
+    if (!state.overrides[page.artist.name.toLowerCase()]?.plex) return page;
+    const extra = albums.slice(0, 2);
+    extra.forEach((x) => state.allowed.add(x.id));
+    return { ...page, albums: [...page.albums, ...extra] };
+  };
 
   // ---- events ---------------------------------------------------------------------------------
   const callbacks = {};
@@ -177,13 +188,18 @@
       stale: false,
     }),
     queue_load: queueOf(tracks),
-    album: (a) =>
-      a && a.id && a.id.startsWith("yt:")
-        ? { album: ytAlbums.find((x) => x.id === a.id) ?? ytAlbums[0], tracks: ytTracks.slice(0, 4) }
-        : { album: albums[0], tracks: tracks.slice(0, 10).map((t) => ({ ...t, album: albums[0].title, artwork: albums[0].artwork })) },
+    // An album an override showed: its songs play while Plex is off (commands.rs `album`).
+    album: (a) => {
+      const page =
+        a && a.id && a.id.startsWith("yt:")
+          ? { album: ytAlbums.find((x) => x.id === a.id) ?? ytAlbums[0], tracks: ytTracks.slice(0, 4) }
+          : { album: albums[0], tracks: tracks.slice(0, 10).map((t) => ({ ...t, album: albums[0].title, artwork: albums[0].artwork })) };
+      if (state.allowed.has(a?.id)) page.tracks.forEach((t) => state.allowed.add(t.id));
+      return page;
+    },
     artist: (a) =>
       a && a.id && a.id.startsWith("yt:")
-        ? { artist: ytArtists.find((x) => x.id === a.id) ?? ytArtists[0], description: "Sample YouTube Music artist.", topTracks: ytTracks, albums: ytAlbums, singles: [], appearsOn: [], related: ytArtists.slice(1), followers: "1.23M", localTracks: [], localAlbums: [] }
+        ? withOverride({ artist: ytArtists.find((x) => x.id === a.id) ?? ytArtists[0], description: "Sample YouTube Music artist.", topTracks: ytTracks, albums: ytAlbums, singles: [], appearsOn: [], related: ytArtists.slice(1), followers: "1.23M", localTracks: [], localAlbums: [] })
         : { artist: artists[0], description: "Sample artist used for UI screenshots.", topTracks: tracks.slice(0, 10), albums: albums.slice(0, 5), singles: albums.slice(5), appearsOn: albums.slice(2, 6), related: artists.slice(1),
             localTracks: [localTrack], localAlbums: [] },
     // "plex:big" is a 50,000-track playlist for the large-list performance check.
@@ -241,6 +257,14 @@
     localized_artist_names: {},
     // Stand-in translator: Japanese text gets a marked "translation", the rest is already English.
     translate_texts: (a) => a.texts.map((t) => (/[\u3040-\u30ff\u4e00-\u9fff]/.test(t) ? "[en] " + t : null)),
+    // Per-artist overrides (by lowercased name), as commands.rs keeps them.
+    artist_override: (a) => ({ youtube: false, plex: false, ...(state.overrides[a.name.toLowerCase()] ?? {}) }),
+    set_artist_override: (a) => {
+      const k = a.name.toLowerCase();
+      state.overrides[k] = { youtube: false, plex: false, ...(state.overrides[k] ?? {}), [a.provider]: a.on };
+      return state.overrides[k];
+    },
+    override_ids: () => [...state.allowed],
     // Same-artist pairs confirmed by the core (set by a test in `__ART_LINKS__`); checks are recorded.
     artist_links: (a) => (window.__ART_LINKS__ ?? []).filter(([x, y]) => a.ids.includes(x) && a.ids.includes(y)),
     artist_link_check: (a) => void (window.__LINK_CHECKS__ = [...(window.__LINK_CHECKS__ ?? []), ...a.ids]),

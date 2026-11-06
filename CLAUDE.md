@@ -30,6 +30,10 @@ scripts/installer-art.py NSIS sidebar/header art from assets/icons/openspot.png.
 - Each provider has a **service switch** (Settings → Services; Rust `Services`, kv `services`).
   - A provider that is off keeps its sign-in, but it is never called and is hidden everywhere.
   - YouTube Music may be on without an account (anonymous). Plex needs a sign-in.
+  - Exception: a **per-artist override** (artist page ••• → "Always show Plex albums") adds that
+    provider's artist of the same name to the page even while the provider is off. The items it
+    shows are let through by id (`AppState::allow` / `allows`, kv `overrideIds`); the UI reads them
+    with `override_ids` (`store/providers.ts` `allowed`). Overrides live in kv `artistOverrides`.
 - Commands dispatch per item with `Provider::of_id`. Fan-out commands (home, search, library, liked,
   browse) run each provider that is on, and report a failing provider in `errors[]` instead of failing.
 - Errors `authExpired` / `disabled` carry the `provider`.

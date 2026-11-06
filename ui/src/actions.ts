@@ -7,7 +7,7 @@ import { localError, translate, type Key } from "./i18n";
 import * as P from "./player/engine";
 import { isSaved, refreshLibrary, refreshPlaylists, refreshSaved, useApp } from "./store/app";
 import { loadProfile, openExternal, useProfile } from "./store/profile";
-import { capsOf, isOn, sourceOf } from "./store/providers";
+import { allowed, capsOf, isOn, sourceOf } from "./store/providers";
 import { useSettings } from "./store/settings";
 import { confirmDialog, formDialog, navigate, pickDialog, promptDialog, toast, useUi, type MenuHead, type MenuItem } from "./store/ui";
 import type { Album, Artist, Playlist, Podcast, Provider, Track, YtPrivacy } from "./types";
@@ -45,7 +45,7 @@ export const usableProviders = (): Provider[] => PROVIDERS.filter(usableProvider
 /** Shown in the app: local files and app playlists always, a service's items while it is on. */
 export function visibleId(id: string | null | undefined): boolean {
   const p = providerOfId(id);
-  return !p || isOn(p);
+  return !p || isOn(p) || allowed(id);
 }
 
 /** The service keeps likes for this account: on, signed in, with favorites. */

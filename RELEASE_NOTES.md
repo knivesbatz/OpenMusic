@@ -1,11 +1,15 @@
-# OpenSpot 2.0.1
+# OpenSpot 2.1.0
 
 YouTube Music, Plex and your local files in one app.
 
-## New in 2.0.1
+## New in 2.1.0
+- **Always show Plex / YouTube Music albums, per artist.** An artist page's ••• menu (next to
+  Follow) can keep the other service's albums of that artist on the page, until you turn it off.
+  It works even while that service is switched off in Settings (Plex still needs you signed in),
+  and those albums play.
 - Phones: no empty player bar at the bottom while nothing is playing.
 
-## OpenSpot 2.0.0
+## OpenSpot 2.0
 - **YouTube Music and Plex together.** Sign in to either or both. Turn each one on or off in
   Settings → Services.
 - **Combined search, Home, Your Library and Liked Songs** across both services.

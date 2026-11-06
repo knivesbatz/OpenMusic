@@ -1223,6 +1223,32 @@ async function search(p, q) {
 const badges = (p) => p.locator(".src-badge");
 const srcs = (p, source) => p.locator(`[data-source="${source}"]`);
 
+await test("Artist ••• menu: Always show Plex albums adds them to a YouTube artist while Plex is off, and they play", async (p) => {
+  await search(p, "luna");
+  const shelf = p.locator(".shelf", { has: p.locator("h2", { hasText: /^Artists$/ }) });
+  await shelf.locator(".card", { hasText: "Luna Park" }).first().click();
+  await p.locator("h1", { hasText: "Luna Park" }).waitFor();
+  assert.equal(await p.locator('.card[data-source="plex"]').count(), 0);
+  await p.click('.detail .action-bar button[aria-label="More options"]');
+  const item = p.locator(".menu button", { hasText: "Always show Plex albums" });
+  await item.waitFor();
+  // No YouTube Music option on a YouTube artist; Follow is there too.
+  assert.equal(await p.locator(".menu button", { hasText: "Always show YouTube Music albums" }).count(), 0);
+  await p.locator(".menu button", { hasText: /^Follow/ }).waitFor();
+  await item.click();
+  const plexAlbum = p.locator('.card[data-source="plex"]', { hasText: "Night Drive" });
+  await plexAlbum.first().waitFor();
+  // Remembered: the menu shows it checked.
+  await p.click('.detail .action-bar button[aria-label="More options"]');
+  await p.locator('.menu button[aria-checked="true"]', { hasText: "Always show Plex albums" }).waitFor();
+  await p.keyboard.press("Escape");
+  // The album opens and its songs play although Plex is off.
+  await plexAlbum.first().click();
+  await p.locator("h1", { hasText: "Night Drive" }).waitFor();
+  await p.locator(".detail .tl-row:not(.tl-head)").first().dblclick();
+  await p.waitForFunction(() => !!document.querySelector(".playerbar .pb-meta .name")?.textContent);
+}, { init: () => (window.__STATE__.services.plex = false) });
+
 await test("Services: switching Plex off hides it everywhere and forgets its search results; back on brings it back", async (p) => {
   // Both on: Plex and YouTube shelves on Home.
   await p.locator(".shelf .card", { hasText: "Night Drive" }).first().waitFor();
