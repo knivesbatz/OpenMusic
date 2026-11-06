@@ -81,8 +81,8 @@ controls are hidden or explained rather than faked.
 - macOS: the 1.x updater swaps the bundle in place, so OpenSpot may first run as `YTSpot.app` or
   `PLEXSpot.app`. It renames itself to `OpenSpot.app` and relaunches, or, when `OpenSpot.app` already
   exists next to it, moves the old copy to the Trash and opens `OpenSpot.app`.
-- CI's install test upgrades the pinned v1.6.1 YTSpot and PLEXSpot installers to the new build. The
-  release job never deletes v1.6.1.
+- CI's install test is a fresh install of the new build; upgrades from YTSpot/PLEXSpot 1.x are no
+  longer tested.
 
 ## Playback
 

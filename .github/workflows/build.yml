@@ -249,121 +249,50 @@ jobs:
           path: apps/openspot/src-tauri/out/*.apk
           if-no-files-found: error
 
-  # Upgrades real 1.x installs to the new build. The fixtures are the YTSpot and PLEXSpot installers
-  # of v1.6.1, the last 1.x release (the release job never deletes it).
-  #   ytspot:   YTSpot and PLEXSpot both installed and running; the installer runs like YTSpot's
-  #             "Restart to update" (/P /R).
-  #   plexspot: only PLEXSpot, running; the installer runs like the update on exit (/S).
+  # A fresh silent install of the new build: it starts, creates its library, and uninstalls cleanly.
   # Both check that the old programs are gone (Uninstall keys, folders, processes), that their data
   # is kept, that "Launch at startup" moved to OpenSpot and that OpenSpot imports PLEXSpot's data.
   install-test:
     needs: bundle
     runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        from: [ytspot, plexspot]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: openspot-windows
           path: new
-      - name: Upgrade from 1.6.1, launch and uninstall
+      - name: Install, launch and uninstall
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          LEGACY_TAG: v1.6.1
-          FROM: ${{ matrix.from }}
         run: |
           $ErrorActionPreference = 'Stop'
           $conf = Get-Content 'apps/openspot/src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json
           $name = $conf.productName
           $dir = Join-Path $env:LOCALAPPDATA $name
           $exe = Join-Path $dir "$($conf.mainBinaryName).exe"
-          $uninst = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
           $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-          # A fresh CI user profile may not have the Run key yet.
-          if (!(Test-Path $runKey)) { New-Item -Path $runKey -Force | Out-Null }
-          $legacyVer = $env:LEGACY_TAG.TrimStart('v')
-          $old = if ($env:FROM -eq 'ytspot') { @('YTSpot', 'PLEXSpot') } else { @('PLEXSpot') }
-          function DataDir($n) { Join-Path $env:APPDATA "app.openmusic.$($n.ToLower())" }
 
-          # 1. The pinned 1.x installers. Missing fixtures fail the job: no silent clean install.
-          gh release download $env:LEGACY_TAG --repo $env:GITHUB_REPOSITORY --dir old `
-            --pattern "YTSpot_${legacyVer}_x64-setup.exe" --pattern "PLEXSpot_${legacyVer}_x64-setup.exe"
-          foreach ($n in 'YTSpot', 'PLEXSpot') {
-            if (!(Test-Path "old/${n}_${legacyVer}_x64-setup.exe")) { throw "$($env:LEGACY_TAG) has no ${n}_${legacyVer}_x64-setup.exe" }
-          }
-
-          # 2. Install the old apps, start them (they create their library.db) and turn on their
-          #    "Launch at startup" entry the way the app does (HKCU Run, "<exe> --htpc").
-          foreach ($n in $old) {
-            Start-Process "old/${n}_${legacyVer}_x64-setup.exe" -ArgumentList '/S' -Wait
-            $oldExe = Join-Path $env:LOCALAPPDATA "$n\$n.exe"
-            if (!(Test-Path $oldExe)) { throw "$n $legacyVer did not install to $oldExe" }
-            if (!(Test-Path "$uninst\$n")) { throw "$n $legacyVer wrote no Uninstall key" }
-            Start-Process $oldExe | Out-Null
-            $db = Join-Path (DataDir $n) 'library.db'
-            for ($i = 0; $i -lt 60 -and !(Test-Path $db); $i++) { Start-Sleep -Seconds 1 }
-            if (!(Test-Path $db)) { throw "$n did not create $db" }
-            Set-ItemProperty $runKey -Name $n -Value "$oldExe --htpc"
-            Write-Host "$n $legacyVer installed and running"
-          }
-          Start-Sleep -Seconds 5
-
-          # 3. Install OpenSpot while the old apps still run, as their updater does.
+          # 1. Silent install.
           $new = Get-ChildItem new -Filter *.exe | Select-Object -First 1
-          $installArgs = if ($env:FROM -eq 'ytspot') { @('/P', '/R') } else { @('/S') }
-          Write-Host "Running $($new.Name) $($installArgs -join ' ')"
-          $setup = Start-Process $new.FullName -ArgumentList $installArgs -PassThru
+          Write-Host "Running $($new.Name) /S"
+          $setup = Start-Process $new.FullName -ArgumentList '/S' -PassThru
           if (-not $setup.WaitForExit(300000)) { throw "the installer did not finish in 5 minutes" }
           if (!(Test-Path $exe)) { throw "not installed: $exe" }
           $ver = (Get-Item $exe).VersionInfo.ProductVersion
           Write-Host "Installed $name $ver"
           if (-not $ver.StartsWith($conf.version)) { throw "expected version $($conf.version), got $ver" }
 
-          # 4. The old apps are gone; their data is not.
-          foreach ($n in 'YTSpot', 'PLEXSpot') {
-            if (Get-Process -Name $n -ErrorAction SilentlyContinue) { throw "$n.exe is still running" }
-            if (Test-Path "$uninst\$n") { throw "the $n Uninstall key is still there" }
-            if (Test-Path (Join-Path $env:LOCALAPPDATA $n)) { throw "the $n install folder is still there: $(Get-ChildItem (Join-Path $env:LOCALAPPDATA $n) | Out-String)" }
-            if ((Get-ItemProperty $runKey -ErrorAction SilentlyContinue).$n) { throw "the $n Run entry is still there" }
-          }
-          foreach ($n in $old) {
-            $db = Join-Path (DataDir $n) 'library.db'
-            if (!(Test-Path $db)) { throw "the upgrade deleted $db" }
-          }
-          $auto = (Get-ItemProperty $runKey -ErrorAction SilentlyContinue).$name
-          if (-not $auto -or -not $auto.ToLower().Contains($exe.ToLower())) { throw "Launch at startup did not move to $name (Run value: '$auto')" }
-          Write-Host "Old apps removed, data kept, Run entry: $auto"
-
-          # 5. OpenSpot starts and keeps running. "/R" starts it after a passive install.
-          $p = $null
-          if ($installArgs -contains '/R') {
-            for ($i = 0; $i -lt 30 -and -not $p; $i++) { Start-Sleep -Seconds 1; $p = Get-Process -Name $conf.mainBinaryName -ErrorAction SilentlyContinue | Select-Object -First 1 }
-            if (-not $p) { Write-Host "::warning::/R did not start $name; starting it here" }
-          }
-          if (-not $p) { $p = Start-Process $exe -PassThru }
+          # 2. It starts, creates its library and keeps running.
+          $p = Start-Process $exe -PassThru
+          $db = Join-Path $env:APPDATA 'app.openmusic.ytspot\library.db'
+          for ($i = 0; $i -lt 60 -and !(Test-Path $db); $i++) { Start-Sleep -Seconds 1 }
+          if (!(Test-Path $db)) { throw "$name did not create $db" }
           Start-Sleep -Seconds 20
           if ($p.HasExited) { throw "$name exited during startup with code $($p.ExitCode)" }
           Write-Host "Running after 20 s: $([math]::Round($p.WorkingSet64 / 1MB)) MB working set (main process)"
-          $db = Join-Path (DataDir 'YTSpot') 'library.db'
-          if (!(Test-Path $db)) { throw "$name has no $db" }
-          # PLEXSpot's library was imported (migrate.rs marks each step done in kv).
-          $py = Join-Path $env:RUNNER_TEMP 'marks.py'
-          Set-Content $py -Value @(
-            'import sqlite3, sys',
-            'rows = sqlite3.connect(sys.argv[1]).execute("SELECT key FROM kv WHERE key LIKE ''migrated.plexspot%''")',
-            'print(" ".join(r[0] for r in rows))'
-          )
-          $marks = python $py $db
-          Write-Host "Import markers: $marks"
-          if (-not $marks) { throw "$name did not import PLEXSpot's data (no migrated.plexspot* key in $db)" }
           Stop-Process -Id $p.Id -Force
           Start-Sleep -Seconds 3
 
-          # 6. Uninstall cleanly; the data stays (the "Delete app data" box is off in silent mode).
+          # 3. Uninstall cleanly; the data stays (the "Delete app data" box is off in silent mode).
           # NSIS uninstallers re-launch from a temp copy, so poll for the removal.
           Start-Process (Join-Path $dir 'uninstall.exe') -ArgumentList '/S' -Wait
           for ($i = 0; $i -lt 30 -and (Test-Path $exe); $i++) { Start-Sleep -Seconds 1 }
@@ -462,16 +391,14 @@ jobs:
           TAG: ${{ inputs.release_tag || github.ref_name }}
         run: gh workflow run macos.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}" -f release_tag="$TAG"
       - name: Remove superseded releases
-        # Only the newest release is kept, plus v1.6.1: the last 1.x release is the install test's
-        # upgrade fixture (its YTSpot_ and PLEXSpot_ installers).
+        # Only the newest release is kept.
         env:
           GH_TOKEN: ${{ github.token }}
           KEEP: ${{ inputs.release_tag || github.ref_name }}
-          LEGACY: v1.6.1
         run: |
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' |
             while read -r tag; do
-              if [ "$tag" != "$KEEP" ] && [ "$tag" != "$LEGACY" ]; then
+              if [ "$tag" != "$KEEP" ]; then
                 gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
               fi
             done

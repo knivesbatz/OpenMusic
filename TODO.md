@@ -69,9 +69,9 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 Code signing wired in CI: set repository secrets `WINDOWS_CERTIFICATE` (base64 .pfx) and
   `WINDOWS_CERTIFICATE_PASSWORD` and the installers are Authenticode-signed with timestamping. No
   certificate yet, so releases are unsigned
-- 🟡 CI `install-test` job per app on windows-latest: installs the latest published release, upgrades it
-  with the new build (silent), checks the version, launches the app and checks it's still running after
-  20 s, then uninstalls and checks removal. Releases only publish when it passes
+- ✅ CI `install-test` on windows-latest: fresh silent install of the new build, checks the version,
+  launches it and checks it's still running after 20 s, then uninstalls and checks removal. Releases
+  only publish when it passes
 - ✅ Install, upgrade, uninstall, data locations and troubleshooting documented (`docs/INSTALL.md`)
 
 ## Fixed after beta testing (real YouTube account)
