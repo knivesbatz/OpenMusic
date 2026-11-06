@@ -77,7 +77,7 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
   - The updater compares against the Cargo version.
 - Releases carry OpenSpot files only (`OpenSpot_<v>_…`). There are no YTSpot_/PLEXSpot_ copies, so
   1.x apps don't update themselves; their users install OpenSpot (data carries over).
-- The release job never deletes v1.6.1, which is the install test's upgrade fixture.
+- The release job keeps only the newest release.
 
 ## Working in a cloud session (Linux, no display)
 
@@ -87,11 +87,8 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
 - The Windows installer and the Android APK come from CI (`.github/workflows/build.yml`).
   - Push to `main` and download the `openspot-windows` / `openspot-android` artifacts.
   - Or push a tag `vX.Y.Z` to publish a GitHub release.
-- install-test upgrades the pinned v1.6.1 YTSpot and PLEXSpot installers to the new build, and checks:
-  - the old apps are uninstalled;
-  - their data is kept;
-  - "Launch at startup" moved over;
-  - the PLEXSpot import marker is set.
+- install-test does a fresh silent install of the new build, starts it (it must create its library and
+  keep running) and uninstalls it (the data must stay).
 - The NSIS hooks are in `apps/openspot/src-tauri/installer/hooks.nsh`. They never touch
   `app.openmusic.*` data, except PLEXSpot's folders when "Delete app data" is ticked on uninstall.
 - The Mac disk image (`OpenSpot_<v>_universal.dmg`, artifact `openspot-macos`) comes from
