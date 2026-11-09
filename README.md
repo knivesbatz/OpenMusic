@@ -57,7 +57,7 @@ The screenshots use sample data. More are in [docs/screenshots](docs/screenshots
 
 - YouTube Music, Plex and local files in one app, each service with its own on/off switch
 - Spotify-style home, combined search (top result, songs, artists, albums, playlists), artist pages and playlists
-- Your Library: Recently played, Albums, Artists, Podcasts and Your Episodes (YouTube Music), Local files, Downloads (Plex)
+- Your Library: Recently played, Albums, Artists, Podcasts and Your Episodes (YouTube Music), Local files, Downloads (YouTube Music and Plex)
 - Crossfade and gapless playback, autoplay of similar songs, and a full queue editor. Crossfade blends songs from the same service.
 - Synced lyrics: embedded or from Plex first, then looked up online (LRCLIB, NetEase); no API keys needed
 - Lyrics and titles in other scripts, translated into your language (English or Japanese)
@@ -69,4 +69,4 @@ The screenshots use sample data. More are in [docs/screenshots](docs/screenshots
 
 ## Development
 
-See `CLAUDE.md` for commands, `TODO.md` for the backlog and `docs/ARCHITECTURE.md` for the design. Installing, data locations and troubleshooting are in `docs/INSTALL.md`.
+Third-party code and licenses: `THIRD_PARTY_NOTICES.md`. See `CLAUDE.md` for commands, `TODO.md` for the backlog and `docs/ARCHITECTURE.md` for the design. Installing, data locations and troubleshooting are in `docs/INSTALL.md`.

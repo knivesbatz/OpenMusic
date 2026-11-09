@@ -124,5 +124,8 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
 - User-visible strings go through `ui/src/i18n.ts` (`en` + `ja`, typed so a missing `ja` key fails `tsc`).
   The product name is "OpenSpot".
 - Spotify playlist transfer is handed off to Soundiiz (Import page); there is no Spotify API code.
-- Don't add controls that do nothing. If a provider can't do something (YouTube downloads, crossfade
-  between a YouTube and a Plex song), report it through `Capabilities` and say why in the UI.
+- YouTube downloads: `ui/src/ytdl.ts` (youtubei.js + BotGuard, through Rust `yt_fetch`) works out the
+  stream, `downloads.rs` `run_youtube` fetches it. Adapted from ytspot (MIT): keep
+  `THIRD_PARTY_NOTICES.md`. `yt_fetch` only reaches YouTube/Google hosts; keep it that way.
+- Don't add controls that do nothing. If a provider can't do something (crossfade between a YouTube and
+  a Plex song), report it through `Capabilities` and say why in the UI.
