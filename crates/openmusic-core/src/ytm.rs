@@ -79,7 +79,12 @@ pub fn sapisid(cookie: &str) -> Option<&str> {
 }
 
 pub fn sapisid_hash(sapisid: &str, epoch: u64) -> String {
-    let digest = Sha1::digest(format!("{epoch} {sapisid} {ORIGIN}").as_bytes());
+    sapisid_hash_for(sapisid, epoch, ORIGIN)
+}
+
+/// The SAPISIDHASH for requests sent with `Origin: origin` (YouTube checks it against the host).
+pub fn sapisid_hash_for(sapisid: &str, epoch: u64, origin: &str) -> String {
+    let digest = Sha1::digest(format!("{epoch} {sapisid} {origin}").as_bytes());
     format!("SAPISIDHASH {epoch}_{}", hex::encode(digest))
 }
 
@@ -1095,17 +1100,18 @@ impl Ytm {
         Ok(info)
     }
 
-    /// Headers that make a YouTube API request signed in as this account (the same `post` sends),
-    /// for the downloader's own requests (commands.rs `yt_fetch`); None when signed out.
-    pub fn auth_headers(&self) -> Option<Vec<(&'static str, String)>> {
+    /// Headers that make a YouTube API request to `origin` (`https://<its host>`: YouTube rejects an
+    /// Origin that isn't the host's) signed in as this account, for the downloader's own requests
+    /// (commands.rs `yt_fetch`); None when signed out. They replace any the caller sent.
+    pub fn auth_headers(&self, origin: &str) -> Option<Vec<(&'static str, String)>> {
         let cookie = self.cookie()?;
         let sid = sapisid(&cookie)?.to_string();
         let epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
         let mut h = vec![
-            ("Authorization", sapisid_hash(&sid, epoch)),
+            ("Authorization", sapisid_hash_for(&sid, epoch, origin)),
             ("X-Goog-AuthUser", "0".to_string()),
-            ("Origin", ORIGIN.to_string()),
-            ("X-Origin", ORIGIN.to_string()),
+            ("Origin", origin.to_string()),
+            ("X-Origin", origin.to_string()),
             ("Cookie", cookie),
         ];
         if let Some(p) = &self.page_id {
