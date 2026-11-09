@@ -87,7 +87,7 @@ function ytDeck(i = ytActive): YouTubeOutput {
           else if (undoBackgroundPause()) return;
           set({ playing: p });
         },
-        onError: (m) => mine() && onError(m),
+        onError: (m) => mine() && youTubeRefused(m),
       }),
     );
   }
@@ -340,6 +340,35 @@ function startedTrack(item: Q.QItem) {
   // Last.fm gets the official artist/album of YouTube music videos, not the uploader.
   if (useSettings.getState().lastfmScrobble && !item.track.episode) api.lastfmNowPlaying(displayTrack(item.track)).catch(() => {});
   persistSoon();
+}
+
+/** Songs (queue uids) already tried as a direct stream, so a failure there isn't retried. */
+const directTried = new Set<string>();
+
+/** YouTube's embedded player refused the song: Premium-only songs (and some others) don't play in
+ * embeds even when the user is signed in. Resolve its audio stream the way downloads do (ytdl.ts,
+ * as the signed-in account, so Premium works) and play that instead; failing that, the usual error. */
+async function youTubeRefused(message: string) {
+  const item = Q.current(get().queue);
+  if (!item || !inTauri || !isYouTube(item.track) || directTried.has(item.uid)) return onError(message);
+  directTried.add(item.uid);
+  const token = loadToken;
+  set({ loading: true });
+  try {
+    const { audioStream } = await import("../ytdl");
+    const s = await audioStream(item.track.streamKey ?? item.track.id.replace(/^yt:/, ""));
+    if (token !== loadToken) return;
+    stopYouTube();
+    const a = deck();
+    a.src = s.url;
+    deckGain[active] = 1;
+    a.volume = deckVolume();
+    set({ output: "audio", quality: null, offline: false, loading: false });
+    await a.play();
+  } catch (e) {
+    if (token !== loadToken || interrupted(e)) return;
+    onError(`${message} (${errorMessage(e)})`);
+  }
 }
 
 let errorStreak = 0;

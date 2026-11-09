@@ -811,6 +811,9 @@ function PhoneLibrary({ tab, c }: { tab?: LibraryTab; c: Collections }) {
         : org.sort === "added"
           ? items.map((it, i) => ({ it, i })).sort((a, b) => (org.added[b.it.id] ?? 0) - (org.added[a.it.id] ?? 0) || a.i - b.i).map((x) => x.it)
           : items;
+  // Pinned playlists (Pin playlist) come first, in pin order, as in Spotify.
+  const pinOrder = (it: MediaItem) => org.pinned.indexOf(it.id);
+  const listed = [...sorted.filter((it) => pinOrder(it) >= 0).sort((a, b) => pinOrder(a) - pinOrder(b)), ...sorted.filter((it) => pinOrder(it) < 0)];
   const grid = org.view === "grid" || org.view === "compactGrid";
   const go = (c: PhoneChip | null) => navigate(c ? { name: "library", tab: c } : { name: "library" }, true);
   const sortNames: Record<string, string> = { recent: t("sortRecent"), added: t("recentlyAdded"), alpha: t("sortAlpha"), creator: t("sortCreator"), custom: t("sortRecent") };
@@ -855,9 +858,10 @@ function PhoneLibrary({ tab, c }: { tab?: LibraryTab; c: Collections }) {
           {!lib && !err ? (
             <Loading />
           ) : (
-            sorted.map((it) => (
+            listed.map((it) => (
               <LibRow
                 key={it.type + it.id}
+                pin={pinOrder(it) >= 0}
                 icon={<Art src={it.artwork} size={grid ? 240 : 128} round={it.type === "artist"} />}
                 title={name(it)}
                 badgeId={it.id}

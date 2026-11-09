@@ -1216,3 +1216,6 @@ img.avatar { object-fit: cover; }
 .dl-btn.done { color: var(--green); }
 @keyframes dl-pulse { 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) { .dl-mark.busy, .dl-btn.busy { animation: none; } }
+
+/* Spotify's green pin before a pinned item's subtitle (sidebar and Your Library, every width). */
+.lib-pin { color: var(--green); vertical-align: -2px; margin-right: 4px; flex: none; }

@@ -1,6 +1,15 @@
-# OpenSpot 2.2.1
+# OpenSpot 2.3.0
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.3.0
+- **Pin playlists and folders** to the top of Your Library, like Spotify: right-click (or •••) →
+  Pin playlist. Pinned items stay first whatever the sort, with a green pin, up to four. Unpin
+  playlist puts it back.
+- **Premium-only songs play and download.** YouTube's embedded player won't play some Premium-only
+  songs in other apps, even when you're signed in ("only available to Music Premium members").
+  When it refuses a song, OpenSpot now plays its audio directly as your signed-in account instead.
+  Downloads use your account too.
 
 ## New in 2.2.1
 - **Downloads are marked like Spotify:** a green arrow next to every downloaded song, a green

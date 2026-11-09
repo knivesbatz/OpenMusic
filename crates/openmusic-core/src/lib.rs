@@ -406,6 +406,7 @@ pub fn run(context: tauri::Context<tauri::Wry>) {
             commands::yt_download_queue,
             commands::yt_download,
             commands::yt_download_failed,
+            commands::yt_datasync_id,
             commands::download_list,
             commands::download_cancel,
             commands::download_remove,

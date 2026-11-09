@@ -14,7 +14,7 @@ import type { Album, Artist, Playlist, Podcast, Provider, Track, YtPrivacy } fro
 import { PROVIDERS } from "./types";
 import { serviceLabel } from "./util";
 import { duplicatesIn, uniqueSongs } from "./duplicates";
-import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
+import { createFolder, deleteFolder, folderKey, folderOf, isPinned, MAX_PINS, putInFolder, renameFolder, takeOutOfFolder, togglePin, useFolders, type Folder } from "./store/folders";
 import * as I from "./components/Icons";
 import { displayTrack } from "./store/songmeta";
 import { listDownload, setCollectionDownload, useDownloadState } from "./components/common";
@@ -394,8 +394,22 @@ export async function newFolder(withPlaylist?: string): Promise<string | null> {
   return id;
 }
 
+/** Spotify's "Pin playlist" / "Unpin playlist" (and folder): pinned items stay at the top of
+ * Your Library, up to four. */
+function pinItem(key: string, kind: "playlist" | "folder"): MenuItem {
+  const pinned = isPinned(key);
+  return {
+    label: t(pinned ? (kind === "folder" ? "unpinFolder" : "unpinPlaylist") : kind === "folder" ? "pinFolder" : "pinPlaylist"),
+    icon: I.IPin,
+    onClick: () => {
+      if (!togglePin(key)) toast(t("pinLimit", { n: MAX_PINS }));
+    },
+  };
+}
+
 export function folderMenu(f: Folder): MenuItem[] {
   return [
+    pinItem(folderKey(f.id), "folder"),
     {
       label: t("renameFolder"),
       icon: I.IEdit,
@@ -476,6 +490,7 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCo
     items.push(...likeAllItem(tracks, pl.id));
     if (downloadsFor(pl.local ? null : source)) items.push(downloadItem(tracks, pl.id));
   }
+  items.push(pinItem(pl.id, "playlist"));
   items.push({ label: t("moveToFolder"), icon: I.IFolder, submenu: moveToFolderSubmenu(pl) });
   if (pl.local) items.push({ label: t("editDetails"), icon: I.IEdit, onClick: () => renamePlaylist(pl) });
   if (canChangeCover(pl)) {

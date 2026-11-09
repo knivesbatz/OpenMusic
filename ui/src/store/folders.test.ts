@@ -57,6 +57,15 @@ describe("playlist folders", () => {
     expect(arrange(o2, pls).slice(-1)[0]).toBe("p1");
   });
 
+  it("puts pinned playlists and folders first, in pin order, whatever the sort", () => {
+    const pls = [{ id: "p1", title: "B" }, { id: "p2", title: "A" }, { id: "p3", title: "C" }];
+    const o: LibraryOrg = { ...withFolder, folders: [{ id: "f", name: "Moods", items: ["p3"], open: true }], sort: "alpha", pinned: ["p3", "folder:f", "gone"] };
+    // p3 is in folder f but pinned: it shows at the top too; a pin of a deleted playlist is ignored.
+    expect(arrange(o, pls)).toEqual(["p3", "folder:f", "p2", "p1"]);
+    expect(arrange({ ...o, pinned: [] }, pls)).toEqual(["p2", "p1", "folder:f"]);
+    expect(sanitizeOrg({ pinned: ["a", "a", "b", "c", "d", "e", 3 as unknown as string] }).pinned).toEqual(["a", "b", "c", "d"]);
+  });
+
   it("sanitizes stored data", () => {
     expect(sanitizeOrg(null)).toEqual(emptyOrg);
     expect(sanitizeOrg({ folders: [{ id: "x", name: "A", items: ["p1", 3 as unknown as string], open: false }], order: ["p1"], sort: "custom" })).toEqual({
@@ -65,6 +74,7 @@ describe("playlist folders", () => {
       sort: "custom",
       view: "list",
       added: {},
+      pinned: [],
     });
     expect(sanitizeOrg({ sort: "creator", view: "grid", added: { p1: 5, p2: "x" as unknown as number } })).toMatchObject({ sort: "creator", view: "grid", added: { p1: 5 } });
     expect(sanitizeOrg({ sort: "nope" as never, view: "huge" as never })).toMatchObject({ sort: "recent", view: "list" });

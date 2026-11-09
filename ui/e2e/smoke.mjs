@@ -368,6 +368,34 @@ await test(
   },
 );
 
+await test("Pin playlist like Spotify: it moves to the top with a green pin, up to four, and Unpin puts it back", async (p) => {
+  const names = () => p.locator(".lib-list .side-item .name").allTextContents();
+  const before = await names();
+  const last = before[before.length - 1];
+  const item = p.locator(".lib-list .side-item", { hasText: last }).first();
+  assert.equal(await item.locator(".lib-pin").count(), 0);
+  await item.click({ button: "right" });
+  await p.locator(".menu button", { hasText: "Pin playlist" }).click();
+  await p.waitForFunction((n) => document.querySelector(".lib-list .side-item .name")?.textContent === n, last);
+  await p.locator(".lib-list .side-item", { hasText: last }).first().locator(".lib-pin").waitFor();
+  // Four pins at most: pinning a fifth says so.
+  for (const n of before.slice(0, 3)) {
+    await p.locator(".lib-list .side-item", { hasText: n }).first().click({ button: "right" });
+    await p.locator(".menu button", { hasText: "Pin playlist" }).click();
+  }
+  await p.locator(".lib-list .side-item", { hasText: before[3] }).first().click({ button: "right" });
+  await p.locator(".menu button", { hasText: "Pin playlist" }).click();
+  await p.locator(".toast", { hasText: "pin up to 4" }).waitFor();
+  assert.equal(await p.locator(".lib-list .side-item .lib-pin").count(), 4);
+  // Unpin: back to where it was.
+  await p.locator(".lib-list .side-item", { hasText: last }).first().click({ button: "right" });
+  await p.locator(".menu button", { hasText: "Unpin playlist" }).click();
+  await p.waitForFunction((n) => [...document.querySelectorAll(".lib-list .side-item .name")].pop()?.textContent === n, last);
+  assert.equal(await p.locator(".lib-list .side-item .lib-pin").count(), 3);
+  // Kept across restarts (Your Library's settings in the app's store, saved a moment later).
+  await p.waitForFunction(() => window.__STATE__.kv["libraryOrg"]?.pinned?.length === 3);
+});
+
 await test("Downloaded like Spotify: green marks on the songs and the album, in Your Library too; Remove download takes them away", async (p) => {
   await search(p, "night drive");
   await p.locator('.shelf .card[data-source="plex"]', { hasText: "Night Drive" }).first().click();
@@ -1700,6 +1728,29 @@ await test("Mixed queue: a Plex song, then a YouTube song, then Plex again play 
   }
   assert.deepEqual(seen, ["Slow Lights", "Ferry Lights", "Halfway Home", "Orbit"]);
   assert.deepEqual(await p.evaluate(() => window.__YT_LOADS), ["vid0", "vid1"]);
+}, { init: mixedQueue });
+
+await test("Premium-only song the embed refuses: OpenSpot tries its stream as the signed-in account, then moves on", async (p) => {
+  // The fake embed refuses vid0, however it gets there (loaded, or cued while the Plex song played).
+  await p.evaluate(() => {
+    const proto = window.YT.Player.prototype;
+    const load = proto.loadVideoById;
+    const play = proto.playVideo;
+    const refuse = (self) => setTimeout(() => self.ev.onError({ data: 150 }), 20);
+    proto.loadVideoById = function (o) {
+      return o.videoId === "vid0" ? void refuse(this) : load.call(this, o);
+    };
+    proto.playVideo = function () {
+      if (this.cued === "vid0") return void ((this.cued = null), refuse(this));
+      return play.call(this);
+    };
+  });
+  await p.click('.playerbar button[aria-label="Next"]');
+  // The fake embed refuses vid0 (YouTube error 150), so the direct stream is asked for through Rust.
+  await p.waitForFunction(() => window.__CALLS__.includes("yt_fetch"));
+  // No network in the mock: it fails, says so, and the next song plays.
+  await p.waitForFunction(() => document.querySelector(".pb-meta .name")?.textContent?.trim() === "Halfway Home");
+  await p.locator(".toast", { hasText: "Ferry Lights" }).waitFor();
 }, { init: mixedQueue });
 
 await test("Mixed queue with YouTube off: its songs are skipped, the Plex ones play", async (p) => {

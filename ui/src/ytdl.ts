@@ -7,7 +7,8 @@
 //   which BotGuard (Google's anti-abuse VM, run here with LuanRT's bgutils-js) mints per video. It
 //   needs a real browser: this web view is one.
 // Every request goes through Rust (`yt_fetch`, YouTube and Google hosts only), so YouTube's CORS
-// rules don't apply. Nothing here uses the user's YouTube sign-in: it's a signed-out session.
+// rules don't apply. Rust signs the YouTube API requests in as the user's account when they're
+// signed in (Premium songs need that); BotGuard's requests are never signed in.
 import { invoke } from "@tauri-apps/api/core";
 import type { Track } from "./types";
 
@@ -97,7 +98,19 @@ export interface AudioStream {
 
 /** Where to fetch a song's audio (AAC when there is one: it plays in every web view, Safari's
  * included) and how big it is. */
-export async function audioStream(videoId: string): Promise<AudioStream> {
+/** What a signed-in session's media PO token is bound to: the account's data sync id
+ * (`<delegated>||<user>`: the delegated, i.e. brand-account, part when there is one). Null when
+ * signed out. */
+async function accountBinding(): Promise<string | null> {
+  const id = await invoke<string | null>("yt_datasync_id").catch(() => null);
+  if (!id) return null;
+  const [delegated, user] = id.split("||");
+  return delegated || user || null;
+}
+
+/** `gvs`: bind the media URL's PO token to this instead of the video (a signed-in account's data
+ * sync id, tried when YouTube refused the first one). */
+export async function audioStream(videoId: string, gvs?: string): Promise<AudioStream> {
   const yt = await (session ??= innertube().catch((e) => ((session = null), Promise.reject(e))));
   const pot = await poToken(videoId);
   const info = await yt.getBasicInfo(videoId, { client: "YTMUSIC", po_token: pot });
@@ -109,7 +122,8 @@ export async function audioStream(videoId: string): Promise<AudioStream> {
   const format = best(audio.filter((f) => f.mime_type.startsWith("audio/mp4"))) ?? best(audio.filter((f) => f.mime_type.startsWith("audio/webm")));
   if (!format || !format.content_length) throw new Error("No audio for this song");
   const url = new URL(await format.decipher(yt.session.player));
-  if (!url.searchParams.has("pot")) url.searchParams.set("pot", pot);
+  if (gvs) url.searchParams.set("pot", await poToken(gvs));
+  else if (!url.searchParams.has("pot")) url.searchParams.set("pot", pot);
   return { url: url.toString(), size: format.content_length, ext: format.mime_type.startsWith("audio/webm") ? "webm" : "m4a" };
 }
 
@@ -124,18 +138,19 @@ export async function downloadYouTube(tracks: Track[]): Promise<string[]> {
   const todo = [...tracks];
   const one = async (t: Track) => {
     const videoId = t.streamKey ?? t.id.replace(/^yt:/, "");
-    const attempt = async () => {
-      const s = await audioStream(videoId);
+    const attempt = async (gvs?: string) => {
+      const s = await audioStream(videoId, gvs);
       await invoke("yt_download", { track: t, url: s.url, size: s.size, ext: s.ext });
     };
     try {
       try {
         await attempt();
       } catch (e) {
-        // A minter YouTube stopped accepting gets a 403: once more with a fresh one.
+        // YouTube's media server refused the token (403): once more with a fresh minter, bound to
+        // the signed-in account when there is one (how YouTube's own player does it then).
         if (!String((e as { message?: string })?.message ?? e).includes("(403)")) throw e;
         resetPoTokens();
-        await attempt();
+        await attempt((await accountBinding()) ?? undefined);
       }
     } catch (e) {
       const message = (e as { message?: string })?.message ?? String(e);
