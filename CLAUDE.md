@@ -76,6 +76,12 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
   - The updater compares against the Cargo version.
 - Releases carry OpenSpot files only (`OpenSpot_<v>_…`).
 - The release job keeps only the newest release.
+- **Releasing = merging a version bump to `main`.** build.yml's `plan` job releases `v<version>` on a
+  push to main when that release doesn't exist yet (also `workflow_dispatch` with `release_tag`, or a
+  pushed `v*` tag). When a passing pull-request run built exactly the same files (same git tree;
+  `.github/scripts/find-prebuilt.sh`), its installer and APK are published as they are and nothing is
+  rebuilt (the APK's stable-key signature is still checked); macos.yml does the same for the disk
+  image. So keep a PR up to date with main before merging, or the release builds from scratch.
 
 ## Working in a cloud session (Linux, no display)
 
@@ -83,8 +89,8 @@ ui/node_modules/.bin/tauri icon assets/icons/openspot.png -o apps/openspot/src-t
   on Linux needs `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev`.
   The `keyring` crate also builds there.
 - The Windows installer and the Android APK come from CI (`.github/workflows/build.yml`).
-  - Push to `main` and download the `openspot-windows` / `openspot-android` artifacts.
-  - Or push a tag `vX.Y.Z` to publish a GitHub release.
+  - A pull request's run has the `openspot-windows` / `openspot-android` artifacts.
+  - Merging a version bump to `main` publishes the release (see Versions and releases).
 - install-test does a fresh silent install of the new build, starts it (it must create its library and
   keep running) and uninstalls it (the data must stay).
 - The NSIS hook is in `apps/openspot/src-tauri/installer/hooks.nsh` (it only clears the "Launch at

@@ -23,7 +23,47 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # What this run does. `tag`: the release to publish (a release_tag input, a pushed v* tag, or, for
+  # a push to main, v<version> when that release doesn't exist yet; empty = no release). `prebuilt`:
+  # a passing pull-request run that built exactly these files (scripts/find-prebuilt.sh); its
+  # installer and APK are published as they are and nothing is built again.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.p.outputs.tag }}
+      prebuilt: ${{ steps.p.outputs.prebuilt }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -e
+          V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
+          tag=""
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="$GITHUB_REF_NAME"
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            if gh release view "v$V" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "v$V is already released: nothing to publish"
+            else
+              tag="v$V"
+            fi
+          fi
+          prebuilt=""
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            prebuilt=$(bash .github/scripts/find-prebuilt.sh build.yml openspot-windows openspot-android || true)
+          fi
+          echo "tag '$tag', prebuilt run '${prebuilt:-none}'"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prebuilt=$prebuilt" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: plan
+    if: needs.plan.outputs.prebuilt == ''
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +93,8 @@ jobs:
         run: cargo clippy --workspace -- -D clippy::correctness
 
   e2e:
+    needs: plan
+    if: needs.plan.outputs.prebuilt == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,12 +120,13 @@ jobs:
   # installers are named after tauri.conf.json, and the UI shows package.json. A mismatch makes the
   # app see its own release as an update, so it fails the build. A release tag must match too.
   versions:
+    needs: plan
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Versions match (Cargo.toml, tauri.conf.json, ui/package.json, tag)
         env:
-          TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name || '') }}
+          TAG: ${{ needs.plan.outputs.tag }}
         run: |
           set -e
           cargo=$(python3 -c "import tomllib; print(tomllib.load(open('Cargo.toml', 'rb'))['workspace']['package']['version'])")
@@ -103,8 +146,10 @@ jobs:
             exit 1
           fi
 
+  # Built while the tests run; a release still needs every test to pass.
   bundle:
-    needs: [test, e2e, versions]
+    needs: [plan, versions]
+    if: needs.plan.outputs.prebuilt == ''
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -163,9 +208,10 @@ jobs:
 
   # Android APK. Optional on pull requests and branch builds; a release needs it.
   android:
-    needs: versions
+    needs: [plan, versions]
+    if: needs.plan.outputs.prebuilt == ''
     runs-on: ubuntu-latest
-    continue-on-error: ${{ !(startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != '') }}
+    continue-on-error: ${{ needs.plan.outputs.tag == '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -208,7 +254,7 @@ jobs:
           # Optional stable signing key (base64 .jks) so updates install over each other.
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          RELEASE_TAG: ${{ inputs.release_tag || (startsWith(github.ref, 'refs/tags/v') && github.ref_name || '') }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
           # Public fingerprint of the stable key's certificate (not a secret).
           STABLE_CERT_SHA256: a7979368e89198b0bf222e1f1fd75e2e3db5396049a5ab47a15f0f9d26ed0bf9
         run: |
@@ -339,54 +385,75 @@ jobs:
             Select-Object -First 20 | Format-List TimeCreated, ProviderName, Id, Message
 
   release:
-    # android must succeed on release runs (it is continue-on-error only for other builds).
-    # The Mac disk images come from macos.yml, which this job starts once the release exists.
-    needs: [bundle, install-test, android]
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    # Publishes this run's installer and APK, or (`plan.prebuilt`) those of the pull-request run that
+    # built and tested exactly these files. android must succeed on release runs (it is
+    # continue-on-error only for other builds). The Mac disk image comes from macos.yml, which this
+    # job starts once the release exists.
+    needs: [plan, versions, test, e2e, bundle, install-test, android]
+    if: >-
+      always() && needs.plan.outputs.tag != '' && needs.versions.result == 'success' &&
+      (needs.plan.outputs.prebuilt != '' ||
+       (needs.test.result == 'success' && needs.e2e.result == 'success' && needs.bundle.result == 'success' &&
+        needs.install-test.result == 'success' && needs.android.result == 'success'))
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
+          pattern: openspot-*
           path: installers
           merge-multiple: true
+          run-id: ${{ needs.plan.outputs.prebuilt || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Check every asset
+        env:
+          # Public fingerprint of the stable Android key's certificate (as in the android job).
+          STABLE_CERT_SHA256: a7979368e89198b0bf222e1f1fd75e2e3db5396049a5ab47a15f0f9d26ed0bf9
+          PREBUILT: ${{ needs.plan.outputs.prebuilt }}
         run: |
           set -e
           V=$(jq -r .version apps/openspot/src-tauri/tauri.conf.json)
+          if [ -n "$PREBUILT" ]; then echo "Publishing what pull-request run $PREBUILT built and tested"; fi
           cd installers
           ls -l
           for f in "OpenSpot_${V}_x64-setup.exe" "OpenSpot_${V}_android-arm64.apk"; do
             if [ ! -s "$f" ]; then echo "::error::Missing $f"; exit 1; fi
           done
+          # Installed apps only update to an APK signed with the stable key.
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "OpenSpot_${V}_android-arm64.apk" | tee "$RUNNER_TEMP/certs.txt"
+          if ! grep -qi "SHA-256 digest: $STABLE_CERT_SHA256" "$RUNNER_TEMP/certs.txt"; then
+            echo "::error::The APK isn't signed with the stable OpenMusic key (SHA-256 $STABLE_CERT_SHA256)."
+            exit 1
+          fi
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          tag_name: ${{ env.TAG }}
           target_commitish: ${{ github.sha }}
-          name: ${{ inputs.release_tag || github.ref_name }}
+          name: ${{ env.TAG }}
           files: |
             installers/OpenSpot_*_x64-setup.exe
             installers/OpenSpot_*_android-arm64.apk
           body_path: RELEASE_NOTES.md
-          prerelease: ${{ contains(inputs.release_tag || github.ref_name, '-') }}
+          prerelease: ${{ contains(env.TAG, '-') }}
           fail_on_unmatched_files: true
       - name: Build the Mac disk images for this release
         # macOS runners can queue for a long time, so they never hold up this release: macos.yml
-        # builds them separately and adds them to it.
+        # adds the disk image to it (reusing the pull request's when it built these files).
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: gh workflow run macos.yml --repo "$GITHUB_REPOSITORY" --ref "${{ github.ref_name }}" -f release_tag="$TAG"
       - name: Remove superseded releases
         # Only the newest release is kept.
         env:
           GH_TOKEN: ${{ github.token }}
-          KEEP: ${{ inputs.release_tag || github.ref_name }}
         run: |
           gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' |
             while read -r tag; do
-              if [ "$tag" != "$KEEP" ]; then
+              if [ "$tag" != "$TAG" ]; then
                 gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
               fi
             done
