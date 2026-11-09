@@ -1730,6 +1730,29 @@ await test("Mixed queue: a Plex song, then a YouTube song, then Plex again play 
   assert.deepEqual(await p.evaluate(() => window.__YT_LOADS), ["vid0", "vid1"]);
 }, { init: mixedQueue });
 
+await test("Premium-only song the embed refuses: OpenSpot tries its stream as the signed-in account, then moves on", async (p) => {
+  // The fake embed refuses vid0, however it gets there (loaded, or cued while the Plex song played).
+  await p.evaluate(() => {
+    const proto = window.YT.Player.prototype;
+    const load = proto.loadVideoById;
+    const play = proto.playVideo;
+    const refuse = (self) => setTimeout(() => self.ev.onError({ data: 150 }), 20);
+    proto.loadVideoById = function (o) {
+      return o.videoId === "vid0" ? void refuse(this) : load.call(this, o);
+    };
+    proto.playVideo = function () {
+      if (this.cued === "vid0") return void ((this.cued = null), refuse(this));
+      return play.call(this);
+    };
+  });
+  await p.click('.playerbar button[aria-label="Next"]');
+  // The fake embed refuses vid0 (YouTube error 150), so the direct stream is asked for through Rust.
+  await p.waitForFunction(() => window.__CALLS__.includes("yt_fetch"));
+  // No network in the mock: it fails, says so, and the next song plays.
+  await p.waitForFunction(() => document.querySelector(".pb-meta .name")?.textContent?.trim() === "Halfway Home");
+  await p.locator(".toast", { hasText: "Ferry Lights" }).waitFor();
+}, { init: mixedQueue });
+
 await test("Mixed queue with YouTube off: its songs are skipped, the Plex ones play", async (p) => {
   assert.equal(await nowPlaying(p), "Slow Lights");
   await p.click('.playerbar button[aria-label="Next"]');
