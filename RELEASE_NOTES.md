@@ -1,6 +1,13 @@
-# OpenSpot 2.3.1
+# OpenSpot 2.3.2
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.3.2
+- **"Always show Plex albums" shows their covers.** With the Plex service switched off, the Plex
+  albums an artist override added had blank covers.
+- **No more duplicate albums and songs** on artist pages that combine services. An album YouTube
+  dates by its reissue and Plex by its original release (or a song a few seconds longer on one side)
+  now shows once, as the copy that plays best. Your own files of an added album replace it too.
 
 ## New in 2.3.1
 - YouTube downloads (and Premium-only songs played directly) work again: in 2.3.0 every one

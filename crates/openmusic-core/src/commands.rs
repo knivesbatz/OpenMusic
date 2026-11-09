@@ -1226,13 +1226,21 @@ async fn with_overrides(app: &AppHandle, st: &Arc<AppState>, id: &str, mut page:
         return page;
     }
     let ov = artist_overrides(&st.db()).get(&key).copied().unwrap_or_default();
+    let mut merged = false;
     for p in Provider::ALL {
         if !ov.get(p) || Provider::of_id(id) == Some(p) || has_provider(&page, p) {
             continue;
         }
         if let Some(other) = forced_counterpart(app, st, p, &name).await {
             page = artist_merge::merge_pages(page, other);
+            merged = true;
         }
+    }
+    if merged {
+        // Local copies of the added songs and albums take their place instead of showing twice.
+        let tracks = std::mem::take(&mut page.local_tracks);
+        let albums = std::mem::take(&mut page.local_albums);
+        page = artist_merge::add_local(page, tracks, albums);
     }
     page
 }

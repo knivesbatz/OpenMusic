@@ -217,8 +217,9 @@ async fn serve(state: Arc<AppState>, path: &str, query: &str) -> Option<Vec<u8>>
     // Plex: the photo transcoder (exact size) with the stored image as fallback; on phones the
     // stored image only, since slow transcodes leave covers blank there.
     let upstreams: Vec<String> = if let Some(thumb) = path.strip_prefix("/plex") {
-        // Plex switched off: only what is already cached (above).
-        if !state.on(crate::state::Provider::Plex) {
+        // Plex switched off: only what is already cached (above), unless a per-artist override
+        // shows Plex albums.
+        if !state.on(crate::state::Provider::Plex) && !state.allows_any(crate::state::Provider::Plex) {
             return None;
         }
         match state.plex_session.read().await.as_ref() {

@@ -147,13 +147,33 @@ fn album_rank(a: &Album) -> u8 {
 /// (`rank`): one source's own items never count as duplicates of each other, however alike (Peter
 /// Gabriel's four self-titled albums stay four). A duplicate that plays better takes the place of
 /// the copy it duplicates.
-fn place<T>(lists: &mut [&mut Vec<T>], items: Vec<T>, same: impl Fn(&T, &T) -> bool, rank: impl Fn(&T) -> u8) {
-    for item in items {
+///
+/// Sources disagree on details (YouTube dates a reissue, Plex the original release; a song runs a
+/// few seconds longer on one), so an item with no exact duplicate still matches a `loose` one when
+/// that pair is unambiguous: the only one of its kind among the new items, and the only one of its
+/// kind from the other source.
+fn place<T>(lists: &mut [&mut Vec<T>], items: Vec<T>, same: impl Fn(&T, &T) -> bool, loose: impl Fn(&T, &T) -> bool, rank: impl Fn(&T) -> u8) {
+    let alone: Vec<bool> = items.iter().map(|a| items.iter().filter(|b| loose(a, b)).count() == 1).collect();
+    for (item, alone) in items.into_iter().zip(alone) {
         let r = rank(&item);
-        let found = lists
+        let exact = lists
             .iter()
             .enumerate()
             .find_map(|(li, l)| l.iter().position(|x| rank(x) != r && same(x, &item)).map(|p| (li, p)));
+        let found = exact.or_else(|| {
+            if !alone {
+                return None;
+            }
+            let hits: Vec<(usize, usize)> = lists
+                .iter()
+                .enumerate()
+                .flat_map(|(li, l)| l.iter().enumerate().filter(|(_, x)| rank(x) != r && loose(x, &item)).map(move |(p, _)| (li, p)))
+                .collect();
+            let [(li, p)] = hits[..] else { return None };
+            let hit = &lists[li][p];
+            let kin = lists.iter().flat_map(|l| l.iter()).filter(|x| rank(x) == rank(hit) && loose(x, hit)).count();
+            (kin == 1).then_some((li, p))
+        });
         match found {
             Some((li, p)) => {
                 if r < rank(&lists[li][p]) {
@@ -163,6 +183,31 @@ fn place<T>(lists: &mut [&mut Vec<T>], items: Vec<T>, same: impl Fn(&T, &T) -> b
             None => lists[0].push(item),
         }
     }
+}
+
+/// The same release title, whatever the years say.
+fn same_album_title(a: &Album, b: &Album) -> bool {
+    let k = title_key(&a.title);
+    !k.is_empty() && k == title_key(&b.title)
+}
+
+/// The same title by the same artist, whatever the years say.
+fn same_appears_title(a: &Album, b: &Album) -> bool {
+    same_album_title(a, b) && artist_key(&a.artist) == artist_key(&b.artist)
+}
+
+/// How far apart two copies of one song may run when nothing else on the page shares its title.
+const LOOSE_LENGTH_MS: u64 = 20_000;
+
+/// The same song title, lengths within 20 s when both are known.
+fn same_track_title(a: &Track, b: &Track) -> bool {
+    let k = title_key(&a.title);
+    !k.is_empty()
+        && k == title_key(&b.title)
+        && match (a.duration_ms, b.duration_ms) {
+            (Some(x), Some(y)) => x.abs_diff(y) <= LOOSE_LENGTH_MS,
+            _ => true,
+        }
 }
 
 /// The same release: equal titles (see [`title_key`]) and, when both have one, the same year.
@@ -211,11 +256,11 @@ pub fn merge_pages(mut primary: ArtistPage, other: ArtistPage) -> ArtistPage {
     if blank(&primary.followers) {
         primary.followers = other.followers;
     }
-    place(&mut [&mut primary.top_tracks], other.top_tracks, same_track, track_rank);
+    place(&mut [&mut primary.top_tracks], other.top_tracks, same_track, same_track_title, track_rank);
     let ArtistPage { albums, singles, appears_on, .. } = &mut primary;
-    place(&mut [albums, singles], other.albums, same_album, album_rank);
-    place(&mut [singles, albums], other.singles, same_album, album_rank);
-    place(&mut [appears_on], other.appears_on, same_appears, album_rank);
+    place(&mut [albums, singles], other.albums, same_album, same_album_title, album_rank);
+    place(&mut [singles, albums], other.singles, same_album, same_album_title, album_rank);
+    place(&mut [appears_on], other.appears_on, same_appears, same_appears_title, album_rank);
     let me = primary.artist.as_ref().map(|a| artist_key(&a.name)).unwrap_or_default();
     let mut seen: Vec<String> = primary.related.iter().map(|a| artist_key(&a.name)).collect();
     for a in other.related {
@@ -405,6 +450,25 @@ mod tests {
         let m = add_local(page, vec![], vec![pg("local-album:a", None), pg("local-album:b", None)]);
         assert_eq!(ids(&m.albums, |a| &a.id), ["local-album:a", "local-album:b", "plex:1980", "plex:1982"]);
         assert!(m.local_albums.is_empty());
+    }
+
+    #[test]
+    fn a_reissue_dated_differently_is_still_one_album() {
+        let y = |id: &str, title: &str, year: u32| Album { year: Some(year), ..al(id, title) };
+        // YouTube dates the 2010 deluxe reissue, Plex the 1996 original.
+        let yt = ArtistPage { albums: vec![y("yt:p", "Pinkerton (Deluxe Edition)", 2010), y("yt:m", "Make Believe", 2005)], ..Default::default() };
+        let plex = ArtistPage { albums: vec![y("plex:p", "Pinkerton", 1996), y("plex:m", "Make Believe", 2005)], ..Default::default() };
+        let m = merge_pages(yt, plex);
+        assert_eq!(ids(&m.albums, |a| &a.id), ["plex:p", "plex:m"]);
+        // A song a few seconds longer on one side, with no other song of that title.
+        let d = |id: &str, title: &str, ms: u64| Track { duration_ms: Some(ms), ..tr(id, title) };
+        let yt = ArtistPage { top_tracks: vec![d("yt:a", "Buddy Holly", 159_000)], ..Default::default() };
+        let plex = ArtistPage { top_tracks: vec![d("plex:1", "Buddy Holly", 166_000)], ..Default::default() };
+        assert_eq!(ids(&merge_pages(yt, plex).top_tracks, |t| &t.id), ["plex:1"]);
+        // But never when it's ambiguous: two of that title on the other side.
+        let yt = ArtistPage { albums: vec![y("yt:a", "Weezer", 2008), y("yt:b", "Weezer", 2016)], ..Default::default() };
+        let plex = ArtistPage { albums: vec![y("plex:1", "Weezer", 1994)], ..Default::default() };
+        assert_eq!(ids(&merge_pages(yt, plex).albums, |a| &a.id), ["yt:a", "yt:b", "plex:1"]);
     }
 
     #[test]
