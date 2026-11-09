@@ -368,6 +368,34 @@ await test(
   },
 );
 
+await test("Pin playlist like Spotify: it moves to the top with a green pin, up to four, and Unpin puts it back", async (p) => {
+  const names = () => p.locator(".lib-list .side-item .name").allTextContents();
+  const before = await names();
+  const last = before[before.length - 1];
+  const item = p.locator(".lib-list .side-item", { hasText: last }).first();
+  assert.equal(await item.locator(".lib-pin").count(), 0);
+  await item.click({ button: "right" });
+  await p.locator(".menu button", { hasText: "Pin playlist" }).click();
+  await p.waitForFunction((n) => document.querySelector(".lib-list .side-item .name")?.textContent === n, last);
+  await p.locator(".lib-list .side-item", { hasText: last }).first().locator(".lib-pin").waitFor();
+  // Four pins at most: pinning a fifth says so.
+  for (const n of before.slice(0, 3)) {
+    await p.locator(".lib-list .side-item", { hasText: n }).first().click({ button: "right" });
+    await p.locator(".menu button", { hasText: "Pin playlist" }).click();
+  }
+  await p.locator(".lib-list .side-item", { hasText: before[3] }).first().click({ button: "right" });
+  await p.locator(".menu button", { hasText: "Pin playlist" }).click();
+  await p.locator(".toast", { hasText: "pin up to 4" }).waitFor();
+  assert.equal(await p.locator(".lib-list .side-item .lib-pin").count(), 4);
+  // Unpin: back to where it was.
+  await p.locator(".lib-list .side-item", { hasText: last }).first().click({ button: "right" });
+  await p.locator(".menu button", { hasText: "Unpin playlist" }).click();
+  await p.waitForFunction((n) => [...document.querySelectorAll(".lib-list .side-item .name")].pop()?.textContent === n, last);
+  assert.equal(await p.locator(".lib-list .side-item .lib-pin").count(), 3);
+  // Kept across restarts (Your Library's settings in the app's store, saved a moment later).
+  await p.waitForFunction(() => window.__STATE__.kv["libraryOrg"]?.pinned?.length === 3);
+});
+
 await test("Downloaded like Spotify: green marks on the songs and the album, in Your Library too; Remove download takes them away", async (p) => {
   await search(p, "night drive");
   await p.locator('.shelf .card[data-source="plex"]', { hasText: "Night Drive" }).first().click();

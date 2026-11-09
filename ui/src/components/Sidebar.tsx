@@ -54,6 +54,8 @@ export function Sidebar() {
         if (!f) continue;
         out.push({ k: "folder", v: f });
         if (f.open) for (const id of f.items) {
+          // A pinned playlist shows at the top instead.
+          if (org.pinned.includes(id)) continue;
           const p = byId.get(id);
           if (p) out.push({ k: "playlist", v: p, depth: 1, folderId: f.id });
         }
@@ -237,6 +239,7 @@ export function Sidebar() {
                 collapsed={collapsed}
                 title={e.v.name}
                 sub={t("folderCount", { n: e.v.items.length })}
+                pinned={org.pinned.includes(folderKey(e.v.id))}
                 view={view}
                 icon={<div className="art sm folder-art">{e.v.open ? <I.IFolderOpen size={gridView ? 32 : 20} /> : <I.IFolder size={gridView ? 32 : 20} />}</div>}
                 expanded={e.v.open}
@@ -253,6 +256,7 @@ export function Sidebar() {
                 collapsed={collapsed}
                 title={e.v.title}
                 sub={sub(e.v, t)}
+                pinned={!e.depth && org.pinned.includes(e.v.id)}
                 badgeId={e.v.id}
                 view={view}
                 icon={<Art src={e.v.artwork} size={gridView ? 240 : 96} className="sm" />}
@@ -278,6 +282,8 @@ function sub(p: Playlist, t: ReturnType<typeof useT>): string {
 }
 
 function SideItem(p: {
+  /** Pinned to the top (Spotify's green pin before the subtitle). */
+  pinned?: boolean;
   view?: "compact" | "list" | "compactGrid" | "grid";
   active: boolean;
   collapsed: boolean;
@@ -298,6 +304,7 @@ function SideItem(p: {
   onDragEnd?: () => void;
   onDrop?: (e: React.DragEvent) => void;
 }) {
+  const t = useT();
   return (
     <div
       data-source={sourceOf(p.badgeId) ?? undefined}
@@ -322,6 +329,7 @@ function SideItem(p: {
           <span className="name">{p.title}</span>
           {/* Compact (Spotify): "Road trip • Playlist" on one line. */}
           <span className="sub">
+            {p.pinned && <I.IPin size={14} className="lib-pin" aria-label={t("pinned")} />}
             <CollectionDownloadMark id={p.badgeId} />
             {p.view === "compact" ? `• ${p.sub.split(" • ")[0]}` : p.sub}
           </span>

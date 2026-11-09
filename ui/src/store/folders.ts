@@ -25,9 +25,15 @@ export interface LibraryOrg {
   view: ViewMode;
   /** When the app first listed each playlist or folder (ms), for "Recently added". */
   added: Record<string, number>;
+  /** Pinned to the top of Your Library (Spotify's "Pin playlist"): playlist ids and `folder:<id>`,
+   * first pinned first; at most MAX_PINS. */
+  pinned: string[];
 }
 
-export const emptyOrg: LibraryOrg = { folders: [], order: [], sort: "recent", view: "list", added: {} };
+/** Spotify lets you pin four items. */
+export const MAX_PINS = 4;
+
+export const emptyOrg: LibraryOrg = { folders: [], order: [], sort: "recent", view: "list", added: {}, pinned: [] };
 export const folderKey = (id: string) => `folder:${id}`;
 
 export const useFolders = create<LibraryOrg & { loaded: boolean }>(() => ({ ...emptyOrg, loaded: false }));
@@ -36,8 +42,8 @@ let saveTimer: ReturnType<typeof setTimeout> | undefined;
 function persist() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const { folders, order, sort, view, added } = useFolders.getState();
-    if (inTauri) api.kvSet("libraryOrg", { folders, order, sort, view, added }).catch(() => {});
+    const { folders, order, sort, view, added, pinned } = useFolders.getState();
+    if (inTauri) api.kvSet("libraryOrg", { folders, order, sort, view, added, pinned }).catch(() => {});
   }, 300);
 }
 
@@ -60,12 +66,13 @@ export function sanitizeOrg(raw: Partial<LibraryOrg> | null | undefined): Librar
   const view: ViewMode = VIEW_MODES.includes(raw?.view as ViewMode) ? (raw!.view as ViewMode) : "list";
   const added: Record<string, number> = {};
   if (raw?.added && typeof raw.added === "object") for (const [k, v] of Object.entries(raw.added)) if (typeof v === "number") added[k] = v;
-  return { folders, order, sort, view, added };
+  const pinned = Array.isArray(raw?.pinned) ? [...new Set(raw!.pinned.filter((x) => typeof x === "string"))].slice(0, MAX_PINS) : [];
+  return { folders, order, sort, view, added, pinned };
 }
 
 function update(fn: (o: LibraryOrg) => LibraryOrg) {
   const s = useFolders.getState();
-  useFolders.setState(fn({ folders: s.folders, order: s.order, sort: s.sort, view: s.view, added: s.added }));
+  useFolders.setState(fn({ folders: s.folders, order: s.order, sort: s.sort, view: s.view, added: s.added, pinned: s.pinned }));
   persist();
 }
 
@@ -117,6 +124,13 @@ export function moveTopLevel(o: LibraryOrg, key: string, beforeKey: string | nul
 
 /** Top-level keys in display order for the given sort mode. */
 export function arrange(o: LibraryOrg, playlists: { id: string; title: string; owner?: string | null }[]): string[] {
+  // Pinned first (a pinned playlist in a folder too), in pin order; then the rest as sorted.
+  const exists = (k: string) => (k.startsWith("folder:") ? o.folders.some((f) => folderKey(f.id) === k) : playlists.some((p) => p.id === k));
+  const pins = (o.pinned ?? []).filter(exists);
+  return [...pins, ...arrangeUnpinned(o, playlists).filter((k) => !pins.includes(k))];
+}
+
+function arrangeUnpinned(o: LibraryOrg, playlists: { id: string; title: string; owner?: string | null }[]): string[] {
   const inFolder = new Set(o.folders.flatMap((f) => f.items));
   const top = playlists.filter((p) => !inFolder.has(p.id)).map((p) => p.id);
   const keys = [...o.folders.map((f) => folderKey(f.id)), ...top];
@@ -145,6 +159,21 @@ export function arrange(o: LibraryOrg, playlists: { id: string; title: string; o
 
 // ---- actions --------------------------------------------------------------------------------
 
+/** Whether a playlist (id) or folder (`folder:<id>`) is pinned. */
+export const isPinned = (key: string) => useFolders.getState().pinned.includes(key);
+
+/** Pin or unpin; false when pinning would go past MAX_PINS. */
+export function togglePin(key: string): boolean {
+  const { pinned } = useFolders.getState();
+  if (pinned.includes(key)) {
+    update((o) => ({ ...o, pinned: o.pinned.filter((k) => k !== key) }));
+    return true;
+  }
+  if (pinned.length >= MAX_PINS) return false;
+  update((o) => ({ ...o, pinned: [...o.pinned, key] }));
+  return true;
+}
+
 export function createFolder(name: string): string {
   const id = Math.random().toString(36).slice(2, 10);
   update((o) => ({ ...o, folders: [...o.folders, { id, name, items: [], open: true }], added: { ...o.added, [folderKey(id)]: Date.now() } }));
@@ -153,7 +182,7 @@ export function createFolder(name: string): string {
 export const renameFolder = (id: string, name: string) => update((o) => ({ ...o, folders: o.folders.map((f) => (f.id === id ? { ...f, name } : f)) }));
 /** Deleting a folder keeps its playlists (they return to the top level). */
 export const deleteFolder = (id: string) =>
-  update((o) => ({ ...o, folders: o.folders.filter((f) => f.id !== id), order: o.order.filter((k) => k !== folderKey(id)) }));
+  update((o) => ({ ...o, folders: o.folders.filter((f) => f.id !== id), order: o.order.filter((k) => k !== folderKey(id)), pinned: o.pinned.filter((k) => k !== folderKey(id)) }));
 export const toggleFolder = (id: string) => update((o) => ({ ...o, folders: o.folders.map((f) => (f.id === id ? { ...f, open: !f.open } : f)) }));
 export const putInFolder = (playlistId: string, folderId: string, beforeId?: string) => update((o) => moveIntoFolder(o, playlistId, folderId, beforeId));
 export const takeOutOfFolder = (playlistId: string) => update((o) => detach(o, playlistId));
