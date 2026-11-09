@@ -90,10 +90,13 @@ export const Card = memo(function Card({
   item,
   onPlay,
   onContext,
+  sub,
 }: {
   item: MediaItem;
   onPlay?: () => void;
   onContext?: (e: React.MouseEvent) => void;
+  /** Instead of the usual subtitle ("2026 • Album" in a discography). */
+  sub?: string;
 }) {
   const t = useT();
   const patched = useDisplayTrack(item.type === "track" ? item : null);
@@ -125,7 +128,7 @@ export const Card = memo(function Card({
         {item.type === "artist" ? <ArtistName name={title} /> : <TitleText text={title} />}
       </div>
       <div className="card-sub">
-        <JpText text={itemSubtitle(item, t)} />
+        <JpText text={sub ?? itemSubtitle(item, t)} />
       </div>
     </div>
   );

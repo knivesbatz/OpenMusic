@@ -6,11 +6,16 @@ import type { Track } from "../types";
 /** Library collections, in the classic Spotify "Your Library" order. */
 export type LibraryTab = "recent" | "playlists" | "albums" | "artists" | "podcasts";
 
+/** Which releases a discography shows. */
+export type DiscFilter = "all" | "albums" | "singles" | "compilations" | "appears";
+
 export type Route =
   | { name: "home" }
   | { name: "search"; q?: string }
   | { name: "library"; tab?: LibraryTab }
   | { name: "artist"; id: string }
+  /** An artist's discography ("Show all"), like Spotify's: filter, sort and grid or list. */
+  | { name: "discography"; id: string; filter?: DiscFilter }
   | { name: "album"; id: string }
   | { name: "playlist"; id: string }
   | { name: "liked" }

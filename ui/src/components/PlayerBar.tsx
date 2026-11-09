@@ -159,8 +159,6 @@ export function PlayerBar() {
   const t = useT();
   const item = usePlayer((s) => s.queue.items[s.queue.index]);
   const shown = useDisplayTrack(item?.track);
-  const quality = usePlayer((s) => s.quality);
-  const offline = usePlayer((s) => s.offline);
   const queueOpen = useUi((s) => s.queueOpen);
   const lyricsPanel = useUi((s) => s.lyricsPanel);
   const [pip, setPip] = useState(false);
@@ -229,12 +227,6 @@ export function PlayerBar() {
       {tr && <MiniControls />}
       <div className="pb-right">
         <PrivateBadge />
-        {quality && (
-          <span className="quality" title={offline ? t("offlineAvailable") : t("audioQuality")}>
-            {offline ? "⤓ " : ""}
-            {quality}
-          </span>
-        )}
         <button
           className={cls("icon-btn", lyricsPanel && !queueOpen && "on")}
           aria-pressed={lyricsPanel && !queueOpen}

@@ -671,11 +671,11 @@ export function CardShelf({ title, items }: { title: string; items: MediaItem[] 
   );
 }
 
-export function Grid({ items }: { items: MediaItem[] }) {
+export function Grid({ items, sub }: { items: MediaItem[]; sub?: (it: MediaItem) => string }) {
   return (
     <div className="grid">
       {items.map((it) => (
-        <Card key={it.type + it.id} item={it} onPlay={() => playItem(it)} onContext={(e) => cardMenu(e, it)} />
+        <Card key={it.type + it.id} item={it} sub={sub?.(it)} onPlay={() => playItem(it)} onContext={(e) => cardMenu(e, it)} />
       ))}
     </div>
   );

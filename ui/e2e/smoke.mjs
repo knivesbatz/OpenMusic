@@ -856,6 +856,28 @@ await test("Artist discography: albums newest first, compilations on their own t
   await p.click('.chips button:has-text("Compilations")');
   await p.waitForFunction(() => document.querySelectorAll(".shelf .grid .card").length === 1);
   assert.deepEqual(await titles(), ["Glass Garden"]);
+  // Show all: Spotify's discography page with a filter menu, a sort and grid or list.
+  await p.click('.shelf button.link:has-text("Show all")');
+  await p.waitForSelector(".discography .disc-head");
+  assert.equal(await p.locator(".discography .disc-tools .sort-btn >> nth=0").textContent(), "Compilations");
+  await p.click(".discography .disc-tools .sort-btn >> nth=0");
+  await p.click('.menu button:has-text("Albums")');
+  const grid = async () => (await p.locator(".discography .grid .card .card-title").allTextContents()).map((x) => x.trim());
+  await p.waitForFunction(() => document.querySelectorAll(".discography .grid .card").length === 4);
+  assert.deepEqual(await grid(), ["Paper Moons", "Low Tide", "Autumn Tapes", "Night Drive"]);
+  // Cards say what each release is, like Spotify ("2024 • Album").
+  assert.ok((await p.locator(".discography .grid .card .card-sub >> nth=0").textContent()).endsWith("Album"));
+  // Release date again: oldest first.
+  await p.click(".discography .disc-tools .sort-btn >> nth=1");
+  await p.click('.menu button:has-text("Release date")');
+  await p.waitForFunction(() => document.querySelector(".discography .grid .card .card-title")?.textContent?.trim() === "Night Drive");
+  // List: each release with its songs.
+  await p.click('.discography .disc-tools button[aria-label="List"]');
+  await p.waitForSelector(".discography .disc-release .tracklist .tl-row:not(.tl-head)");
+  assert.equal(await p.locator(".discography .disc-release").count(), 4);
+  // Back returns to the artist page.
+  await p.locator('button[aria-label="Go back"]:visible').first().click();
+  await p.waitForSelector(".artist-hero");
 }, {
   init: () => {
     window.__MOCK__.artist_compilations = ["Glass Garden (Deluxe Edition)"];
