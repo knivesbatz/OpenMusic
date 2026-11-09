@@ -231,6 +231,16 @@ impl AppState {
         self.allowed_set().iter().cloned().collect()
     }
 
+    /// An override lets some of provider `p`'s items through (so its artwork may be fetched while
+    /// it is off).
+    pub fn allows_any(&self, p: Provider) -> bool {
+        let prefix = match p {
+            Provider::YouTube => "yt:",
+            Provider::Plex => "plex:",
+        };
+        self.allowed_set().iter().any(|id| id.starts_with(prefix))
+    }
+
     /// Provider `p` may be asked about `id`: its switch is on, or an override lets `id` through.
     pub fn may_use(&self, p: Provider, id: &str) -> bool {
         self.on(p) || self.allows(id)
