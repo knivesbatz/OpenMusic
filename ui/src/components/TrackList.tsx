@@ -12,7 +12,7 @@ import { useDisplayTrack } from "../store/songmeta";
 import { navigate, openMenu } from "../store/ui";
 import type { PlayContext, Provider, Track } from "../types";
 import { cls, fmtMs, isTouch, serviceLabel } from "../util";
-import { Art, ArtistName, TitleText, useDownloaded, useProvidersKey } from "./common";
+import { Art, ArtistName, DownloadMark, TitleText, useDownloadStatus, useDownloaded, useProvidersKey } from "./common";
 import { likeOrOpen } from "./SavedIn";
 import { IClock, IHeart, IHeartFill, IMore, IPlay } from "./Icons";
 
@@ -190,6 +190,7 @@ const Row = memo(function Row(p: RowProps) {
   const isCurrent = usePlayer((s) => s.queue.items[s.queue.index]?.track.id === tr.id);
   const playingHere = usePlayer((s) => s.playing) && isCurrent;
   const row = useRowState(p.track);
+  const dl = useDownloadStatus(p.track.id);
   // A song whose service is off can't be started from here (the player skips it too).
   const play = row.unplayable ? () => {} : p.onPlay;
   return (
@@ -240,6 +241,7 @@ const Row = memo(function Row(p: RowProps) {
             <TitleText text={tr.title} />
           </span>
           <span className="sub">
+            <DownloadMark state={dl} />
             {tr.explicit && <span className="badge">{t("explicit")}</span>}
             {tr.source === "local" && <span className="badge">{t("localFile")}</span>}
             {tr.artistId && !isTouch() ? (

@@ -1,9 +1,9 @@
 // Artist, album and playlist pages.
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { albumMenu, artistMenu, canChangeCover, changeCover, downloadable, downloadTracks, likedMenu, likesOn, playlistMenu, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
+import { albumMenu, artistMenu, canChangeCover, changeCover, downloadable, downloadTracks, removeDownloads, likedMenu, likesOn, playlistMenu, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
 import { api, artUrl, inTauri } from "../api";
-import { Art, ArtistName, ErrorBox, Loading, PlayFab, ProviderNotes, TitleText, useAsync, usePageTitle, usePhoneLayout, useProvidersKey } from "../components/common";
+import { Art, ArtistName, ErrorBox, Loading, PlayFab, ProviderNotes, TitleText, useAsync, useListDownload, usePageTitle, usePhoneLayout, useProvidersKey } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { localError, translate, useT } from "../i18n";
@@ -87,6 +87,11 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
   const playingHere = usePlayer((s) => s.playing && s.context?.id === ctx.id);
   const shuffle = usePlayer((s) => s.shuffle);
   useProvidersKey();
+  // Spotify's download button: green once every song (local files aside) is on this device,
+  // pulsing while they download; pressed again it removes the download.
+  const songIds = useMemo(() => tracks.filter((x) => x.source !== "local").map((x) => x.id), [tracks]);
+  const dl = useListDownload(songIds);
+  const collectionId = ctx.kind === "artist" ? undefined : ctx.id;
   return (
     <div className="action-bar">
       {playingHere ? (
@@ -100,10 +105,20 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
         <I.IShuffle size={26} />
       </button>
       {/* Lists with a song that can be downloaded (Plex, or YouTube Music; see actions.downloadable). */}
-      {tracks.some(downloadable) && (
-        <button className="icon-btn lg" aria-label={t("download")} title={t("download")} onClick={() => downloadTracks(tracks)}>
+      {dl === "done" ? (
+        <button className="icon-btn lg dl-btn done" aria-label={t("removeDownload")} title={t("removeDownload")} onClick={() => removeDownloads(tracks, collectionId)}>
+          <I.IDownloaded size={26} />
+        </button>
+      ) : dl === "busy" ? (
+        <button className="icon-btn lg dl-btn busy" aria-label={t("statusDownloading")} title={t("statusDownloading")} onClick={() => removeDownloads(tracks, collectionId)}>
           <I.IDownload size={26} />
         </button>
+      ) : (
+        tracks.some(downloadable) && (
+          <button className="icon-btn lg dl-btn" aria-label={t("download")} title={t("download")} onClick={() => downloadTracks(tracks, collectionId)}>
+            <I.IDownload size={26} />
+          </button>
+        )
       )}
       {extra}
       {onMore && (

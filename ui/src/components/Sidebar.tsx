@@ -9,7 +9,7 @@ import { useSettings } from "../store/settings";
 import { navigate, openMenu, useUi, type Route } from "../store/ui";
 import type { Playlist } from "../types";
 import { cls, isTouch, isYtLiked } from "../util";
-import { Art, useCaps, useHasDownloads, useProvidersKey } from "./common";
+import { Art, CollectionDownloadMark, useCaps, useHasDownloads, useProvidersKey } from "./common";
 import * as I from "./Icons";
 import { sourceOf, useOn } from "../store/providers";
 
@@ -322,6 +322,7 @@ function SideItem(p: {
           <span className="name">{p.title}</span>
           {/* Compact (Spotify): "Road trip • Playlist" on one line. */}
           <span className="sub">
+            <CollectionDownloadMark id={p.badgeId} />
             {p.view === "compact" ? `• ${p.sub.split(" • ")[0]}` : p.sub}
           </span>
         </div>
