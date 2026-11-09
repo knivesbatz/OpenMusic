@@ -99,7 +99,7 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
           <I.IPause size={24} />
         </button>
       ) : (
-        <PlayFab big label={t("play")} onClick={() => P.playTracks(tracks, 0, ctx)} />
+        <PlayFab big label={t("play")} onClick={() => P.playAll(tracks, ctx)} />
       )}
       <button className={cls("icon-btn lg ab-shuffle", shuffle && "on")} aria-pressed={shuffle} aria-label={t("shuffle")} title={t("shuffle")} onClick={() => P.setShuffle(!shuffle)}>
         <I.IShuffle size={26} />
@@ -251,7 +251,7 @@ export function AlbumPage({ id }: { id: string }) {
   const t = useT();
   const phone = usePhoneLayout();
   const { data, error, loading, reload } = useAsync(() => api.album(id).then(async (p) => (await refreshAllowed(), p)), [id]);
-  usePageTitle(data?.album.title, () => data && P.playTracks(data.tracks, 0, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }), { art: data?.album.artwork, ctxId: id });
+  usePageTitle(data?.album.title, () => data && P.playAll(data.tracks, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }), { art: data?.album.artwork, ctxId: id });
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const { album, tracks } = data;
@@ -368,7 +368,7 @@ export function ArtistPage({ id, discography }: { id: string; discography?: Disc
   // Compilations by name from MusicBrainz (YouTube Music doesn't mark them; Plex only when tagged).
   const artistName = data?.artist?.name ?? "";
   const { data: mbCompilations } = useAsync(() => (artistName ? api.artistCompilations(artistName) : Promise.resolve([])), [artistName]);
-  usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }), { art: data?.artist?.artwork, ctxId: id });
+  usePageTitle(data?.artist?.name, () => data && P.playAll(data.topTracks, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }), { art: data?.artist?.artwork, ctxId: id });
   const [more, setMore] = useState(false);
   const [disc, setDisc] = useState<Disc>("popular");
   if (loading && !data) return <Loading />;
@@ -586,7 +586,7 @@ function DiscRelease({ album, kind }: { album: Album; kind: string }) {
           </button>
           <div className="muted small">{[kind, album.year, data ? t("songsCount", { n: tracks.length }) : null].filter(Boolean).join(" • ")}</div>
           <div className="disc-release-actions">
-            <PlayFab label={t("play")} onClick={() => (tracks.length ? P.playTracks(tracks, 0, ctx) : playItem(item))} />
+            <PlayFab label={t("play")} onClick={() => (tracks.length ? P.playAll(tracks, ctx) : playItem(item))} />
             <button className="icon-btn" aria-label={t("more")} title={t("more")} onClick={(e) => cardMenu(e, item)}>
               <I.IMore size={20} />
             </button>
@@ -624,7 +624,7 @@ export function PlaylistPage({ id }: { id: string }) {
   const me = useMe();
   const accounts = useApp((s) => s.auth);
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
-  usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
+  usePageTitle(data?.playlist.title, () => data && P.playAll(data.tracks, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
     art: data?.playlist.artwork ?? data?.tracks[0]?.artwork,
     ctxId: id,
   });
@@ -796,7 +796,7 @@ export function PodcastPage({ id }: { id: string }) {
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
   // Episodes newest first (the provider's order) or oldest first, remembered per show.
   const oldestFirst = useOldestFirst(id);
-  usePageTitle(data?.playlist.title, () => data && P.playTracks(orderEpisodes(data.tracks, oldestFirst), 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
+  usePageTitle(data?.playlist.title, () => data && P.playAll(orderEpisodes(data.tracks, oldestFirst), { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
     art: data?.playlist.artwork,
     ctxId: id,
   });
@@ -815,7 +815,7 @@ export function PodcastPage({ id }: { id: string }) {
           {following ? t("following") : t("follow")}
         </button>
         <span className="grow" />
-        {tracks.length > 0 && <PlayFab big label={t("play")} onClick={() => P.playTracks(tracks, 0, ctx)} />}
+        {tracks.length > 0 && <PlayFab big label={t("play")} onClick={() => P.playAll(tracks, ctx)} />}
       </div>
       <div className="podcast-cols">
         <section className="podcast-eps">
@@ -899,7 +899,7 @@ function MergedLikedPage() {
   const tracks = data?.tracks ?? [];
   const title = t("likedSongs");
   const ctx: PlayContext = { kind: "playlist", id: "liked", title };
-  usePageTitle(title, () => data && P.playTracks(tracks, 0, ctx), { ctxId: "liked" });
+  usePageTitle(title, () => data && P.playAll(tracks, ctx), { ctxId: "liked" });
   const sort = usePlaylistSort("liked");
   const compact = useSettings((s) => s.compactTracks);
   const [find, setFind] = useState<string | null>(null);

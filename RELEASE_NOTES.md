@@ -8,6 +8,8 @@ YouTube Music, Plex and your local files in one app.
   shows each release with its songs. Cards say what each release is ("2026 • Album"), and the
   back button returns to the artist.
 - The "ORIGINAL" quality tag next to the player's controls is gone.
+- **Shuffle starts on a random song.** With shuffle on, a playlist's, album's or artist's play button
+  always began with the first song; now it starts anywhere, like Spotify.
 
 ## New in 2.3.2
 - **"Always show Plex albums" shows their covers.** With the Plex service switched off, the Plex

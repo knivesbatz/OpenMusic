@@ -114,7 +114,7 @@ export function LocalPage() {
         <>
           {lib.tracks.length > 0 && (
             <div className="action-bar">
-              <button className="fab big static" aria-label={t("play")} onClick={() => P.playTracks(lib.tracks, 0, ctx)}>
+              <button className="fab big static" aria-label={t("play")} onClick={() => P.playAll(lib.tracks, ctx)}>
                 <I.IPlay size={24} />
               </button>
             </div>
@@ -176,7 +176,7 @@ export function DownloadsPage() {
       {!list.length && <p className="muted">{t("downloadsEmpty")}</p>}
       {done.length > 0 && (
         <div className="action-bar">
-          <button className="fab big static" aria-label={t("play")} onClick={() => P.playTracks(done, 0, { kind: "downloads", id: "downloads", title: t("downloads") })}>
+          <button className="fab big static" aria-label={t("play")} onClick={() => P.playAll(done, { kind: "downloads", id: "downloads", title: t("downloads") })}>
             <I.IPlay size={24} />
           </button>
         </div>

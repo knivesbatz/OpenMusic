@@ -51,9 +51,15 @@ function firstPlayable(items: QItem[], from: number, ok: Playable): number {
  * Replace the queue with a context (album, playlist, …) and start at `start`, or at the next track
  * after it that can play. With nothing playable the queue holds the tracks with index -1.
  */
-export function load(tracks: Track[], start = 0, shuffle = false, ok: Playable = everything): QueueState {
+/** `start` null: the whole list was played (its play button), not one song; with shuffle on it
+ * then starts on a random song, like Spotify. */
+export function load(tracks: Track[], start: number | null = 0, shuffle = false, ok: Playable = everything, rnd: () => number = Math.random): QueueState {
   let items = toItems(tracks);
-  const s = Math.max(0, Math.min(start, items.length - 1));
+  if (start === null && shuffle) {
+    const playable = items.map((it, i) => (ok(it.track) ? i : -1)).filter((i) => i >= 0);
+    start = playable.length ? playable[Math.floor(rnd() * playable.length)] : 0;
+  }
+  const s = Math.max(0, Math.min(start ?? 0, items.length - 1));
   let index = items.length ? firstPlayable(items, s, ok) : -1;
   if (index < 0) return { items, index: -1, unshuffled: null };
   let unshuffled: string[] | null = null;

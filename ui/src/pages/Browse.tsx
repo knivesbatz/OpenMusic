@@ -44,19 +44,19 @@ export async function playItem(item: MediaItem) {
     if (item.type === "track") return P.playTracks([item], 0, null);
     if (item.type === "album") {
       const a = await api.album(item.id);
-      return P.playTracks(a.tracks, 0, { kind: "album", id: item.id, title: a.album.title, artwork: a.album.artwork });
+      return P.playAll(a.tracks, { kind: "album", id: item.id, title: a.album.title, artwork: a.album.artwork });
     }
     if (item.type === "playlist" && item.id === "liked") {
       const l = await api.likedTracks(false);
-      return P.playTracks(l.tracks, 0, { kind: "playlist", id: "liked", title: item.title });
+      return P.playAll(l.tracks, { kind: "playlist", id: "liked", title: item.title });
     }
     if (item.type === "playlist" || item.type === "podcast") {
       const p = await api.playlist(item.id);
-      return P.playTracks(p.tracks, 0, { kind: "playlist", id: item.id, title: p.playlist.title, artwork: p.playlist.artwork });
+      return P.playAll(p.tracks, { kind: "playlist", id: item.id, title: p.playlist.title, artwork: p.playlist.artwork });
     }
     if (item.type === "artist") {
       const a = await api.artist(item.id);
-      return P.playTracks(a.topTracks, 0, { kind: "artist", id: item.id, title: a.artist?.name ?? item.name, artwork: a.artist?.artwork });
+      return P.playAll(a.topTracks, { kind: "artist", id: item.id, title: a.artist?.name ?? item.name, artwork: a.artist?.artwork });
     }
   } catch (e) {
     toast(localError(e));

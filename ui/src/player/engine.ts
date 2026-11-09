@@ -699,7 +699,8 @@ useSettings.subscribe((s, prev) => {
 
 // ---- public commands -------------------------------------------------------------------------
 
-export function playTracks(tracks: Track[], start = 0, context: PlayContext | null = null) {
+/** Play `tracks` from song `start`; null plays the whole list (shuffle on: from a random song). */
+export function playTracks(tracks: Track[], start: number | null = 0, context: PlayContext | null = null) {
   if (!tracks.length) return;
   const queue = Q.load(tracks, start, get().shuffle, canPlay);
   if (queue.index < 0) {
@@ -709,6 +710,11 @@ export function playTracks(tracks: Track[], start = 0, context: PlayContext | nu
   errorStreak = 0;
   set({ queue, context });
   loadCurrent(true);
+}
+
+/** A list's play button: from the top, or from a random song while shuffle is on. */
+export function playAll(tracks: Track[], context: PlayContext | null = null) {
+  playTracks(tracks, null, context);
 }
 
 export function playUid(uid: string) {
