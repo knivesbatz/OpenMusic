@@ -1,6 +1,12 @@
-# OpenSpot 2.1.1
+# OpenSpot 2.2.0
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.2.0
+- **Download YouTube Music songs** for offline listening, like Plex songs: Download in a song's,
+  album's or playlist's menu (or the download button on a playlist or album). They play from disk
+  and show under Downloads. Based on [ytspot](https://github.com/Chaitanya-Shahare/ytspot)'s
+  downloader.
 
 ## New in 2.1.1
 - The YTSpot / PLEXSpot import is gone: OpenSpot no longer looks for, removes or imports from the

@@ -93,9 +93,10 @@ pub fn capabilities(p: Provider) -> Capabilities {
             favorites: true,
             discord_presence: crate::discord::available(),
         },
-        // YouTube blends with two IFrame players (see ui/src/player/engine.ts).
+        // YouTube blends with two IFrame players (see ui/src/player/engine.ts). Downloads: the UI
+        // resolves the audio stream (ui/src/ytdl.ts), downloads.rs fetches it.
         Provider::YouTube => Capabilities {
-            downloads: false,
+            downloads: true,
             quality_control: false,
             podcasts: true,
             crossfade: true,
@@ -2483,6 +2484,73 @@ pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
 
 // ---- downloads / storage --------------------------------------------------------------------
 
+/// Hosts the UI's YouTube downloader (ui/src/ytdl.ts: youtubei.js, BotGuard) may reach through
+/// [`yt_fetch`]: YouTube's API and player script, and Google's BotGuard/PO-token service.
+fn yt_fetch_allowed(url: &reqwest::Url) -> bool {
+    url.scheme() == "https"
+        && url.host_str().is_some_and(|h| {
+            ["youtube.com", "googleapis.com", "google.com"].iter().any(|d| h == *d || h.ends_with(&format!(".{d}")))
+        })
+}
+
+/// A fetch for the UI's YouTube downloader, made here so YouTube's CORS rules don't apply. Only
+/// YouTube and Google hosts (see [`yt_fetch_allowed`]). The answer is raw bytes: a 4-byte
+/// big-endian length, that many bytes of JSON `{ status, headers }`, then the body.
+#[tauri::command]
+pub async fn yt_fetch(state: S<'_>, url: String, method: String, headers: Vec<(String, String)>, body: Option<Vec<u8>>) -> Result<tauri::ipc::Response> {
+    let u = reqwest::Url::parse(&url).map_err(|_| Error::Invalid("bad URL".into()))?;
+    if !yt_fetch_allowed(&u) {
+        return Err(Error::Invalid(format!("not a YouTube address: {}", u.host_str().unwrap_or(""))));
+    }
+    let m = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|_| Error::Invalid("bad method".into()))?;
+    let mut req = state.http.request(m, u).timeout(Duration::from_secs(30));
+    for (k, v) in headers {
+        // The connection's own headers are reqwest's to set.
+        if !matches!(k.to_ascii_lowercase().as_str(), "host" | "content-length" | "connection" | "accept-encoding") {
+            req = req.header(k, v);
+        }
+    }
+    if let Some(b) = body {
+        req = req.body(b);
+    }
+    let resp = req.send().await?;
+    let status = resp.status().as_u16();
+    let hdrs: Vec<(String, String)> = resp.headers().iter().filter_map(|(k, v)| Some((k.to_string(), v.to_str().ok()?.to_string()))).collect();
+    let bytes = resp.bytes().await?;
+    let meta = serde_json::to_vec(&json!({ "status": status, "headers": hdrs }))?;
+    let mut out = Vec::with_capacity(4 + meta.len() + bytes.len());
+    out.extend_from_slice(&(meta.len() as u32).to_be_bytes());
+    out.extend_from_slice(&meta);
+    out.extend_from_slice(&bytes);
+    Ok(tauri::ipc::Response::new(out))
+}
+
+/// Queue YouTube songs for download; returns the ones the UI should resolve and hand to
+/// [`yt_download`] (not already done or on their way).
+#[tauri::command]
+pub fn yt_download_queue(app: AppHandle, state: S, tracks: Vec<Track>) -> Result<Vec<Track>> {
+    let tracks: Vec<Track> = tracks.into_iter().filter(|t| state.may_use(Provider::YouTube, &t.id)).collect();
+    let out = downloads::queue_youtube(&state, &tracks)?;
+    let _ = app.emit("downloads-changed", ());
+    Ok(out)
+}
+
+/// Download a queued YouTube song from the stream URL the UI worked out. Resolves when it's done.
+#[tauri::command]
+pub async fn yt_download(app: AppHandle, state: S<'_>, track: Track, url: String, size: u64, ext: String) -> Result<()> {
+    if track.source != Source::Youtube || !state.may_use(Provider::YouTube, &track.id) {
+        return Err(Error::Disabled(Provider::YouTube));
+    }
+    downloads::run_youtube(&app, &state, &track, &url, size, &ext).await
+}
+
+/// A queued YouTube song whose stream couldn't be worked out.
+#[tauri::command]
+pub fn yt_download_failed(app: AppHandle, state: S, id: String, error: String) {
+    downloads::fail(&state, &id, &error);
+    let _ = app.emit("downloads-changed", &id);
+}
+
 #[tauri::command(async)]
 pub fn download_tracks(app: AppHandle, state: S, tracks: Vec<Track>) -> Result<usize> {
     let n = downloads::enqueue(app.clone(), state.inner().clone(), tracks)?;
@@ -3512,6 +3580,19 @@ mod tests {
             assert!(f.contains("artist_page(") || f.contains("with_local(state, page)"), "{f}");
             assert!(!f.contains("merged") && !f.contains("add_local"), "{f}");
         }
+    }
+
+    #[test]
+    fn yt_fetch_reaches_youtube_and_google_only() {
+        let ok = |u: &str| yt_fetch_allowed(&reqwest::Url::parse(u).unwrap());
+        assert!(ok("https://www.youtube.com/youtubei/v1/player"));
+        assert!(ok("https://music.youtube.com/"));
+        assert!(ok("https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/Create"));
+        assert!(ok("https://www.google.com/js/th/x.js"));
+        assert!(!ok("http://www.youtube.com/"));
+        assert!(!ok("https://youtube.com.evil.example/"));
+        assert!(!ok("https://evilyoutube.com/"));
+        assert!(!ok("https://127.0.0.1/"));
     }
 
     #[test]

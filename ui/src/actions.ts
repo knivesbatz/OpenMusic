@@ -57,6 +57,18 @@ export const likedSongsAvailable = () => PROVIDERS.some(likesOn);
 /** Plex downloads can be started (Plex on with a server; the files play from disk afterwards). */
 export const plexDownloads = () => usableProvider("plex") && !!capsOf("plex").downloads;
 
+/** This song can be downloaded: a Plex song while Plex downloads work, a YouTube song while YouTube
+ * Music is on (or an artist override shows it). Downloads play from disk afterwards. */
+export function downloadable(track: Track): boolean {
+  if (track.source === "plex") return plexDownloads();
+  if (track.source === "youtube") return !!capsOf("youtube").downloads && (isOn("youtube") || allowed(track.id));
+  return false;
+}
+
+/** Some download can start for items of this provider (album and playlist menus). */
+export const downloadsFor = (p: Provider | "local" | "app" | null) =>
+  p === "plex" ? plexDownloads() : p === "youtube" ? isOn("youtube") && !!capsOf("youtube").downloads : plexDownloads() || (isOn("youtube") && !!capsOf("youtube").downloads);
+
 /** Account settings on the service's own site. */
 export function accountUrlOf(p: Provider): string {
   return p === "plex" ? "https://app.plex.tv/desktop/#!/settings/account" : "https://myaccount.google.com/";
@@ -228,17 +240,25 @@ function likeAllItem(tracks: () => Promise<Track[]>, id: string): MenuItem[] {
   return [{ label: t("saveAllToLiked"), icon: I.IHeart, onClick: async () => likeTracks(await tracks(), true) }];
 }
 
-/** Download songs for offline play: Plex songs only (YouTube Music has no downloads for other
- * apps); the rest of a mixed list is left out. */
+/** Download songs for offline play: Plex songs from the server, YouTube songs through ytdl.ts.
+ * Local files and songs of a service that is off are left out. */
 export async function downloadTracks(tracks: Track[]) {
-  if (!plexDownloads()) return toast(t("downloadsUnsupported"));
-  const eligible = tracks.filter((x) => x.source === "plex");
-  if (!eligible.length) return;
+  const eligible = tracks.filter(downloadable);
+  if (!eligible.length) return toast(t("downloadsUnsupported"));
   if (eligible.length > 50 && !(await confirmDialog({ title: t("download"), body: t("downloadLargeWarn", { n: eligible.length }), confirm: t("download") })))
     return;
+  const plex = eligible.filter((x) => x.source === "plex");
+  const yt = eligible.filter((x) => x.source === "youtube");
   try {
-    const n = await api.downloadTracks(eligible);
+    let n = plex.length ? await api.downloadTracks(plex) : 0;
+    const queued = yt.length ? await api.ytDownloadQueue(yt) : [];
+    n += queued.length;
     toast(t("downloadStarted", { n }));
+    if (queued.length) {
+      const { downloadYouTube } = await import("./ytdl");
+      const failed = await downloadYouTube(queued);
+      if (failed.length) toast(t("downloadsFailed", { n: failed.length }));
+    }
   } catch (e) {
     toast(localError(e));
   }
@@ -339,7 +359,7 @@ export function trackMenu(track: Track, o: TrackMenuOpts = {}): MenuItem[] {
   if (!multi && track.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: track.artistId! }) });
   if (!multi && track.albumId) items.push({ label: t("goToAlbum"), icon: I.IDisc, onClick: () => navigate({ name: "album", id: track.albumId! }) });
   if (!multi) items.push({ label: t("viewCredits"), icon: I.IInfo, onClick: () => useUi.setState({ info: track }) });
-  if (plexDownloads() && sel.some((x) => x.source === "plex")) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(sel) });
+  if (sel.some(downloadable)) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(sel) });
   if (!multi) items.push({ label: t("share"), icon: I.IShare, submenu: shareSubmenu(track) });
   return items;
 }
@@ -432,7 +452,7 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCo
   if (tracks) {
     items.push({ label: t("addToQueue"), icon: I.IQueueAdd, onClick: async () => P.addToQueue(await tracks()) });
     items.push(...likeAllItem(tracks, pl.id));
-    if (plexDownloads() && (pl.local || source === "plex"))
+    if (downloadsFor(pl.local ? null : source))
       items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
   }
   items.push({ label: t("moveToFolder"), icon: I.IFolder, submenu: moveToFolderSubmenu(pl) });
@@ -579,7 +599,7 @@ export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuIte
     { label: t("addToPlaylist"), icon: I.IPlus, onClick: async () => createPlaylist(await tracks()) },
   ];
   if (album.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: album.artistId! }) });
-  if (sourceOf(album.id) === "plex" && plexDownloads()) items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
+  if ((sourceOf(album.id) === "plex" || sourceOf(album.id) === "youtube") && downloadsFor(sourceOf(album.id))) items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
   return items;
 }
 
@@ -587,7 +607,7 @@ export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuIte
 export function likedMenu(tracks: Track[]): MenuItem[] {
   const pl: Playlist = { id: "liked", title: t("likedSongs"), local: false };
   const items: MenuItem[] = [{ label: t("addToQueue"), icon: I.IQueueAdd, onClick: () => P.addToQueue(tracks) }];
-  if (plexDownloads() && tracks.some((x) => x.source === "plex")) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(tracks) });
+  if (tracks.some(downloadable)) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(tracks) });
   items.push({
     label: t("exportPlaylist"),
     icon: I.IShare,

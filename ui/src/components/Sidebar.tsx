@@ -26,6 +26,7 @@ export function Sidebar() {
   const services = useProvidersKey();
   const hasDownloads = useHasDownloads();
   const plexIsOn = useOn("plex");
+  const ytIsOn = useOn("youtube");
   const cur = useUi((s) => s.stack[s.pos]);
   const org = useFolders();
   const [drag, setDrag] = useState<string | null>(null);
@@ -79,7 +80,7 @@ export function Sidebar() {
         ]
       : []),
     { key: "local", label: t("localFiles"), route: { name: "local" }, icon: <I.IFolder size={20} /> },
-    ...(plexIsOn || hasDownloads ? [{ key: "downloads", label: t("downloads"), route: { name: "downloads" } as Route, icon: <I.IDownload size={20} /> }] : []),
+    ...(plexIsOn || ytIsOn || hasDownloads ? [{ key: "downloads", label: t("downloads"), route: { name: "downloads" } as Route, icon: <I.IDownload size={20} /> }] : []),
   ];
 
   const canDrag = org.sort === "custom";

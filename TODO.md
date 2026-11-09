@@ -259,7 +259,9 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - ✅ Multi-disc albums grouped by disc (`disc_number` from Plex `parentIndex` and local tags; e2e)
 - ✅ Search inside a playlist (e2e); PLEXSpot Albums/Artists show saved items only (e2e)
 - ✅ Spotify-style seek bar (handle, time bubble, remaining time) and chunkier skip icons
-- ⬜ YTSpot offline downloads (needs a stream downloader; see release notes)
+- 🟡 YouTube Music offline downloads (2.2.0, ytdl.ts + downloads.rs `run_youtube`, after
+  github.com/Chaitanya-Shahare/ytspot). Stream URL + PO token verified against live YouTube from a
+  headless Chromium; the googlevideo download itself not verified (host blocked in the cloud sandbox)
 - ⬜ Keep Android sign-in across reinstalls: needs the `ANDROID_KEYSTORE` secrets so every APK has
   the same signature
 

@@ -209,6 +209,8 @@ export const api = {
 
 
   downloadTracks: (tracks: T.Track[]) => call<number>("download_tracks", { tracks }),
+  /** Queue YouTube songs for download; returns those to resolve (ytdl.ts) and hand to yt_download. */
+  ytDownloadQueue: (tracks: T.Track[]) => call<T.Track[]>("yt_download_queue", { tracks }),
   downloadList: () => call<T.DownloadInfo[]>("download_list"),
   downloadCancel: (id: string) => call<void>("download_cancel", { id }),
   downloadRemove: (id: string) => call<void>("download_remove", { id }),

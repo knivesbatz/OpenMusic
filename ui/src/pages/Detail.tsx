@@ -1,7 +1,7 @@
 // Artist, album and playlist pages.
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { albumMenu, artistMenu, canChangeCover, changeCover, downloadTracks, likedMenu, likesOn, playlistMenu, plexDownloads, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
+import { albumMenu, artistMenu, canChangeCover, changeCover, downloadable, downloadTracks, likedMenu, likesOn, playlistMenu, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
 import { api, artUrl, inTauri } from "../api";
 import { Art, ArtistName, ErrorBox, Loading, PlayFab, ProviderNotes, TitleText, useAsync, usePageTitle, usePhoneLayout, useProvidersKey } from "../components/common";
 import * as I from "../components/Icons";
@@ -99,8 +99,8 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
       <button className={cls("icon-btn lg ab-shuffle", shuffle && "on")} aria-pressed={shuffle} aria-label={t("shuffle")} title={t("shuffle")} onClick={() => P.setShuffle(!shuffle)}>
         <I.IShuffle size={26} />
       </button>
-      {/* Downloads are Plex's: only for lists with Plex songs, while Plex is on. */}
-      {plexDownloads() && tracks.some((x) => x.source === "plex") && (
+      {/* Lists with a song that can be downloaded (Plex, or YouTube Music; see actions.downloadable). */}
+      {tracks.some(downloadable) && (
         <button className="icon-btn lg" aria-label={t("download")} title={t("download")} onClick={() => downloadTracks(tracks)}>
           <I.IDownload size={26} />
         </button>

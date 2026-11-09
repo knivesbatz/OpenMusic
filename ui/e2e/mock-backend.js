@@ -78,6 +78,7 @@
   const signedInYt = { signedIn: true, account: "maya", server: null, serverConnection: null, needsServer: false };
   const signedInPlex = { signedIn: true, account: "demo", server: "Home server", serverConnection: "local", needsServer: false };
   const state = {
+    downloads: [],
     overrides: {},
     allowed: new Set(),
     services: { youtube: true, plex: true },
@@ -115,7 +116,7 @@
 
   // ---- per-provider capabilities (commands.rs `capabilities`) -----------------------------
   const providers = {
-    youtube: { downloads: false, qualityControl: false, podcasts: true, crossfade: true, gapless: true, favorites: true, discordPresence: false },
+    youtube: { downloads: true, qualityControl: false, podcasts: true, crossfade: true, gapless: true, favorites: true, discordPresence: false },
     plex: { downloads: true, qualityControl: true, podcasts: false, crossfade: true, gapless: true, favorites: true, discordPresence: false },
   };
 
@@ -221,7 +222,20 @@
     saved_list: { albums: [], artists: [], playlists: [], podcasts: [] },
     local_folders: [],
     local_library: { tracks: [], albums: [], artists: [] },
-    download_list: [],
+    download_list: () => state.downloads,
+    // YouTube downloads (ytdl.ts resolves each song's stream through yt_fetch, then yt_download).
+    // Here yt_fetch fails, as with no network: the song is marked failed.
+    yt_download_queue: (a) => {
+      for (const t of a.tracks) state.downloads.push({ track: t, status: "queued", bytes: 0, total: null, error: null });
+      return a.tracks;
+    },
+    yt_fetch: () => {
+      throw { code: "http", message: "network error: offline (mock)" };
+    },
+    yt_download_failed: (a) => {
+      const d = state.downloads.find((x) => x.track.id === a.id);
+      if (d) Object.assign(d, { status: "failed", error: a.error });
+    },
     liked_ids: () => [...(ytSignedIn() ? likedYt : []), ...(plex() ? likedPlex : [])].map((t) => t.id),
     // YouTube's liked songs (LM), then Plex's rated tracks (commands.rs `liked_tracks`).
     liked_tracks: () => ({ tracks: [...(ytSignedIn() ? likedYt : []), ...(plex() ? likedPlex : [])], stale: false }),

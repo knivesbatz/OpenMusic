@@ -11,6 +11,7 @@ import { Loading, Select, useAsync } from "../components/common";
 import * as I from "../components/Icons";
 import { TrackList } from "../components/TrackList";
 import { useT, type Key } from "../i18n";
+import { downloadable, downloadTracks } from "../actions";
 import * as P from "../player/engine";
 import { isMobileApp, openProfilePicker, refreshLibrary, setService, useApp } from "../store/app";
 import { signOut } from "../store/profile";
@@ -134,7 +135,7 @@ export function LocalPage() {
 
 export function DownloadsPage() {
   const t = useT();
-  // Downloads are a Plex feature; files already downloaded stay manageable with Plex off.
+  // Plex and YouTube Music songs download; files already downloaded stay manageable with both off.
   const plexOn = useOn("plex");
   const ytOn = useOn("youtube");
   const anyDownloaded = useApp((s) => s.downloaded.size > 0);
@@ -157,11 +158,11 @@ export function DownloadsPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list?.some((d) => d.status === "downloading" || d.status === "queued")]);
-  if (!plexOn && (list ? !list.length : !anyDownloaded))
+  if (!plexOn && !ytOn && (list ? !list.length : !anyDownloaded))
     return (
       <div className="page">
         <h1>{t("downloads")}</h1>
-        <p className="muted">{ytOn ? t("downloadsUnsupported") : t("needsService", { service: serviceName("plex") })}</p>
+        <p className="muted">{t("downloadsUnsupported")}</p>
       </div>
     );
   if (!list) return <Loading />;
@@ -171,7 +172,7 @@ export function DownloadsPage() {
     <div className="page">
       <h1>{t("downloads")}</h1>
       {usage && <p className="muted small">{t("downloadsUsage", { size: fmtBytes(usage.downloadsBytes) })}</p>}
-      {!plexOn && <p className="muted small">{t("downloadsPlexOff")}</p>}
+      {!plexOn && !ytOn && <p className="muted small">{t("downloadsPlexOff")}</p>}
       {!list.length && <p className="muted">{t("downloadsEmpty")}</p>}
       {done.length > 0 && (
         <div className="action-bar">
@@ -195,8 +196,8 @@ export function DownloadsPage() {
                 </div>
               )}
             </div>
-            {(d.status === "failed" || d.status === "cancelled") && plexOn && (
-              <button className="pill ghost small" onClick={() => api.downloadTracks([d.track]).then(load, (e) => toast(errorMessage(e)))}>
+            {(d.status === "failed" || d.status === "cancelled") && downloadable(d.track) && (
+              <button className="pill ghost small" onClick={() => downloadTracks([d.track]).then(load)}>
                 {t("retry")}
               </button>
             )}

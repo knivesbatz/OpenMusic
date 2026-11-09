@@ -368,6 +368,21 @@ await test(
   },
 );
 
+await test("YouTube songs offer Download: the song is queued, its stream is worked out through Rust, and a failure shows in Downloads", async (p) => {
+  await search(p, "aster");
+  const row = p.locator('.top-songs .tl-row[data-source="youtube"]').first();
+  await row.waitFor();
+  await row.click({ button: "right" });
+  await p.locator(".menu button", { hasText: /^Download$/ }).click();
+  // Queued in Rust, then ytdl.ts asks YouTube through yt_fetch (offline in the mock), so it fails.
+  await p.waitForFunction(() => window.__CALLS__.includes("yt_download_queue") && window.__CALLS__.includes("yt_fetch") && window.__CALLS__.includes("yt_download_failed"));
+  await p.locator(".toast", { hasText: "couldn't be downloaded" }).waitFor();
+  await p.click('.sidebar .side-cat:has-text("Downloads")');
+  await p.locator(".page h1", { hasText: "Downloads" }).waitFor();
+  await p.locator("text=Failed").first().waitFor();
+  await p.locator("button", { hasText: "Retry" }).first().waitFor();
+});
+
 await test("search inside a playlist filters its songs", async (p) => {
   await p.locator(".lib-list .side-item", { hasText: "Road trip" }).click();
   await p.waitForSelector(".tl-row:not(.tl-head)");
@@ -1358,8 +1373,8 @@ await test("Only YouTube Music on looks like YTSpot 1.6.1: no source badges, no 
   await p.click(".browse-btn");
   await p.waitForSelector(".browse-tile:has-text('Feel good')");
   assert.equal(await p.locator("h2.browse-group").count(), 0);
-  // No Plex-only entries (Downloads) in the sidebar; podcasts are there.
-  assert.equal(await p.locator('.sidebar .side-cat:has-text("Downloads")').count(), 0);
+  // YouTube songs download too, so Downloads is there; so are podcasts.
+  await p.locator('.sidebar .side-cat:has-text("Downloads")').waitFor();
   await p.locator('.sidebar .side-cat:has-text("Podcasts")').waitFor();
   // The avatar menu reads as before: one account, Log out.
   await p.click(".topbar .avatar-btn");

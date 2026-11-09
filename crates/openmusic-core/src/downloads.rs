@@ -1,6 +1,7 @@
-//! Offline downloads (Plex only — the server hands out the original file to authorized users,
-//! honouring its own "allow downloads" permission). YouTube audio is not downloadable through
-//! any supported interface, so only Plex items offer downloads (per item, see `Capabilities`).
+//! Offline downloads. Plex: the server hands out the original file (honouring its own "allow
+//! downloads" permission). YouTube Music: the UI works out the song's audio stream URL (with its
+//! PO token, see ui/src/ytdl.ts) and [`run_youtube`] fetches it in ranges, as
+//! github.com/Chaitanya-Shahare/ytspot does (MIT).
 //!
 //! Files stream into `<id>.part` and are renamed only after the full body arrived, so an
 //! interrupted download can never be mistaken for a complete one.
@@ -189,6 +190,128 @@ async fn run(app: &AppHandle, state: &AppState, t: &Track, cancel: &AtomicBool) 
     Ok(())
 }
 
+/// The browser YouTube Music's web player runs in, for the media requests.
+const YT_BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
+
+/// YouTube's media servers send at most this much per request (the size yt-dlp asks for).
+const YT_CHUNK: u64 = 10 * 1024 * 1024;
+
+/// Whether a stream URL the UI handed over is one of YouTube's media servers.
+pub fn is_youtube_media_url(url: &str) -> bool {
+    // Only https and only YouTube's media hosts: the URL comes from the web view.
+    reqwest::Url::parse(url).is_ok_and(|u| u.scheme() == "https" && u.host_str().is_some_and(|h| h.ends_with(".googlevideo.com")))
+}
+
+/// Mark YouTube songs as queued (the UI resolves their streams one by one); returns the ones to
+/// fetch, leaving out those done or already on their way.
+pub fn queue_youtube(state: &AppState, tracks: &[Track]) -> Result<Vec<Track>> {
+    let db = state.db();
+    let mut out = Vec::new();
+    for t in tracks.iter().filter(|t| t.source == Source::Youtube) {
+        let existing: Option<String> = db.conn.query_row("SELECT status FROM downloads WHERE track_id=?1", [&t.id], |r| r.get(0)).optional()?;
+        if matches!(existing.as_deref(), Some("done") | Some("queued") | Some("downloading")) {
+            continue;
+        }
+        db.conn.execute(
+            "INSERT INTO downloads(track_id,track_json,status,bytes,updated_at) VALUES(?1,?2,'queued',0,?3)
+             ON CONFLICT(track_id) DO UPDATE SET status='queued', bytes=0, error=NULL, updated_at=excluded.updated_at",
+            params![t.id, serde_json::to_string(t)?, now()],
+        )?;
+        out.push(t.clone());
+    }
+    Ok(out)
+}
+
+/// Mark a queued YouTube song failed (its stream couldn't be worked out).
+pub fn fail(state: &AppState, id: &str, error: &str) {
+    set_status(state, id, "failed", 0, None, Some(error), None);
+}
+
+/// Fetch a YouTube song's audio from `url` (`size` bytes, `ext` "m4a" or "webm") in ranges into
+/// the downloads folder. A 403 is reported as "(403)" so the UI can retry with a fresh PO token.
+pub async fn run_youtube(app: &AppHandle, state: &AppState, t: &Track, url: &str, size: u64, ext: &str) -> Result<()> {
+    if !is_youtube_media_url(url) || !matches!(ext, "m4a" | "webm") || size == 0 {
+        return Err(Error::Invalid("not a YouTube audio stream".into()));
+    }
+    let cancel = Arc::new(AtomicBool::new(false));
+    state.downloads.lock().unwrap().insert(t.id.clone(), cancel.clone());
+    let r = fetch_ranges(app, state, t, url, size, ext, &cancel).await;
+    state.downloads.lock().unwrap().remove(&t.id);
+    match &r {
+        Ok(()) => {}
+        Err(Error::Cancelled) => set_status(state, &t.id, "cancelled", 0, None, None, None),
+        Err(e) => set_status(state, &t.id, "failed", 0, None, Some(&e.to_string()), None),
+    }
+    let _ = app.emit("downloads-changed", &t.id);
+    r
+}
+
+async fn fetch_ranges(app: &AppHandle, state: &AppState, t: &Track, url: &str, size: u64, ext: &str, cancel: &AtomicBool) -> Result<()> {
+    let _slot = state.download_slots.acquire().await.map_err(|_| Error::Cancelled)?;
+    tokio::fs::create_dir_all(&state.dirs.downloads).await?;
+    let final_path = state.dirs.downloads.join(format!("{}.{ext}", safe_name(&t.id)));
+    let part = final_path.with_extension(format!("{ext}.part"));
+    set_status(state, &t.id, "downloading", 0, Some(size), None, None);
+    let mut file = tokio::fs::File::create(&part).await?;
+    let result = async {
+        use tokio::io::AsyncWriteExt;
+        let mut at = 0u64;
+        let mut last_emit = std::time::Instant::now();
+        while at < size {
+            let end = (at + YT_CHUNK).min(size) - 1;
+            // As YouTube Music's web player asks for it (the stream was worked out as that client).
+            let resp = state
+                .http
+                .get(url)
+                .header("Range", format!("bytes={at}-{end}"))
+                .header("User-Agent", YT_BROWSER_UA)
+                .header("Origin", "https://music.youtube.com")
+                .header("Referer", "https://music.youtube.com/")
+                .timeout(std::time::Duration::from_secs(60))
+                .send()
+                .await?;
+            let status = resp.status().as_u16();
+            if !resp.status().is_success() {
+                return Err(Error::Invalid(format!("YouTube refused the download ({status})")));
+            }
+            let from = at;
+            let mut stream = resp.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(Error::Cancelled);
+                }
+                let chunk = chunk?;
+                file.write_all(&chunk).await?;
+                at += chunk.len() as u64;
+                if last_emit.elapsed().as_millis() > 400 {
+                    last_emit = std::time::Instant::now();
+                    set_status(state, &t.id, "downloading", at, Some(size), None, None);
+                    let _ = app.emit("download-progress", serde_json::json!({ "id": t.id, "bytes": at, "total": size }));
+                }
+            }
+            // An empty answer would otherwise ask for the same bytes forever.
+            if at == from {
+                return Err(Error::Invalid("YouTube sent no audio".into()));
+            }
+        }
+        if at != size {
+            return Err(Error::Invalid(format!("incomplete download ({at} of {size} bytes)")));
+        }
+        file.flush().await?;
+        file.sync_all().await?;
+        Ok(())
+    }
+    .await;
+    drop(file);
+    if let Err(e) = result {
+        let _ = tokio::fs::remove_file(&part).await;
+        return Err(e);
+    }
+    tokio::fs::rename(&part, &final_path).await?;
+    set_status(state, &t.id, "done", size, Some(size), None, Some(&final_path.to_string_lossy()));
+    Ok(())
+}
+
 pub fn cancel(state: &AppState, id: &str) {
     if let Some(flag) = state.downloads.lock().unwrap().get(id) {
         flag.store(true, Ordering::Relaxed);
@@ -207,4 +330,34 @@ pub fn remove(state: &AppState, id: &str) -> Result<()> {
         let _ = std::fs::remove_file(p);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn yt(id: &str) -> Track {
+        serde_json::from_value(serde_json::json!({ "id": format!("yt:{id}"), "source": "youtube", "title": id, "streamKey": id })).unwrap()
+    }
+
+    #[test]
+    fn youtube_media_urls_only() {
+        assert!(is_youtube_media_url("https://rr4---sn-tt1e7nl6.googlevideo.com/videoplayback?itag=140"));
+        assert!(!is_youtube_media_url("http://rr4---sn-tt1e7nl6.googlevideo.com/videoplayback"));
+        assert!(!is_youtube_media_url("https://googlevideo.com.evil.example/videoplayback"));
+        assert!(!is_youtube_media_url("file:///etc/passwd"));
+    }
+
+    #[test]
+    fn queue_youtube_skips_songs_done_or_on_their_way() {
+        let state = crate::state::test_state();
+        let (a, b) = (yt("a"), yt("b"));
+        assert_eq!(queue_youtube(&state, &[a.clone(), b.clone()]).unwrap().len(), 2);
+        assert!(queue_youtube(&state, std::slice::from_ref(&a)).unwrap().is_empty(), "already queued");
+        fail(&state, &a.id, "no network");
+        assert_eq!(queue_youtube(&state, &[a.clone(), b]).unwrap().len(), 1, "a failed song can be retried");
+        let listed = list(&state).unwrap();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.iter().all(|d| d.status == "queued"));
+    }
 }
