@@ -2484,6 +2484,18 @@ pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
 
 // ---- downloads / storage --------------------------------------------------------------------
 
+/// The caller's headers with the signed-in ones in place of any of the same name (YouTube rejects a
+/// repeated Origin or X-Origin), less those reqwest sets for the connection itself.
+fn merge_headers(caller: Vec<(String, String)>, auth: Vec<(&'static str, String)>) -> Vec<(String, String)> {
+    let replaced = |k: &str| auth.iter().any(|(a, _)| a.eq_ignore_ascii_case(k));
+    let mut out: Vec<(String, String)> = caller
+        .into_iter()
+        .filter(|(k, _)| !matches!(k.to_ascii_lowercase().as_str(), "host" | "content-length" | "connection" | "accept-encoding") && !replaced(k))
+        .collect();
+    out.extend(auth.into_iter().map(|(k, v)| (k.to_string(), v)));
+    out
+}
+
 /// YouTube's own API (InnerTube), where the downloader's requests go signed in.
 fn is_youtube_api(url: &reqwest::Url) -> bool {
     matches!(url.host_str(), Some("www.youtube.com" | "music.youtube.com" | "youtubei.googleapis.com")) && url.path().starts_with("/youtubei/")
@@ -2522,25 +2534,20 @@ pub async fn yt_fetch(state: S<'_>, url: String, method: String, headers: Vec<(S
         return Err(Error::Invalid(format!("not a YouTube address: {}", u.host_str().unwrap_or(""))));
     }
     let m = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|_| Error::Invalid("bad method".into()))?;
-    let signed = is_youtube_api(&u);
+    // The YouTube API asked as the signed-in account (Premium songs need it); never Google's
+    // BotGuard service or anything else.
+    let auth = if is_youtube_api(&u) && state.on(Provider::YouTube) {
+        let origin = format!("https://{}", u.host_str().unwrap_or_default());
+        state.ytm().await.auth_headers(&origin).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let mut req = state.http.request(m, u).timeout(Duration::from_secs(30));
-    for (k, v) in headers {
-        // The connection's own headers are reqwest's to set.
-        if !matches!(k.to_ascii_lowercase().as_str(), "host" | "content-length" | "connection" | "accept-encoding") {
-            req = req.header(k, v);
-        }
+    for (k, v) in merge_headers(headers, auth) {
+        req = req.header(k, v);
     }
     if let Some(b) = body {
         req = req.body(b);
-    }
-    // The YouTube API asked as the signed-in account (Premium songs need it); never Google's
-    // BotGuard service or anything else.
-    if signed && state.on(Provider::YouTube) {
-        if let Some(h) = state.ytm().await.auth_headers() {
-            for (k, v) in h {
-                req = req.header(k, v);
-            }
-        }
     }
     let resp = req.send().await?;
     let status = resp.status().as_u16();
@@ -3609,6 +3616,23 @@ mod tests {
             assert!(f.contains("artist_page(") || f.contains("with_local(state, page)"), "{f}");
             assert!(!f.contains("merged") && !f.contains("add_local"), "{f}");
         }
+    }
+
+    #[test]
+    fn signed_in_headers_replace_the_callers_once() {
+        let caller = vec![
+            ("x-origin".to_string(), "https://www.youtube.com".to_string()),
+            ("content-type".to_string(), "application/json".to_string()),
+            ("Host".to_string(), "x".to_string()),
+        ];
+        let auth = vec![("X-Origin", "https://www.youtube.com".to_string()), ("Authorization", "SAPISIDHASH 1_a".to_string())];
+        let out = merge_headers(caller, auth);
+        assert_eq!(out.iter().filter(|(k, _)| k.eq_ignore_ascii_case("x-origin")).count(), 1, "one X-Origin");
+        assert!(out.iter().any(|(k, _)| k == "content-type"));
+        assert!(!out.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")));
+        assert!(out.iter().any(|(k, v)| k == "Authorization" && v == "SAPISIDHASH 1_a"));
+        // Signed out: the caller's as they were.
+        assert_eq!(merge_headers(vec![("x-origin".into(), "o".into())], vec![]), [("x-origin".to_string(), "o".to_string())]);
     }
 
     #[test]

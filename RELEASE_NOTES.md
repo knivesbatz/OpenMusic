@@ -1,6 +1,10 @@
-# OpenSpot 2.3.0
+# OpenSpot 2.3.1
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.3.1
+- YouTube downloads (and Premium-only songs played directly) work again: in 2.3.0 every one
+  failed with "Request failed with status code 400" for signed-in users.
 
 ## New in 2.3.0
 - **Pin playlists and folders** to the top of Your Library, like Spotify: right-click (or •••) →
