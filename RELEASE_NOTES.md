@@ -6,6 +6,8 @@ YouTube Music, Plex and your local files in one app.
 - **Pin playlists and folders** to the top of Your Library, like Spotify: right-click (or •••) →
   Pin playlist. Pinned items stay first whatever the sort, with a green pin, up to four. Unpin
   playlist puts it back.
+- **Downloads use your YouTube Music account**, so Premium-only songs download too (they failed
+  with "only available to Music Premium members").
 
 ## New in 2.2.1
 - **Downloads are marked like Spotify:** a green arrow next to every downloaded song, a green

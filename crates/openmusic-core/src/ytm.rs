@@ -1095,6 +1095,32 @@ impl Ytm {
         Ok(info)
     }
 
+    /// Headers that make a YouTube API request signed in as this account (the same `post` sends),
+    /// for the downloader's own requests (commands.rs `yt_fetch`); None when signed out.
+    pub fn auth_headers(&self) -> Option<Vec<(&'static str, String)>> {
+        let cookie = self.cookie()?;
+        let sid = sapisid(&cookie)?.to_string();
+        let epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+        let mut h = vec![
+            ("Authorization", sapisid_hash(&sid, epoch)),
+            ("X-Goog-AuthUser", "0".to_string()),
+            ("Origin", ORIGIN.to_string()),
+            ("X-Origin", ORIGIN.to_string()),
+            ("Cookie", cookie),
+        ];
+        if let Some(p) = &self.page_id {
+            h.push(("X-Goog-PageId", p.clone()));
+        }
+        Some(h)
+    }
+
+    /// The signed-in account's data sync id (`<delegated>||<user>`), which a signed-in session's
+    /// media PO token is bound to.
+    pub async fn datasync_id(&self) -> Result<Option<String>> {
+        let v = self.post("account/account_menu", json!({}), "").await?;
+        Ok(find_first(&v, "datasyncId").and_then(|x| x.as_str()).map(String::from))
+    }
+
     pub async fn account_name(&self) -> Result<String> {
         let v = self.post("account/account_menu", json!({}), "").await?;
         Ok(find_first(&v, "accountName").map(|a| text(Some(a))).unwrap_or_default())

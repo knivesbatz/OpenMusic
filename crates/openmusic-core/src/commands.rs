@@ -2484,6 +2484,25 @@ pub async fn flush_scrobbles(app: &AppHandle, state: &AppState) {
 
 // ---- downloads / storage --------------------------------------------------------------------
 
+/// YouTube's own API (InnerTube), where the downloader's requests go signed in.
+fn is_youtube_api(url: &reqwest::Url) -> bool {
+    matches!(url.host_str(), Some("www.youtube.com" | "music.youtube.com" | "youtubei.googleapis.com")) && url.path().starts_with("/youtubei/")
+}
+
+/// The signed-in YouTube account's data sync id, for the downloader's PO token; None when signed
+/// out or YouTube Music is off.
+#[tauri::command]
+pub async fn yt_datasync_id(state: S<'_>) -> Result<Option<String>> {
+    if !state.on(Provider::YouTube) {
+        return Ok(None);
+    }
+    let y = state.ytm().await;
+    if !y.signed_in() {
+        return Ok(None);
+    }
+    y.datasync_id().await
+}
+
 /// Hosts the UI's YouTube downloader (ui/src/ytdl.ts: youtubei.js, BotGuard) may reach through
 /// [`yt_fetch`]: YouTube's API and player script, and Google's BotGuard/PO-token service.
 fn yt_fetch_allowed(url: &reqwest::Url) -> bool {
@@ -2503,6 +2522,7 @@ pub async fn yt_fetch(state: S<'_>, url: String, method: String, headers: Vec<(S
         return Err(Error::Invalid(format!("not a YouTube address: {}", u.host_str().unwrap_or(""))));
     }
     let m = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|_| Error::Invalid("bad method".into()))?;
+    let signed = is_youtube_api(&u);
     let mut req = state.http.request(m, u).timeout(Duration::from_secs(30));
     for (k, v) in headers {
         // The connection's own headers are reqwest's to set.
@@ -2512,6 +2532,15 @@ pub async fn yt_fetch(state: S<'_>, url: String, method: String, headers: Vec<(S
     }
     if let Some(b) = body {
         req = req.body(b);
+    }
+    // The YouTube API asked as the signed-in account (Premium songs need it); never Google's
+    // BotGuard service or anything else.
+    if signed && state.on(Provider::YouTube) {
+        if let Some(h) = state.ytm().await.auth_headers() {
+            for (k, v) in h {
+                req = req.header(k, v);
+            }
+        }
     }
     let resp = req.send().await?;
     let status = resp.status().as_u16();
@@ -3580,6 +3609,16 @@ mod tests {
             assert!(f.contains("artist_page(") || f.contains("with_local(state, page)"), "{f}");
             assert!(!f.contains("merged") && !f.contains("add_local"), "{f}");
         }
+    }
+
+    #[test]
+    fn only_youtube_api_requests_go_signed_in() {
+        let api = |u: &str| is_youtube_api(&reqwest::Url::parse(u).unwrap());
+        assert!(api("https://www.youtube.com/youtubei/v1/player?prettyPrint=false"));
+        assert!(api("https://music.youtube.com/youtubei/v1/player"));
+        assert!(!api("https://www.youtube.com/s/player/abc/player_ias.vflset/en_US/base.js"));
+        assert!(!api("https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/GenerateIT"));
+        assert!(!api("https://www.google.com/youtubei/v1/player"));
     }
 
     #[test]
