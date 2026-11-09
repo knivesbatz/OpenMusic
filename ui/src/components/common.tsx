@@ -16,7 +16,7 @@ import type { Capabilities, MediaItem, ProviderError, Track } from "../types";
 import { PROVIDERS } from "../types";
 import { useDisplayTrack } from "../store/songmeta";
 import { cls, isTouch, serviceLabel } from "../util";
-import { IMusic, IPlay } from "./Icons";
+import { IDownload, IDownloaded, IMusic, IPlay } from "./Icons";
 
 export const Art = memo(function Art({
   src,
@@ -370,14 +370,75 @@ export function ProviderNotes({ errors }: { errors: ProviderError[] | null | und
   );
 }
 
-/** Plex downloads on this device (finished ones play from disk, also while Plex is off). */
-const useDownloadState = create<{ done: Set<string>; any: boolean }>(() => ({ done: new Set(), any: false }));
+/** Downloads on this device (finished ones play from disk, also while their service is off):
+ * `done` and `busy` (queued or downloading) song ids, and the playlists and albums downloaded as a
+ * whole (kv `ui.downloads.collections`: id → its song ids), which show Spotify's green mark. */
+type DownloadState = { done: Set<string>; busy: Set<string>; any: boolean; collections: Record<string, string[]> };
+export const useDownloadState = create<DownloadState>(() => ({ done: new Set(), busy: new Set(), any: false, collections: {} }));
 let downloadsWatched = false;
+const COLLECTIONS_KEY = "downloads.collections";
 function loadDownloads() {
   api.downloadList().then(
-    (l) => useDownloadState.setState({ done: new Set(l.filter((d) => d.status === "done").map((d) => d.track.id)), any: l.length > 0 }),
+    (l) =>
+      useDownloadState.setState({
+        done: new Set(l.filter((d) => d.status === "done").map((d) => d.track.id)),
+        busy: new Set(l.filter((d) => d.status === "queued" || d.status === "downloading").map((d) => d.track.id)),
+        any: l.length > 0,
+      }),
     () => {},
   );
+  api.kvGet<Record<string, string[]>>(COLLECTIONS_KEY).then((c) => useDownloadState.setState({ collections: c ?? {} }), () => {});
+}
+
+/** Remember a playlist or album as downloaded (its downloadable songs), or forget it (`null`). */
+export function setCollectionDownload(id: string, songIds: string[] | null) {
+  const collections = { ...useDownloadState.getState().collections };
+  if (songIds && songIds.length) collections[id] = songIds;
+  else delete collections[id];
+  useDownloadState.setState({ collections });
+  if (inTauri) api.kvSet(COLLECTIONS_KEY, collections).catch(() => {});
+}
+
+/** "done": every downloadable song of the list is on this device; "busy": some are on their way. */
+export type ListDownload = "done" | "busy" | null;
+export function listDownload(s: DownloadState, songIds: string[]): ListDownload {
+  if (!songIds.length) return null;
+  if (songIds.some((id) => s.busy.has(id))) return "busy";
+  return songIds.every((id) => s.done.has(id)) ? "done" : null;
+}
+
+/** A playlist or album downloaded as a whole (Download on it), as far as it has finished. */
+export function useCollectionDownload(id: string | null | undefined): ListDownload {
+  useEffect(watchDownloads, []);
+  return useDownloadState((s) => (id && s.collections[id] ? listDownload(s, s.collections[id]) : null));
+}
+
+/** The download state of a list of songs (a playlist or album page). */
+export function useListDownload(songIds: string[]): ListDownload {
+  useEffect(watchDownloads, []);
+  return useDownloadState((s) => listDownload(s, songIds));
+}
+
+/** One song: downloaded, on its way, or neither. */
+export function useDownloadStatus(id: string): ListDownload {
+  useEffect(watchDownloads, []);
+  return useDownloadState((s) => (s.done.has(id) ? "done" : s.busy.has(id) ? "busy" : null));
+}
+
+/** Spotify's green "downloaded" arrow; pulsing while the download is on its way. */
+export function DownloadMark({ state, size = 14 }: { state: ListDownload; size?: number }) {
+  const t = useT();
+  if (!state) return null;
+  return (
+    <span className={cls("dl-mark", state === "busy" && "busy")} role="img" aria-label={t(state === "done" ? "downloaded" : "statusDownloading")} title={t(state === "done" ? "downloaded" : "statusDownloading")}>
+      {state === "done" ? <IDownloaded size={size} /> : <IDownload size={size} />}
+    </span>
+  );
+}
+
+/** The mark of a playlist or album downloaded as a whole (sidebar, Your Library, cards). */
+export function CollectionDownloadMark({ id, size }: { id: string | null | undefined; size?: number }) {
+  return <DownloadMark state={useCollectionDownload(id)} size={size} />;
 }
 function watchDownloads() {
   if (downloadsWatched || !inTauri) return;

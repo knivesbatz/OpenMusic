@@ -1,6 +1,12 @@
-# OpenSpot 2.2.0
+# OpenSpot 2.2.1
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.2.1
+- **Downloads are marked like Spotify:** a green arrow next to every downloaded song, a green
+  download button on a downloaded playlist or album (press it again to remove the download), and
+  the arrow next to downloaded playlists and albums in Your Library. It pulses while songs are
+  still downloading.
 
 ## New in 2.2.0
 - **Download YouTube Music songs** for offline listening, like Plex songs: Download in a song's,

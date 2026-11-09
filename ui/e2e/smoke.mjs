@@ -368,6 +368,34 @@ await test(
   },
 );
 
+await test("Downloaded like Spotify: green marks on the songs and the album, in Your Library too; Remove download takes them away", async (p) => {
+  await search(p, "night drive");
+  await p.locator('.shelf .card[data-source="plex"]', { hasText: "Night Drive" }).first().click();
+  await p.locator("h1", { hasText: "Night Drive" }).waitFor();
+  const rows = p.locator(".detail .tl-row:not(.tl-head)");
+  await rows.first().waitFor();
+  assert.equal(await p.locator(".detail .tl-row .dl-mark").count(), 0);
+  await p.click('.detail .action-bar .dl-btn[aria-label="Download"]');
+  // Every song gets the green arrow; the album's button turns green and now removes the download.
+  await p.locator('.detail .action-bar .dl-btn.done[aria-label="Remove download"]').waitFor();
+  await p.waitForFunction(() => document.querySelectorAll(".detail .tl-row:not(.tl-head) .dl-mark").length === document.querySelectorAll(".detail .tl-row:not(.tl-head)").length);
+  // The album's ••• menu offers Remove download.
+  await p.click('.detail .action-bar button[aria-label="More options"]');
+  await p.locator(".menu button", { hasText: "Remove download" }).waitFor();
+  await p.keyboard.press("Escape");
+  await p.click('.detail .action-bar .dl-btn.done');
+  await p.locator(".dialog", { hasText: "Remove from Downloads?" }).waitFor();
+  await p.click('.dialog button:has-text("Remove download")');
+  await p.locator('.detail .action-bar .dl-btn[aria-label="Download"]').waitFor();
+  await p.waitForFunction(() => document.querySelectorAll(".detail .tl-row .dl-mark").length === 0);
+  // A playlist downloaded from Your Library gets the mark there.
+  const item = p.locator(".lib-list .side-item", { hasText: "Road trip" });
+  assert.equal(await item.locator(".dl-mark").count(), 0);
+  await item.click({ button: "right" });
+  await p.locator(".menu button", { hasText: /^Download$/ }).click();
+  await item.locator(".dl-mark").waitFor();
+});
+
 await test("YouTube songs offer Download: the song is queued, its stream is worked out through Rust, and a failure shows in Downloads", async (p) => {
   await search(p, "aster");
   const row = p.locator('.top-songs .tl-row[data-source="youtube"]').first();

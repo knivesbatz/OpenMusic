@@ -223,6 +223,19 @@
     local_folders: [],
     local_library: { tracks: [], albums: [], artists: [] },
     download_list: () => state.downloads,
+    // Plex downloads finish at once here (Rust queues them and emits downloads-changed as they go).
+    download_tracks: (a) => {
+      for (const t of a.tracks) {
+        state.downloads = state.downloads.filter((d) => d.track.id !== t.id);
+        state.downloads.push({ track: t, status: "done", bytes: 1, total: 1, error: null });
+      }
+      emitSoon("downloads-changed", null);
+      return a.tracks.length;
+    },
+    download_remove: (a) => {
+      state.downloads = state.downloads.filter((d) => d.track.id !== a.id);
+      emitSoon("downloads-changed", a.id);
+    },
     // YouTube downloads (ytdl.ts resolves each song's stream through yt_fetch, then yt_download).
     // Here yt_fetch fails, as with no network: the song is marked failed.
     yt_download_queue: (a) => {

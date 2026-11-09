@@ -17,6 +17,7 @@ import { duplicatesIn, uniqueSongs } from "./duplicates";
 import { createFolder, deleteFolder, folderOf, putInFolder, renameFolder, takeOutOfFolder, useFolders, type Folder } from "./store/folders";
 import * as I from "./components/Icons";
 import { displayTrack } from "./store/songmeta";
+import { listDownload, setCollectionDownload, useDownloadState } from "./components/common";
 
 const t = (k: Key, v?: Record<string, string | number>) => translate(useSettings.getState().language, k, v);
 
@@ -242,9 +243,11 @@ function likeAllItem(tracks: () => Promise<Track[]>, id: string): MenuItem[] {
 
 /** Download songs for offline play: Plex songs from the server, YouTube songs through ytdl.ts.
  * Local files and songs of a service that is off are left out. */
-export async function downloadTracks(tracks: Track[]) {
+export async function downloadTracks(tracks: Track[], collectionId?: string) {
   const eligible = tracks.filter(downloadable);
   if (!eligible.length) return toast(t("downloadsUnsupported"));
+  // A playlist or album downloaded as a whole shows Spotify's green mark once its songs are here.
+  if (collectionId) setCollectionDownload(collectionId, eligible.map((x) => x.id));
   if (eligible.length > 50 && !(await confirmDialog({ title: t("download"), body: t("downloadLargeWarn", { n: eligible.length }), confirm: t("download") })))
     return;
   const plex = eligible.filter((x) => x.source === "plex");
@@ -262,6 +265,23 @@ export async function downloadTracks(tracks: Track[]) {
   } catch (e) {
     toast(localError(e));
   }
+}
+
+/** Remove downloads (after Spotify's "Remove from Downloads?"); a playlist or album loses its mark. */
+export async function removeDownloads(tracks: Track[], collectionId?: string) {
+  if (!(await confirmDialog({ title: t("removeDownloadTitle"), body: t("removeDownloadBody"), confirm: t("removeDownload"), danger: true }))) return;
+  if (collectionId) setCollectionDownload(collectionId, null);
+  const done = useDownloadState.getState().done;
+  const busy = useDownloadState.getState().busy;
+  for (const x of tracks.filter((x) => done.has(x.id) || busy.has(x.id))) await api.downloadRemove(x.id).catch(() => {});
+}
+
+/** The menu entry for a list of songs: Download, or Remove download once they're all here. */
+function downloadItem(tracks: () => Promise<Track[]>, collectionId?: string): MenuItem {
+  const marked = collectionId && useDownloadState.getState().collections[collectionId];
+  if (marked && listDownload(useDownloadState.getState(), marked) === "done")
+    return { label: t("removeDownload"), icon: I.IDownloaded, onClick: async () => removeDownloads(await tracks(), collectionId) };
+  return { label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks(), collectionId) };
 }
 
 export async function startRadio(track: Track) {
@@ -359,7 +379,9 @@ export function trackMenu(track: Track, o: TrackMenuOpts = {}): MenuItem[] {
   if (!multi && track.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: track.artistId! }) });
   if (!multi && track.albumId) items.push({ label: t("goToAlbum"), icon: I.IDisc, onClick: () => navigate({ name: "album", id: track.albumId! }) });
   if (!multi) items.push({ label: t("viewCredits"), icon: I.IInfo, onClick: () => useUi.setState({ info: track }) });
-  if (sel.some(downloadable)) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(sel) });
+  if (sel.length && sel.every((x) => useDownloadState.getState().done.has(x.id)))
+    items.push({ label: t("removeDownload"), icon: I.IDownloaded, onClick: () => removeDownloads(sel) });
+  else if (sel.some(downloadable)) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(sel) });
   if (!multi) items.push({ label: t("share"), icon: I.IShare, submenu: shareSubmenu(track) });
   return items;
 }
@@ -452,8 +474,7 @@ export function playlistMenu(pl: Playlist, tracks?: () => Promise<Track[]>, onCo
   if (tracks) {
     items.push({ label: t("addToQueue"), icon: I.IQueueAdd, onClick: async () => P.addToQueue(await tracks()) });
     items.push(...likeAllItem(tracks, pl.id));
-    if (downloadsFor(pl.local ? null : source))
-      items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
+    if (downloadsFor(pl.local ? null : source)) items.push(downloadItem(tracks, pl.id));
   }
   items.push({ label: t("moveToFolder"), icon: I.IFolder, submenu: moveToFolderSubmenu(pl) });
   if (pl.local) items.push({ label: t("editDetails"), icon: I.IEdit, onClick: () => renamePlaylist(pl) });
@@ -599,7 +620,7 @@ export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuIte
     { label: t("addToPlaylist"), icon: I.IPlus, onClick: async () => createPlaylist(await tracks()) },
   ];
   if (album.artistId) items.push({ label: t("goToArtist"), icon: I.IUser, onClick: () => navigate({ name: "artist", id: album.artistId! }) });
-  if ((sourceOf(album.id) === "plex" || sourceOf(album.id) === "youtube") && downloadsFor(sourceOf(album.id))) items.push({ label: t("download"), icon: I.IDownload, onClick: async () => downloadTracks(await tracks()) });
+  if ((sourceOf(album.id) === "plex" || sourceOf(album.id) === "youtube") && downloadsFor(sourceOf(album.id))) items.push(downloadItem(tracks, album.id));
   return items;
 }
 
@@ -607,7 +628,7 @@ export function albumMenu(album: Album, tracks: () => Promise<Track[]>): MenuIte
 export function likedMenu(tracks: Track[]): MenuItem[] {
   const pl: Playlist = { id: "liked", title: t("likedSongs"), local: false };
   const items: MenuItem[] = [{ label: t("addToQueue"), icon: I.IQueueAdd, onClick: () => P.addToQueue(tracks) }];
-  if (tracks.some(downloadable)) items.push({ label: t("download"), icon: I.IDownload, onClick: () => downloadTracks(tracks) });
+  if (tracks.some(downloadable)) items.push(downloadItem(async () => tracks, "liked"));
   items.push({
     label: t("exportPlaylist"),
     icon: I.IShare,

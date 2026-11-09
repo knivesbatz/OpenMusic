@@ -5,6 +5,7 @@ import { api, artUrl, errorCode, inTauri } from "../api";
 import {
   Art,
   Card,
+  CollectionDownloadMark,
   ErrorBox,
   Loading,
   PlayFab,
@@ -932,6 +933,7 @@ function LibRow(p: { icon: React.ReactNode; title: string; sub?: string; pin?: b
         {p.sub && (
           <span className="sub">
             {p.pin && <I.IPin size={14} className="lib-pin" />}
+            <CollectionDownloadMark id={p.badgeId} />
             {p.sub}
           </span>
         )}

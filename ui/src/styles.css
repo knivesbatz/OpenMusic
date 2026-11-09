@@ -1208,3 +1208,11 @@ body.resizing, body.resizing * { cursor: col-resize !important; user-select: non
   .lib-pin { color: var(--green); vertical-align: -2px; margin-right: 4px; flex: none; }
 }
 img.avatar { object-fit: cover; }
+
+/* Spotify's "downloaded" mark: a green arrow before a song's or a list's subtitle; pulsing while the
+   download is on its way. */
+.dl-mark { display: inline-flex; align-items: center; color: var(--green); margin-right: 6px; vertical-align: -2px; flex: none; }
+.dl-mark.busy, .dl-btn.busy { animation: dl-pulse 1.2s ease-in-out infinite; color: var(--green); }
+.dl-btn.done { color: var(--green); }
+@keyframes dl-pulse { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .dl-mark.busy, .dl-btn.busy { animation: none; } }
