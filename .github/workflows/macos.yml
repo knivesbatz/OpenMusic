@@ -24,7 +24,28 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # For a release: a passing pull-request run that built exactly these files
+  # (scripts/find-prebuilt.sh); its disk image is published and nothing is built again.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      prebuilt: ${{ steps.p.outputs.prebuilt }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prebuilt=""
+          if [ -n "${{ inputs.release_tag }}" ]; then
+            prebuilt=$(bash .github/scripts/find-prebuilt.sh macos.yml openspot-macos || true)
+          fi
+          echo "prebuilt run '${prebuilt:-none}'"
+          echo "prebuilt=$prebuilt" >> "$GITHUB_OUTPUT"
+
   macos:
+    needs: plan
+    if: needs.plan.outputs.prebuilt == ''
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
@@ -74,8 +95,8 @@ jobs:
           if-no-files-found: error
 
   upload:
-    needs: macos
-    if: inputs.release_tag != ''
+    needs: [plan, macos]
+    if: always() && inputs.release_tag != '' && (needs.plan.outputs.prebuilt != '' || needs.macos.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -83,6 +104,8 @@ jobs:
         with:
           name: openspot-macos
           path: dmg
+          run-id: ${{ needs.plan.outputs.prebuilt || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Check the disk image
         run: |
           set -e
