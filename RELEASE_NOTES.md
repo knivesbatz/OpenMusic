@@ -1,6 +1,15 @@
-# OpenSpot 2.3.2
+# OpenSpot 2.3.3
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.3.3
+- **Discography like Spotify's.** An artist's "Show all" page now has a filter menu (All, Albums,
+  Singles and EPs, Compilations), a Release date / Title sort and a grid or list view. The list
+  shows each release with its songs. Cards say what each release is ("2026 • Album"), and the
+  back button returns to the artist.
+- The "ORIGINAL" quality tag next to the player's controls is gone.
+- **Shuffle starts on a random song.** With shuffle on, a playlist's, album's or artist's play button
+  always began with the first song; now it starts anywhere, like Spotify.
 
 ## New in 2.3.2
 - **"Always show Plex albums" shows their covers.** With the Plex service switched off, the Plex

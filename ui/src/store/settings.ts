@@ -40,6 +40,8 @@ export interface Settings {
   compactTracks: boolean;
   /** Your Library → Albums / Artists "Sort by". */
   albumSort: LibSort<AlbumSortKey>;
+  /** An artist's discography: cards, or each release with its songs (Spotify's list). */
+  discographyView: "grid" | "list";
   artistSort: LibSort<ArtistSortKey>;
   /** Scrobble to Last.fm once connected. Off by default (new key, so earlier "on" defaults reset). */
   lastfmScrobble: boolean;
@@ -73,6 +75,7 @@ export const defaults: Settings = {
   translateLyrics: true,
   compactTracks: false,
   albumSort: { key: "recent", desc: false },
+  discographyView: "grid",
   artistSort: { key: "recent", desc: false },
   lastfmScrobble: false,
   sidebarCollapsed: false,
@@ -105,6 +108,7 @@ export function sanitize(raw: Record<string, unknown>): Settings {
   s.shareAudio = s.shareAudio === true;
   s.privateSession = s.privateSession === true;
   s.albumSort = libSort(s.albumSort, ["recent", "alpha", "artist", "year"]);
+  if (s.discographyView !== "list") s.discographyView = "grid";
   s.artistSort = libSort(s.artistSort, ["recent", "alpha"]);
   s.sidebarWidth = clampWidth(s.sidebarWidth, SIDEBAR_W, 300);
   s.panelWidth = clampWidth(s.panelWidth, PANEL_W, 340);

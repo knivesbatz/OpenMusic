@@ -51,6 +51,8 @@ function Page() {
       return <LibraryPage key={r.tab ?? ""} tab={r.tab} />;
     case "artist":
       return <ArtistPage id={r.id} />;
+    case "discography":
+      return <ArtistPage key={r.id} id={r.id} discography={r.filter ?? "all"} />;
     case "album":
       return <AlbumPage id={r.id} />;
     case "playlist":

@@ -264,7 +264,7 @@ export function Sidebar() {
                 onContext={(ev) => openMenu(ev, playlistMenu(e.v, async () => (await api.playlist(e.v.id)).tracks))}
                 onPlay={async () => {
                   const p = await api.playlist(e.v.id);
-                  P.playTracks(p.tracks, 0, { kind: "playlist", id: e.v.id, title: p.playlist.title, artwork: p.playlist.artwork });
+                  P.playAll(p.tracks, { kind: "playlist", id: e.v.id, title: p.playlist.title, artwork: p.playlist.artwork });
                 }}
               />
             ),

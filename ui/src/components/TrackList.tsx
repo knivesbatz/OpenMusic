@@ -51,7 +51,15 @@ export function TrackList({ tracks, context, showAlbum = true, showArt = true, n
   useLayoutEffect(() => {
     const el = listRef.current;
     const sc = scrollRef.current;
-    if (el && sc) setMargin(el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+    if (!el || !sc) return;
+    const measure = () => setMargin(el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop);
+    measure();
+    // Content above may still grow (several lists on one page, loading as they scroll into view).
+    const content = sc.firstElementChild;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(content);
+    return () => ro.disconnect();
   }, [scrollRef, list.length]);
 
   const v = useVirtualizer({

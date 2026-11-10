@@ -289,7 +289,6 @@ p { margin: 0 0 8px; }
 .seek { display: flex; align-items: center; gap: 8px; width: 100%; }
 .time { font-size: 0.6875rem; color: var(--muted); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
 .pb-right { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
-.quality { font-size: 0.6875rem; color: var(--green); border: 1px solid #1db95466; border-radius: 4px; padding: 1px 6px; margin-right: 6px; text-transform: uppercase; }
 .volume { display: flex; align-items: center; width: 130px; flex: none; }
 .volume .slider { min-width: 0; width: 100%; }
 
@@ -1219,3 +1218,21 @@ img.avatar { object-fit: cover; }
 
 /* Spotify's green pin before a pinned item's subtitle (sidebar and Your Library, every width). */
 .lib-pin { color: var(--green); vertical-align: -2px; margin-right: 4px; flex: none; }
+
+/* An artist's discography ("Show all"), like Spotify's: filter, sort, grid or list. */
+.disc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.disc-title { font-size: 1.5rem; margin: 0; }
+.disc-tools { display: flex; align-items: center; gap: 4px; }
+.disc-release { margin-bottom: 32px; }
+.disc-release-head { display: flex; align-items: flex-end; gap: 20px; margin-bottom: 12px; }
+.disc-release-art { width: 136px; height: 136px; flex: none; padding: 0; border: 0; background: none; border-radius: 6px; overflow: hidden; cursor: pointer; box-shadow: 0 4px 24px #0008; }
+.disc-release-art img, .disc-release-art .art { width: 100%; height: 100%; }
+.disc-release-text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.disc-release-title { font-size: 1.5rem; font-weight: 800; color: var(--text); background: none; border: 0; padding: 0; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.disc-release-title:hover { text-decoration: underline; }
+.disc-release-actions { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.disc-release-actions .fab { position: static; opacity: 1; transform: none; }
+@media (max-width: 600px) {
+  .disc-release-art { width: 96px; height: 96px; }
+  .disc-release-title { font-size: 1.15rem; }
+}

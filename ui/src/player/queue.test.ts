@@ -13,6 +13,20 @@ describe("queue", () => {
     expect(Q.current(q)!.track.id).toBe("plex:2");
   });
 
+  it("a list's play button with shuffle on starts on a random song, not always the first", () => {
+    const list = [tr(1), tr(2), tr(3), tr(4)];
+    const q = Q.load(list, null, true, undefined, () => 0.6);
+    expect(Q.current(q)!.track.id).toBe("plex:3");
+    expect(q.index).toBe(0);
+    expect([...ids(q)].sort()).toEqual(list.map((x) => x.id).sort());
+    // Only playable songs are picked.
+    const q2 = Q.load(list, null, true, (t) => t.id === "plex:4", () => 0);
+    expect(Q.current(q2)!.track.id).toBe("plex:4");
+    // Shuffle off: from the top. A chosen song still starts first with shuffle on.
+    expect(Q.current(Q.load(list, null, false))!.track.id).toBe("plex:1");
+    expect(Q.current(Q.load(list, 1, true))!.track.id).toBe("plex:2");
+  });
+
   it("add to queue goes after current and earlier queued tracks (Next in queue)", () => {
     let q = Q.load([tr(1), tr(2), tr(3)], 0);
     q = Q.enqueue(q, [tr(10)]);

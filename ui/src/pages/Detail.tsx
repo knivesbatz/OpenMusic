@@ -1,5 +1,5 @@
 // Artist, album and playlist pages.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { albumMenu, artistMenu, canChangeCover, changeCover, downloadable, downloadTracks, removeDownloads, likedMenu, likesOn, playlistMenu, providerOfId, toggleSaved, trackHead, trackMenu } from "../actions";
 import { api, artUrl, inTauri } from "../api";
@@ -15,13 +15,13 @@ import { setPlaylistSort, sortTracks, usePlaylistSort, type SortKey } from "../s
 import { orderEpisodes, setOldestFirst, useOldestFirst } from "../store/podcastSort";
 import { useSettings } from "../store/settings";
 import { useMe } from "../store/profile";
-import { navigate, openMenu, toast, type MenuItem } from "../store/ui";
+import { navigate, openMenu, toast, type DiscFilter, type MenuItem } from "../store/ui";
 import { refreshAllowed, serviceName, signedIn, sourceOf } from "../store/providers";
-import type { Album, Artist, ArtistOverride, PlayContext, Track } from "../types";
+import type { Album, Artist, ArtistOverride, MediaItem, PlayContext, Track } from "../types";
 import { PROVIDERS } from "../types";
 import { partErrors } from "../searchMerge";
 import { cls, FIND_EVENT, fmtTime, totalDuration } from "../util";
-import { CardShelf, Grid } from "./Browse";
+import { cardMenu, CardShelf, Grid, playItem } from "./Browse";
 
 export function Hero({
   art,
@@ -99,7 +99,7 @@ function ActionBar({ tracks, ctx, onMore, extra, right }: { tracks: Track[]; ctx
           <I.IPause size={24} />
         </button>
       ) : (
-        <PlayFab big label={t("play")} onClick={() => P.playTracks(tracks, 0, ctx)} />
+        <PlayFab big label={t("play")} onClick={() => P.playAll(tracks, ctx)} />
       )}
       <button className={cls("icon-btn lg ab-shuffle", shuffle && "on")} aria-pressed={shuffle} aria-label={t("shuffle")} title={t("shuffle")} onClick={() => P.setShuffle(!shuffle)}>
         <I.IShuffle size={26} />
@@ -251,7 +251,7 @@ export function AlbumPage({ id }: { id: string }) {
   const t = useT();
   const phone = usePhoneLayout();
   const { data, error, loading, reload } = useAsync(() => api.album(id).then(async (p) => (await refreshAllowed(), p)), [id]);
-  usePageTitle(data?.album.title, () => data && P.playTracks(data.tracks, 0, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }), { art: data?.album.artwork, ctxId: id });
+  usePageTitle(data?.album.title, () => data && P.playAll(data.tracks, { kind: "album", id, title: data.album.title, artwork: data.album.artwork }), { art: data?.album.artwork, ctxId: id });
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const { album, tracks } = data;
@@ -362,16 +362,15 @@ async function openArtistPageMenu(e: React.MouseEvent, id: string, artist: Artis
   openMenu(ev, items, { title: artist.name, art: artist.artwork });
 }
 
-export function ArtistPage({ id }: { id: string }) {
+export function ArtistPage({ id, discography }: { id: string; discography?: DiscFilter }) {
   const t = useT();
   const { data, error, loading, reload } = useAsync(() => api.artist(id).then(async (p) => (await refreshAllowed(), p)), [id]);
   // Compilations by name from MusicBrainz (YouTube Music doesn't mark them; Plex only when tagged).
   const artistName = data?.artist?.name ?? "";
   const { data: mbCompilations } = useAsync(() => (artistName ? api.artistCompilations(artistName) : Promise.resolve([])), [artistName]);
-  usePageTitle(data?.artist?.name, () => data && P.playTracks(data.topTracks, 0, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }), { art: data?.artist?.artwork, ctxId: id });
+  usePageTitle(data?.artist?.name, () => data && P.playAll(data.topTracks, { kind: "artist", id, title: data.artist?.name ?? "", artwork: data.artist?.artwork }), { art: data?.artist?.artwork, ctxId: id });
   const [more, setMore] = useState(false);
   const [disc, setDisc] = useState<Disc>("popular");
-  const [showAll, setShowAll] = useState(false);
   if (loading && !data) return <Loading />;
   if (error || !data) return <ErrorBox message={error ?? t("errorGeneric")} onRetry={reload} />;
   const name = data.artist?.name ?? "";
@@ -387,18 +386,17 @@ export function ArtistPage({ id }: { id: string }) {
   const all: Album[] = newestFirst([...albumsAll, ...singles, ...compilations]);
   const discItems =
     disc === "albums" ? albumsAll : disc === "singles" ? singles : disc === "compilations" ? compilations : disc === "appears" ? data.appearsOn : all;
-  if (showAll)
+  if (discography)
     return (
-      <div className="page">
-        <div className="row between">
-          <h1>{name}</h1>
-          <button className="pill ghost small" onClick={() => setShowAll(false)}>
-            {t("back")}
-          </button>
-        </div>
-        <DiscChips disc={disc} setDisc={setDisc} hasAppears={data.appearsOn.length > 0} hasCompilations={compilations.length > 0} />
-        <Grid items={discItems.map((a) => ({ type: "album" as const, ...a }))} />
-      </div>
+      <Discography
+        id={id}
+        name={name}
+        filter={discography}
+        albums={albumsAll}
+        singles={singles}
+        compilations={compilations}
+        appearsOn={data.appearsOn}
+      />
     );
   return (
     <div className="page detail">
@@ -431,7 +429,7 @@ export function ArtistPage({ id }: { id: string }) {
         <section className="shelf">
           <div className="shelf-head">
             <h2>{t("discography")}</h2>
-            <button className="link" onClick={() => setShowAll(true)}>
+            <button className="link" onClick={() => navigate({ name: "discography", id, filter: disc === "popular" ? "all" : disc })}>
               {t("showAll")}
             </button>
           </div>
@@ -452,6 +450,153 @@ export function ArtistPage({ id }: { id: string }) {
 }
 
 const artBg = (a: string) => artUrl(a, 1000) ?? "";
+
+type Kind = "album" | "single" | "ep" | "compilation" | "appears";
+
+/** An artist's whole discography, like Spotify's: a filter (All, Albums, Singles and EPs,
+ * Compilations), a sort, and cards or each release with its songs. */
+function Discography({
+  id,
+  name,
+  filter,
+  albums,
+  singles,
+  compilations,
+  appearsOn,
+}: {
+  id: string;
+  name: string;
+  filter: DiscFilter;
+  albums: Album[];
+  singles: Album[];
+  compilations: Album[];
+  appearsOn: Album[];
+}) {
+  const t = useT();
+  const view = useSettings((s) => s.discographyView);
+  const setSettings = useSettings((s) => s.set);
+  const [sort, setSort] = useState<{ key: "date" | "name"; desc: boolean }>({ key: "date", desc: true });
+  const kinds = useMemo(() => {
+    const m = new Map<string, Kind>();
+    for (const a of albums) m.set(a.id, "album");
+    for (const a of singles) m.set(a.id, /\bep\b/i.test(a.kind ?? "") ? "ep" : "single");
+    for (const a of compilations) m.set(a.id, "compilation");
+    return m;
+  }, [albums, singles, compilations]);
+  const filters: [DiscFilter, string][] = [
+    ["all", t("all")],
+    ["albums", t("albums")],
+    ["singles", t("singlesEps")],
+    ...(compilations.length ? ([["compilations", t("compilations")]] as [DiscFilter, string][]) : []),
+    ...(appearsOn.length ? ([["appears", t("appearsOn")]] as [DiscFilter, string][]) : []),
+  ];
+  const current = filters.find(([k]) => k === filter) ?? filters[0];
+  const items = useMemo(() => {
+    const picked =
+      current[0] === "albums" ? albums : current[0] === "singles" ? singles : current[0] === "compilations" ? compilations : current[0] === "appears" ? appearsOn : [...albums, ...singles, ...compilations];
+    const out = sort.key === "name" ? [...picked].sort((a, b) => a.title.localeCompare(b.title)) : newestFirst(picked);
+    return sort.desc === (sort.key === "date") ? out : out.reverse();
+  }, [current, albums, singles, compilations, appearsOn, sort]);
+  const kindLabel = (a: Album) => {
+    const k = kinds.get(a.id);
+    return k === "single" ? t("single") : k === "ep" ? t("ep") : k === "compilation" ? t("compilation") : k === "album" ? t("album") : a.artist;
+  };
+  const sortLabel = sort.key === "date" ? t("sortReleaseDate") : t("sortTitle");
+  const openFilter = (e: React.MouseEvent) =>
+    openMenu(
+      e,
+      filters.map(([k, label]) => ({ label, checked: k === current[0], onClick: () => navigate({ name: "discography", id, filter: k }, true) })),
+    );
+  const openSort = (e: React.MouseEvent) =>
+    openMenu(e, [
+      { label: t("sortMenu"), heading: true },
+      ...(
+        [
+          ["date", t("sortReleaseDate")],
+          ["name", t("sortTitle")],
+        ] as const
+      ).map(([k, label]) => ({
+        label,
+        checked: sort.key === k,
+        hint: sort.key === k ? (sort.desc ? "↓" : "↑") : undefined,
+        // Picking the current sort again flips its direction.
+        onClick: () => setSort({ key: k, desc: sort.key === k ? !sort.desc : k === "date" }),
+      })),
+    ]);
+  const grid = view === "grid";
+  return (
+    <div className="page discography">
+      <div className="disc-head">
+        <h1 className="disc-title">
+          <ArtistName name={name} />
+        </h1>
+        <div className="disc-tools">
+          <button className="sort-btn" aria-label={current[1]} onClick={openFilter}>
+            <span>{current[1]}</span>
+            <I.IChevronDown size={16} />
+          </button>
+          <button className="sort-btn" aria-label={`${t("sortMenu")}: ${sortLabel}`} onClick={openSort}>
+            <span>{sortLabel}</span>
+          </button>
+          <button
+            className="icon-btn"
+            aria-label={grid ? t("viewList") : t("viewGrid")}
+            title={grid ? t("viewList") : t("viewGrid")}
+            onClick={() => setSettings({ discographyView: grid ? "list" : "grid" })}
+          >
+            {grid ? <I.IViewList size={18} /> : <I.IViewGrid size={18} />}
+          </button>
+        </div>
+      </div>
+      {grid ? (
+        <Grid items={items.map((a) => ({ type: "album" as const, ...a }))} sub={(it) => [(it as Album).year, kindLabel(it as Album)].filter(Boolean).join(" • ")} />
+      ) : (
+        items.map((a) => <DiscRelease key={a.id} album={a} kind={kindLabel(a)} />)
+      )}
+    </div>
+  );
+}
+
+/** One release in a discography's list view, with its songs (loaded once it scrolls near). */
+function DiscRelease({ album, kind }: { album: Album; kind: string }) {
+  const t = useT();
+  const ref = useRef<HTMLElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || near) return;
+    if (typeof IntersectionObserver === "undefined") return setNear(true);
+    const io = new IntersectionObserver((es) => es.some((x) => x.isIntersecting) && setNear(true), { rootMargin: "800px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [near]);
+  const { data } = useAsync(() => (near ? api.album(album.id) : Promise.resolve(null)), [album.id, near]);
+  const tracks = data?.tracks ?? [];
+  const item: MediaItem = { type: "album", ...album };
+  const ctx: PlayContext = { kind: "album", id: album.id, title: album.title, artwork: album.artwork };
+  return (
+    <section className="disc-release" ref={ref}>
+      <div className="disc-release-head">
+        <button className="disc-release-art" onClick={() => navigate({ name: "album", id: album.id })} aria-label={album.title}>
+          <Art src={album.artwork} />
+        </button>
+        <div className="disc-release-text">
+          <button className="disc-release-title" onClick={() => navigate({ name: "album", id: album.id })}>
+            <TitleText text={album.title} />
+          </button>
+          <div className="muted small">{[kind, album.year, data ? t("songsCount", { n: tracks.length }) : null].filter(Boolean).join(" • ")}</div>
+          <div className="disc-release-actions">
+            <PlayFab label={t("play")} onClick={() => (tracks.length ? P.playAll(tracks, ctx) : playItem(item))} />
+            <button className="icon-btn" aria-label={t("more")} title={t("more")} onClick={(e) => cardMenu(e, item)}>
+              <I.IMore size={20} />
+            </button>
+          </div>
+        </div>
+      </div>
+      {data ? <TrackList tracks={tracks} context={ctx} showAlbum={false} showArt={false} /> : <div className="disc-release-wait" style={{ height: 56 * 6 }} />}
+    </section>
+  );
+}
 
 function DiscChips({ disc, setDisc, hasAppears, hasCompilations }: { disc: Disc; setDisc: (d: Disc) => void; hasAppears: boolean; hasCompilations: boolean }) {
   const t = useT();
@@ -479,7 +624,7 @@ export function PlaylistPage({ id }: { id: string }) {
   const me = useMe();
   const accounts = useApp((s) => s.auth);
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
-  usePageTitle(data?.playlist.title, () => data && P.playTracks(data.tracks, 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
+  usePageTitle(data?.playlist.title, () => data && P.playAll(data.tracks, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
     art: data?.playlist.artwork ?? data?.tracks[0]?.artwork,
     ctxId: id,
   });
@@ -651,7 +796,7 @@ export function PodcastPage({ id }: { id: string }) {
   const { data, error, loading, reload } = useAsync(() => api.playlist(id), [id]);
   // Episodes newest first (the provider's order) or oldest first, remembered per show.
   const oldestFirst = useOldestFirst(id);
-  usePageTitle(data?.playlist.title, () => data && P.playTracks(orderEpisodes(data.tracks, oldestFirst), 0, { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
+  usePageTitle(data?.playlist.title, () => data && P.playAll(orderEpisodes(data.tracks, oldestFirst), { kind: "playlist", id, title: data.playlist.title, artwork: data.playlist.artwork }), {
     art: data?.playlist.artwork,
     ctxId: id,
   });
@@ -670,7 +815,7 @@ export function PodcastPage({ id }: { id: string }) {
           {following ? t("following") : t("follow")}
         </button>
         <span className="grow" />
-        {tracks.length > 0 && <PlayFab big label={t("play")} onClick={() => P.playTracks(tracks, 0, ctx)} />}
+        {tracks.length > 0 && <PlayFab big label={t("play")} onClick={() => P.playAll(tracks, ctx)} />}
       </div>
       <div className="podcast-cols">
         <section className="podcast-eps">
@@ -754,7 +899,7 @@ function MergedLikedPage() {
   const tracks = data?.tracks ?? [];
   const title = t("likedSongs");
   const ctx: PlayContext = { kind: "playlist", id: "liked", title };
-  usePageTitle(title, () => data && P.playTracks(tracks, 0, ctx), { ctxId: "liked" });
+  usePageTitle(title, () => data && P.playAll(tracks, ctx), { ctxId: "liked" });
   const sort = usePlaylistSort("liked");
   const compact = useSettings((s) => s.compactTracks);
   const [find, setFind] = useState<string | null>(null);
