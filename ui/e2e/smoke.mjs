@@ -700,6 +700,50 @@ await test("Private session: nothing played is recorded until it's turned off", 
   },
 });
 
+await test("Android feels like Spotify: swipe the cover to skip, pull the song screen down to close, Back keeps the scroll", async (p) => {
+  await p.setViewportSize({ width: 400, height: 860 });
+  const cdp = await p.context().newCDPSession(p);
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+  const drag = async (x0, y0, x1, y1, steps = 8, ms = 200) => {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: x0, y: y0 }] });
+    for (let i = 1; i <= steps; i++) {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: x0 + ((x1 - x0) * i) / steps, y: y0 + ((y1 - y0) * i) / steps }] });
+      await p.waitForTimeout(ms / steps);
+    }
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  await p.waitForSelector(".mobile-tabs");
+  // Pages scroll on under the tabs.
+  assert.equal(await p.evaluate(() => getComputedStyle(document.querySelector(".mobile-tabs")).position), "absolute");
+  await p.locator(".playerbar").click({ position: { x: 150, y: 30 } });
+  await p.waitForSelector(".pp .pp-art-swipe");
+  await p.waitForTimeout(400);
+  const title = async () => (await p.locator(".pp-title").textContent()).trim();
+  const first = await title();
+  const art = await p.locator(".pp-art-swipe").boundingBox();
+  await drag(art.x + art.width - 20, art.y + 100, art.x + 20, art.y + 110);
+  await p.waitForFunction((t) => document.querySelector(".pp-title")?.textContent?.trim() !== t, first);
+  // A short pull springs back; a long one closes the song screen.
+  await drag(200, 40, 200, 100, 6, 600);
+  await p.waitForTimeout(400);
+  assert.equal(await p.locator(".pp").count(), 1);
+  await drag(200, 40, 200, 420);
+  await p.waitForSelector(".pp", { state: "detached" });
+  // A new page slides in; Back slides Home back in where it was scrolled.
+  await p.evaluate(() => document.querySelector(".main").scrollTo(0, 400));
+  await p.waitForTimeout(200);
+  await p.locator(".shelf .card").nth(4).click();
+  await p.waitForFunction(() => document.querySelector(".main")?.dataset.nav === "fwd");
+  await p.locator('button[aria-label="Go back"]:visible').first().click();
+  await p.waitForFunction(() => document.querySelector(".main")?.dataset.nav === "back" && document.querySelector(".main").scrollTop === 400);
+  // Song rows have no heart column on phones (Spotify's rows: title, artist, •••).
+  await p.locator(".shelf .card").first().click();
+  await p.waitForSelector(".tl-row:not(.tl-head)");
+  assert.equal(await p.locator(".tl-row .like:visible").count(), 0);
+}, {
+  init: () => (window.__MOCK__.app_info = { ...window.__MOCK__.app_info, platform: "android" }),
+});
+
 await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {
   await p.waitForFunction(() => typeof window.__omMedia === "function");
   const first = await p.locator(".pb-meta .name").textContent();

@@ -1236,3 +1236,40 @@ img.avatar { object-fit: cover; }
   .disc-release-art { width: 96px; height: 96px; }
   .disc-release-title { font-size: 1.15rem; }
 }
+
+/* ---- phone: Spotify's feel (2.4.0) ----------------------------------------------------------- */
+@keyframes om-push { from { opacity: 0; transform: translateX(36px); } to { opacity: 1; transform: none; } }
+@keyframes om-back { from { opacity: 0; transform: translateX(-28px); } to { opacity: 1; transform: none; } }
+@keyframes om-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+@media (max-width: 760px) {
+  /* A new page slides in from the right, Back from the left; the three tabs only cross-fade. */
+  .main[data-nav="fwd"] > .page { animation: om-push 260ms var(--ease-out) backwards; }
+  .main[data-nav="back"] > .page { animation: om-back 240ms var(--ease-out) backwards; }
+  .main[data-nav="tab"] > .page { animation: om-fade 160ms var(--ease-out) backwards; }
+
+  /* Pages scroll on under the mini player and the tabs, which fade into black over them. */
+  :root { --tabs-h: 64px; }
+  .layout, .layout.with-queue { position: relative; grid-template-rows: 1fr; grid-template-areas: "main"; }
+  .main { grid-row: 1 / -1; padding-bottom: calc(var(--tabs-h) + 76px); scroll-padding-bottom: calc(var(--tabs-h) + 76px); }
+  .layout:has(.playerbar.idle) .main { padding-bottom: calc(var(--tabs-h) + 16px); }
+  .playerbar { position: absolute; left: 8px; right: 8px; margin: 0; bottom: calc(var(--tabs-h) + 2px); z-index: 6; animation: om-rise var(--t-slow) var(--ease-out); }
+  .mobile-tabs { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; background: linear-gradient(180deg, #0000 0, #000000d0 38%, #000 100%); }
+  .mobile-tabs::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 96px; pointer-events: none; background: linear-gradient(180deg, #0000, #000000b0); }
+  .layout:has(.playerbar.idle) .mobile-tabs::before { height: 40px; }
+  .toasts { bottom: calc(var(--tabs-h) + 84px); }
+
+  /* Song rows like Spotify's: title and artist (download arrow inline), then •••; no heart column. */
+  .tl-dur .like { display: none; }
+  .tl-row, .tl-row.no-album { grid-template-columns: 28px 1fr 40px; }
+  .tl-dur { justify-content: flex-end; }
+
+  /* The cover's colour reaches the top of the screen when the find bar sits above the cover. */
+  .page.detail:has(> .pl-findbar) .hero-wash { top: -200px; height: calc(100% + 260px); }
+  /* No sticky "edit" layer on the cover after a tap. */
+  .hero-art-btn:hover .hero-art-edit { opacity: 0; }
+  .hero-art-btn:active .hero-art-edit { opacity: 1; }
+
+  /* Song screen: the cover follows a sideways swipe; the page scrolls only up and down. */
+  .pp-art-swipe { touch-action: pan-y; will-change: transform; }
+  .pp { will-change: transform; }
+}

@@ -265,6 +265,11 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   headless Chromium; the googlevideo download itself not verified (host blocked in the cloud sandbox)
 - ✅ Keep Android sign-in across updates: every APK has the same signature (stable key, see above)
 
+## 2.4.0 (Android feel)
+- ✅ Page push/back slides (`data-nav` on `.main`), scroll kept per history entry (desktop too),
+  pull-down to close the song screen, cover swipe to skip, tabs and mini player over the page,
+  no heart column in phone rows (e2e with CDP touch events; not yet tried on a phone)
+
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library
 - 🟡 Desktop-only features gated (`desktop`/`mobile` cfg from core build.rs; `OPENMUSIC_CHECK_MOBILE=1
