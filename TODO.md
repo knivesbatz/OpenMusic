@@ -247,8 +247,9 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   e2e covers the page side; not yet run on a device
 - 🟡 Pause on `ACTION_AUDIO_BECOMING_NOISY` (headphones unplugged, Bluetooth disconnected), Android
 - ⬜ Desktop: pause when the audio device disconnects (WebView2 doesn't tell the page)
-- ⬜ Android updates need the `ANDROID_KEYSTORE` / `ANDROID_KEYSTORE_PASSWORD` secrets (one last
-  uninstall after the switch)
+- ✅ Android updates: every APK is signed with the stable key from the `ANDROID_KEYSTORE` /
+  `ANDROID_KEYSTORE_PASSWORD` secrets (certificate SHA-256 a7979368…0bf9, checked again by the
+  release job; confirmed on the published 2.3.3 APK)
 
 ## 1.0.9
 - 🟡 Windows title bar: main window undecorated on Windows (`lib.rs`), `TitleBar.tsx` with ••• menu,
@@ -262,8 +263,7 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
 - 🟡 YouTube Music offline downloads (2.2.0, ytdl.ts + downloads.rs `run_youtube`, after
   github.com/Chaitanya-Shahare/ytspot). Stream URL + PO token verified against live YouTube from a
   headless Chromium; the googlevideo download itself not verified (host blocked in the cloud sandbox)
-- ⬜ Keep Android sign-in across reinstalls: needs the `ANDROID_KEYSTORE` secrets so every APK has
-  the same signature
+- ✅ Keep Android sign-in across updates: every APK has the same signature (stable key, see above)
 
 ## Android (started)
 - 🟡 Shared codebase: same Rust core and React UI; app crates expose a `mobile_entry_point` library
