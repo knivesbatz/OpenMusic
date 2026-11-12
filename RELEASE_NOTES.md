@@ -1,6 +1,17 @@
-# OpenSpot 2.3.3
+# OpenSpot 2.4.0
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.4.0
+Android feels more like Spotify's app:
+- **Pages slide.** A page you open slides in from the right; Back slides the last one back in,
+  scrolled to where you left it (on desktop too). The Home, Search and Library tabs cross-fade.
+- **The song screen follows your finger.** Pull it down to close it, swipe the cover left or right
+  to skip to the next or previous song.
+- **Pages scroll on under the mini player and the tabs**, which fade to black over them.
+- **Cleaner song rows:** title and artist, then •••, without the heart column.
+- The cover's colour reaches the top of playlist pages, and the cover no longer keeps an "edit"
+  layer after a tap. The mini player rises in when a song starts.
 
 ## New in 2.3.3
 - **Discography like Spotify's.** An artist's "Show all" page now has a filter menu (All, Albums,

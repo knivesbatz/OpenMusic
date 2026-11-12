@@ -95,7 +95,8 @@ jobs:
   e2e:
     needs: plan
     if: needs.plan.outputs.prebuilt == ''
-    runs-on: ubuntu-latest
+    # Playwright 1.56 can't install Chromium's dependencies on ubuntu-latest's Ubuntu 26.04 yet.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

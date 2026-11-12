@@ -131,9 +131,40 @@ export function App() {
   const titleBar = useTitleBar();
   const scroll = useRef<HTMLElement>(null);
 
+  // Spotify's navigation: a new page slides in from the right, Back slides the earlier one in from
+  // the left where you left it (scroll position kept per history entry), tabs just fade.
+  const scrollOf = useRef(new WeakMap<object, number>());
+  // Kept until the next move, so re-renders don't restart the page's entrance.
+  const navWas = useRef<{ pos: number; kind: string }>({ pos, kind: "none" });
+  if (navWas.current.pos !== pos) {
+    const back = pos < navWas.current.pos;
+    navWas.current = { pos, kind: back ? "back" : ["home", "search", "library"].includes(routeName) ? "tab" : "fwd" };
+  }
+  const navKind = navWas.current.kind;
   useEffect(() => {
-    scroll.current?.scrollTo(0, 0);
+    const el = scroll.current;
     useUi.setState({ scrolled: 0 });
+    if (!el) return;
+    const s = useUi.getState();
+    const y = scrollOf.current.get(s.stack[s.pos]) ?? 0;
+    el.scrollTo(0, 0);
+    if (!y) return;
+    // The page loads its data first: wait (up to a second) until it is tall enough.
+    let frame = 0;
+    let tries = 0;
+    const tick = () => {
+      if (el.scrollHeight - el.clientHeight >= y || ++tries > 60) el.scrollTo(0, y);
+      else frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    const stop = () => cancelAnimationFrame(frame);
+    el.addEventListener("touchstart", stop, { once: true, passive: true });
+    el.addEventListener("wheel", stop, { once: true, passive: true });
+    return () => {
+      stop();
+      el.removeEventListener("touchstart", stop);
+      el.removeEventListener("wheel", stop);
+    };
   }, [pos]);
 
   // Past the page header the top bar turns solid and shows the page's name (Spotify style).
@@ -142,6 +173,8 @@ export function App() {
     if (!el) return;
     let frame = 0;
     const on = () => {
+      const st = useUi.getState();
+      scrollOf.current.set(st.stack[st.pos], el.scrollTop);
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
@@ -244,14 +277,14 @@ export function App() {
               <Resizer setting="sidebarWidth" range={SIDEBAR_W} def={300} edge="right" onCollapse={() => useSettings.getState().set({ sidebarCollapsed: true })} />
             </div>
           )}
-          <main id="main" className="main" ref={scroll} tabIndex={-1}>
+          <main id="main" className="main" ref={scroll} tabIndex={-1} data-nav={navKind}>
             {htpc ? <TvNav /> : <TopBar />}
             <ScrollCtx.Provider value={scroll}>
               <ErrorBoundary resetKey={pos}>
                 <Suspense fallback={<Loading />}>
                   {/* A service switched on or off: the page loads again (Settings, where the
                       switches are, stays as it is). */}
-                  <Page key={routeName === "settings" ? "settings" : servicesEpoch} />
+                  <Page key={routeName === "settings" ? "settings" : `${servicesEpoch}:${pos}`} />
                 </Suspense>
               </ErrorBoundary>
             </ScrollCtx.Provider>

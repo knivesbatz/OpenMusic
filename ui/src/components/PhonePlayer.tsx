@@ -52,6 +52,101 @@ function PhoneSeek() {
   );
 }
 
+/** Spotify's song screen moves with the finger: pull it down to close it (from the top of the
+ * screen), swipe the cover sideways to change song. Transforms are set directly, without
+ * re-rendering. */
+function usePullToClose(close: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  const g = useRef<{ x0: number; y0: number; t0: number; dy: number; mode: "?" | "down" | "no" } | null>(null);
+  const reduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const slideOut = () => {
+    const el = ref.current;
+    if (!el || reduce()) return close();
+    el.style.transition = "transform 220ms cubic-bezier(0.2, 0, 0, 1)";
+    el.style.transform = "translateY(100%)";
+    setTimeout(close, 200);
+  };
+  const handlers = {
+    onTouchStart: (e: React.TouchEvent) => {
+      const el = ref.current;
+      const scrolled = (el?.querySelector(".pp-scroll")?.scrollTop ?? 0) > 0;
+      if (!el || scrolled || (e.target as HTMLElement).closest("input, .pp-art-swipe, .pq-sheet, .pp-lyrics")) return;
+      g.current = { x0: e.touches[0].clientX, y0: e.touches[0].clientY, t0: performance.now(), dy: 0, mode: "?" };
+    },
+    onTouchMove: (e: React.TouchEvent) => {
+      const s = g.current;
+      const el = ref.current;
+      if (!s || !el || s.mode === "no") return;
+      const dx = e.touches[0].clientX - s.x0;
+      const dy = e.touches[0].clientY - s.y0;
+      if (s.mode === "?") {
+        if (dy > 8 && dy > Math.abs(dx)) s.mode = "down";
+        else if (Math.abs(dx) > 8 || dy < -8) return void (s.mode = "no");
+        else return;
+      }
+      s.dy = Math.max(0, dy);
+      el.style.transition = "none";
+      el.style.transform = `translateY(${s.dy}px)`;
+    },
+    onTouchEnd: () => {
+      const s = g.current;
+      const el = ref.current;
+      g.current = null;
+      if (!s || !el || s.mode !== "down") return;
+      const fast = s.dy / Math.max(1, performance.now() - s.t0) > 0.6;
+      if (s.dy > 140 || (fast && s.dy > 40)) return slideOut();
+      el.style.transition = "transform 200ms cubic-bezier(0.2, 0, 0, 1)";
+      el.style.transform = "";
+    },
+  };
+  return { ref, handlers, slideOut };
+}
+
+function useArtSwipe() {
+  const ref = useRef<HTMLDivElement>(null);
+  const g = useRef<{ x0: number; y0: number; dx: number; mode: "?" | "side" | "no" } | null>(null);
+  const set = (x: number, fade: boolean, animate: boolean) => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.transition = animate ? "transform 200ms cubic-bezier(0.2, 0, 0, 1), opacity 200ms" : "none";
+    el.style.transform = x ? `translateX(${x}px)` : "";
+    el.style.opacity = fade ? "0" : "";
+  };
+  return {
+    ref,
+    onTouchStart: (e: React.TouchEvent) => (g.current = { x0: e.touches[0].clientX, y0: e.touches[0].clientY, dx: 0, mode: "?" }),
+    onTouchMove: (e: React.TouchEvent) => {
+      const s = g.current;
+      if (!s || s.mode === "no") return;
+      const dx = e.touches[0].clientX - s.x0;
+      const dy = e.touches[0].clientY - s.y0;
+      if (s.mode === "?") {
+        if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) s.mode = "side";
+        else if (Math.abs(dy) > 10) return void (s.mode = "no");
+        else return;
+      }
+      s.dx = dx;
+      set(dx, false, false);
+    },
+    onTouchEnd: () => {
+      const s = g.current;
+      g.current = null;
+      if (!s || s.mode !== "side") return;
+      const w = ref.current?.offsetWidth ?? 300;
+      if (Math.abs(s.dx) < w / 4) return set(0, false, true);
+      const dir = s.dx < 0 ? -1 : 1;
+      set(dir * w, true, true);
+      setTimeout(() => {
+        if (dir < 0) P.next();
+        else P.previous();
+        // The new cover comes in from the other side.
+        set(-dir * 40, true, false);
+        requestAnimationFrame(() => requestAnimationFrame(() => set(0, false, true)));
+      }, 180);
+    },
+  };
+}
+
 export function PhonePlayer() {
   const t = useT();
   const item = usePlayer((s) => s.queue.items[s.queue.index]);
@@ -59,9 +154,11 @@ export function PhonePlayer() {
   const context = usePlayer((s) => s.context);
   const playing = usePlayer((s) => s.playing);
   const queueOpen = useUi((s) => s.queueOpen);
-  const close = () => useUi.setState({ fullscreen: false, queueOpen: false });
+  const pull = usePullToClose(() => useUi.setState({ fullscreen: false, queueOpen: false }));
+  const swipe = useArtSwipe();
+  const close = pull.slideOut;
   return (
-    <div className="pp" role="dialog" aria-modal="true" aria-label={t("nowPlaying")}>
+    <div className="pp" role="dialog" aria-modal="true" aria-label={t("nowPlaying")} ref={pull.ref} {...pull.handlers}>
       <div className="pp-wash" style={wash(tr?.artwork)} aria-hidden="true" />
       <div className="pp-scroll">
         <div className="pp-top">
@@ -75,7 +172,9 @@ export function PhonePlayer() {
             <I.IMore size={24} />
           </button>
         </div>
-        {tr ? <Art src={tr.artwork} size={800} className={cls("pp-art", !playing && "paused")} alt={tr.album ?? tr.title} /> : <div className="pp-art art" />}
+        <div className="pp-art-swipe" ref={swipe.ref} onTouchStart={swipe.onTouchStart} onTouchMove={swipe.onTouchMove} onTouchEnd={swipe.onTouchEnd}>
+          {tr ? <Art src={tr.artwork} size={800} className={cls("pp-art", !playing && "paused")} alt={tr.album ?? tr.title} /> : <div className="pp-art art" />}
+        </div>
         <div className="pp-gap" />
         <div className="pp-meta">
           <div className="pp-names">
