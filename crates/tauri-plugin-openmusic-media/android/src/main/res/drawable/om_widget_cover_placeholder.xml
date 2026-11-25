@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The cover widget with nothing to show yet: a dark disc with a music note. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="120dp" android:height="120dp" android:viewportWidth="120" android:viewportHeight="120">
+    <path android:fillColor="#FF2A2A2A" android:pathData="M60,0a60,60 0,1 0,0.001 0z" />
+    <path android:fillColor="#99FFFFFF" android:pathData="M68,36v30.5a9,9 0,1 1,-4 -7.48V44h-14v26.5a9,9 0,1 1,-4 -7.48V36z" />
+</vector>

@@ -339,6 +339,9 @@ export interface NowPlaying {
   playing: boolean;
   positionMs: number;
   durationMs: number;
+  /** In Liked Songs / can be liked: the cover widget's heart. */
+  liked: boolean;
+  canLike: boolean;
 }
 
 /** YouTube playlist visibility (`yt_copy_playlist`). */

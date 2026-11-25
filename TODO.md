@@ -265,6 +265,15 @@ Legend: ✅ done and tested · 🟡 implemented, not verified against a real acc
   headless Chromium; the googlevideo download itself not verified (host blocked in the cloud sandbox)
 - ✅ Keep Android sign-in across updates: every APK has the same signature (stable key, see above)
 
+## 2.4.1
+- 🟡 Two songs at once on Android: an activity destroyed while the playback service kept the
+  process alive left its page playing; the new page's notification updates (seq from 1) lost to
+  it. Now `MediaBridge.page` retires the old page (`__omShutdown`, then destroy), only the newest
+  page updates the notification, and seq starts from the clock (e2e for the page side; the
+  activity path needs a phone)
+- 🟡 Cover widget (Symfonium style): circular cover, play/pause, heart (`like` action,
+  `liked`/`canLike` in NowPlaying). Not yet seen on a phone
+
 ## 2.4.0 (Android feel)
 - ✅ Page push/back slides (`data-nav` on `.main`), scroll kept per history entry (desktop too),
   pull-down to close the song screen, cover swipe to skip, tabs and mini player over the page,

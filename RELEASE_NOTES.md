@@ -1,6 +1,15 @@
-# OpenSpot 2.4.0
+# OpenSpot 2.4.1
 
 YouTube Music, Plex and your local files in one app.
+
+## New in 2.4.1
+- **Fixed two songs playing at once on Android.** When Android closed the app's screen while music
+  kept playing, opening the app again started a second player: the old song went on in the
+  background (and the notification stayed on it) while the app played another, and the old one
+  stopped partway through when Android cleaned it up. The newly opened app now stops the old
+  player, and the notification always follows the app you see.
+- **New home screen widget: Cover.** The playing song's cover in a circle, with play/pause and a
+  heart to like the song (like Symfonium's). Long-press the home screen → Widgets → OpenSpot.
 
 ## New in 2.4.0
 Android feels more like Spotify's app:

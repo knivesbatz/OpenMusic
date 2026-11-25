@@ -744,6 +744,33 @@ await test("Android feels like Spotify: swipe the cover to skip, pull the song s
   init: () => (window.__MOCK__.app_info = { ...window.__MOCK__.app_info, platform: "android" }),
 });
 
+await test("Android: a page replaced by a newer one stops playing and leaves the notification alone; the heart likes the song", async (p) => {
+  await p.waitForFunction(() => typeof window.__omShutdown === "function" && typeof window.__omMedia === "function");
+  // The cover widget's heart likes the playing song, and the notification hears about it.
+  const before = await p.evaluate(() => window.__NP.length);
+  await p.evaluate(() => window.__omMedia({ action: "like" }));
+  await p.waitForFunction((n) => window.__NP.length > n && window.__NP.at(-1).liked !== window.__NP[0].liked, before);
+  assert.equal(typeof (await p.evaluate(() => window.__NP.at(-1).canLike)), "boolean");
+  // Updates are numbered from the clock, so a newly opened page always wins.
+  assert.ok((await p.evaluate(() => window.__NP.at(-1).seq)) > 1_600_000_000_000);
+  await p.evaluate(() => window.__omShutdown());
+  await p.waitForTimeout(300);
+  const sent = await p.evaluate(() => window.__NP.length);
+  const title = await p.locator(".pb-meta .name").textContent();
+  await p.evaluate(() => window.__omMedia({ action: "play" }));
+  await p.evaluate(() => window.__omMedia({ action: "like" }));
+  await p.waitForTimeout(500);
+  assert.equal(await p.locator('.playerbar button[aria-label="Pause"]').count(), 0, "a retired page never plays again");
+  assert.equal(await p.evaluate(() => window.__NP.length), sent, "nor updates the notification");
+  assert.equal(await p.locator(".pb-meta .name").textContent(), title);
+}, {
+  userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36",
+  init: () => {
+    window.__NP = [];
+    window.OpenMusicMedia = { update: (j) => window.__NP.push(JSON.parse(j)) };
+  },
+});
+
 await test("Android: notification buttons reach the player and song changes reach the notification directly", async (p) => {
   await p.waitForFunction(() => typeof window.__omMedia === "function");
   const first = await p.locator(".pb-meta .name").textContent();

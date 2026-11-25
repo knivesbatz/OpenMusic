@@ -15,4 +15,8 @@
     <string name="om_kind_album">Album</string>
     <string name="om_kind_artist">Artist</string>
     <string name="om_kind_other">Recently played</string>
+    <string name="om_widget_cover">Cover</string>
+    <string name="om_widget_cover_desc">The playing song\'s cover in a circle, with play and like</string>
+    <string name="om_like">Like</string>
+    <string name="om_unlike">Remove from Liked Songs</string>
 </resources>
