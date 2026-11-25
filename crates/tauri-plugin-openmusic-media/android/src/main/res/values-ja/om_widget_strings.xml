@@ -15,4 +15,8 @@
     <string name="om_kind_album">アルバム</string>
     <string name="om_kind_artist">アーティスト</string>
     <string name="om_kind_other">最近再生した項目</string>
+    <string name="om_widget_cover">カバー</string>
+    <string name="om_widget_cover_desc">再生中の曲のカバーを円形で表示し、再生といいねのボタン付き</string>
+    <string name="om_like">いいね</string>
+    <string name="om_unlike">お気に入りの曲から削除</string>
 </resources>

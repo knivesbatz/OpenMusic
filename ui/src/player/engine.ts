@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api, errorMessage, fileUrl, inTauri } from "../api";
 import { normalizeGain } from "./loudness";
-import type { PlayContext, Stream, Track } from "../types";
+import type { PlayContext, Provider, Stream, Track } from "../types";
 import { useSettings } from "../store/settings";
 import { navigate, toast } from "../store/ui";
 import * as Q from "./queue";
@@ -12,7 +12,7 @@ import { setYouTubePrivate, YouTubeOutput } from "./youtube";
 import { displayTrack } from "../store/songmeta";
 import { translate } from "../i18n";
 import { registerCacheReset, useApp } from "../store/app";
-import { playable, sourceOf, ytOn } from "../store/providers";
+import { capsOf, isOn, playable, signedIn, sourceOf, ytOn } from "../store/providers";
 
 export interface PlayerState {
   queue: Q.QueueState;
@@ -236,6 +236,7 @@ function srcOf(s: Stream): string | null {
 // ---- loading and transitions -----------------------------------------------------------------
 
 async function loadCurrent(autoplay: boolean, startAt = 0) {
+  if (retired) return;
   const item = Q.current(get().queue);
   const token = ++loadToken;
   clearInterval(fadeTimer);
@@ -268,6 +269,7 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
     // set: a preload still resolving its stream left an empty deck, and the song "played" silently.
     if (preloaded && preloaded.uid === item.uid && preloaded.src) {
       const other = 1 - active;
+      stopYouTube();
       deck().pause();
       active = other;
       preloaded = null;
@@ -280,6 +282,7 @@ async function loadCurrent(autoplay: boolean, startAt = 0) {
     }
     // Same for a YouTube video cued on the idle player.
     if (ytPreloaded && ytPreloaded.uid === item.uid && ytPreloaded.ready) {
+      for (const a of decks) a.pause();
       ytDeck().stop();
       ytActive = 1 - ytActive;
       ytPreloaded = null;
@@ -623,11 +626,26 @@ function trackScrobble() {
   }
 }
 
+// ---- a page that was replaced ------------------------------------------------------------------
+// Android can close the app's screen while the playback service keeps the app running. Opening it
+// again loads a new page with its own player, while the old page could go on playing in the
+// background: two songs at once, and the notification stuck on the old one. The media plugin
+// calls __omShutdown() on the old page as the new one loads: it falls silent for good.
+let retired = false;
+
+export function shutdown() {
+  retired = true;
+  wantPlay = false;
+  clearTimeout(persistTimer);
+  stopAll();
+  set({ playing: false });
+}
+
 // ---- persistence -----------------------------------------------------------------------------
 
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 function persistSoon() {
-  if (!inTauri) return;
+  if (!inTauri || retired) return;
   clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     const s = get();
@@ -726,6 +744,7 @@ export function playUid(uid: string) {
 }
 
 export function play() {
+  if (retired) return;
   const s = get();
   if (!Q.current(s.queue)) return;
   if (s.output === null || (s.output === "audio" && !deck()?.src)) {
@@ -867,12 +886,14 @@ export function initRemoteControls() {
   if (!inTauri) return;
   // Controls outside the webview: the desktop tray menu and the Android notification.
   const onAction = (payload: { action: string; positionMs?: number }) => {
+    if (retired) return;
     if (payload.action === "play") play();
     else if (payload.action === "pause") pause();
     else if (payload.action === "toggle") toggle();
     else if (payload.action === "next") next();
     else if (payload.action === "previous") previous();
     else if (payload.action === "seek" && payload.positionMs != null) seek(payload.positionMs / 1000);
+    else if (payload.action === "like") likeCurrent();
   };
   listen<{ action: string; positionMs?: number }>("media-action", ({ payload }) => onAction(payload));
   if (!/Android/i.test(navigator.userAgent)) {
@@ -882,6 +903,7 @@ export function initRemoteControls() {
   }
   const w = window as unknown as AndroidBridge;
   w.__omBackground = onAppBackground;
+  w.__omShutdown = shutdown;
   // The media plugin calls this directly for notification, headset and lock-screen buttons, and
   // when headphones or a Bluetooth device disconnect.
   w.__omMedia = onAction;
@@ -893,25 +915,42 @@ export function initRemoteControls() {
   mirrorNowPlaying((json) => w.OpenMusicMedia?.update(json));
 }
 
+/** The cover widget's heart: the playing song into (or out of) Liked Songs. */
+function likeCurrent() {
+  const cur = Q.current(get().queue)?.track;
+  if (!cur || cur.episode || !likesOn(cur)) return;
+  void import("../actions").then((m) => m.toggleLike(cur));
+}
+
+/** The song's own service keeps likes (signed in, switched on). As actions.ts `canLikeTrack`. */
+function likesOn(track: Track): boolean {
+  const p = (sourceOf(track.id) ?? (track.source === "local" ? null : track.source)) as Provider | null;
+  return !!p && isOn(p) && signedIn(p) && !!capsOf(p).favorites;
+}
+
 /**
  * Keep the system's media controls showing the player: the Android notification, or the Windows
  * media controls. `direct` also sends each update straight to the Android notification.
  */
 function mirrorNowPlaying(direct?: (json: string) => void) {
-  let sent = { id: "", playing: false, at: 0, position: 0 };
-  let seq = 0;
-  usePlayer.subscribe((s) => {
+  let sent = { id: "", playing: false, at: 0, position: 0, liked: false };
+  // Starts from the clock, so a newly opened page's updates always win over an older page's.
+  let seq = Date.now();
+  const update = () => {
+    if (retired) return;
+    const s = get();
     const cur = Q.current(s.queue)?.track;
     if (!cur) {
       if (sent.id) api.mediaStop().catch(() => {});
-      sent = { id: "", playing: false, at: 0, position: 0 };
+      sent = { id: "", playing: false, at: 0, position: 0, liked: false };
       return;
     }
     const t = displayTrack(cur);
-    // Send on track, play/pause or seek changes only; Android advances the position itself.
+    const liked = useApp.getState().liked.has(cur.id);
+    // Send on track, play/pause, seek or like changes only; Android advances the position itself.
     const expected = sent.position + (sent.playing ? (Date.now() - sent.at) / 1000 : 0);
-    if (t.id === sent.id && s.playing === sent.playing && Math.abs(s.position - expected) < 3) return;
-    sent = { id: t.id, playing: s.playing, at: Date.now(), position: s.position };
+    if (t.id === sent.id && s.playing === sent.playing && liked === sent.liked && Math.abs(s.position - expected) < 3) return;
+    sent = { id: t.id, playing: s.playing, at: Date.now(), position: s.position, liked };
     const now = {
       id: t.id,
       seq: ++seq,
@@ -922,6 +961,8 @@ function mirrorNowPlaying(direct?: (json: string) => void) {
       playing: s.playing,
       positionMs: Math.round(s.position * 1000),
       durationMs: Math.round(s.duration * 1000) || (t.durationMs ?? 0),
+      liked,
+      canLike: !cur.episode && likesOn(cur),
     };
     // Straight to the notification (works while the app is in the background), then through the
     // app, which adds the cover as a local file.
@@ -931,12 +972,15 @@ function mirrorNowPlaying(direct?: (json: string) => void) {
       /* the app's route below still updates it */
     }
     api.mediaUpdate(now).catch(() => {});
-  });
+  };
+  usePlayer.subscribe(update);
+  useApp.subscribe((s, prev) => s.liked !== prev.liked && update());
 }
 
 /** What the Android media plugin adds to the page. */
 interface AndroidBridge {
   __omBackground?: () => void;
+  __omShutdown?: () => void;
   __omMedia?: (a: { action: string; positionMs?: number }) => void;
   __omLaunch?: (l: WidgetLaunch) => void;
   OpenMusicMedia?: { update(json: string): void; takeLaunch?(): string };
@@ -1012,6 +1056,8 @@ function initDiscordPresence() {
           playing: true,
           positionMs: Math.round(s.position * 1000),
           durationMs: Math.round(s.duration * 1000),
+          liked: false,
+          canLike: false,
         },
         link,
       )

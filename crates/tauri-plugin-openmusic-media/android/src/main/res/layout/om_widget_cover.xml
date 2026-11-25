@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cover widget (Symfonium style): the cover in a circle, play/pause on its lower left and the
+     heart on its upper right, each a round button overlapping the edge. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/om_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:id="@+id/om_square"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center">
+
+        <ImageView
+            android:id="@+id/om_art"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_margin="12dp"
+            android:contentDescription="@string/om_widget_cover"
+            android:scaleType="fitCenter"
+            android:src="@drawable/om_widget_cover_placeholder" />
+
+        <ImageButton
+            android:id="@+id/om_like"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_gravity="top|end"
+            android:background="@null"
+            android:contentDescription="@string/om_like"
+            android:padding="0dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/om_ic_cover_heart" />
+
+        <ImageButton
+            android:id="@+id/om_play"
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:layout_gravity="bottom|start"
+            android:background="@null"
+            android:contentDescription="@string/om_play"
+            android:padding="0dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/om_ic_cover_play" />
+    </FrameLayout>
+</FrameLayout>

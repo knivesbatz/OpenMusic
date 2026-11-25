@@ -42,6 +42,9 @@ class NowPlayingArgs {
   var playing: Boolean = false
   var positionMs: Long = 0
   var durationMs: Long = 0
+  /** In Liked Songs / can be liked (the cover widget's heart). */
+  var liked: Boolean = false
+  var canLike: Boolean = false
 }
 
 @InvokeArg
@@ -60,6 +63,12 @@ object MediaBridge {
   @Volatile var channel: Channel? = null
   @Volatile var nowPlaying: NowPlayingArgs? = null
   @Volatile var webView: WebView? = null
+  /**
+   * The newest page, kept after its activity is destroyed (unlike [webView]): the playback service
+   * keeps the app running, so a destroyed activity's page can go on playing. When the app is
+   * opened again, the new page retires it (see [retire]).
+   */
+  @Volatile var page: WebView? = null
   /** A widget opened the app: what to do once the page asks (`{"action"|"kind","id"}` JSON). */
   @Volatile var pendingLaunch: String? = null
   private val main = Handler(Looper.getMainLooper())
@@ -103,6 +112,29 @@ object MediaBridge {
     }
   }
 
+  /**
+   * A page replaced by a newer one (the app's screen was closed and opened again while the
+   * service kept the app running): it stops its player for good, then is freed. Otherwise it kept
+   * playing its song alongside the new page's, and kept the notification on its song.
+   */
+  fun retire(old: WebView) {
+    main.post {
+      try {
+        old.evaluateJavascript("window.__omShutdown&&window.__omShutdown()", null)
+      } catch (e: Exception) {
+        Logger.error("openmusic-media: could not stop an old page: ${e.message}")
+      }
+      main.postDelayed({
+        try {
+          old.stopLoading()
+          old.loadUrl("about:blank")
+          old.destroy()
+        } catch (e: Exception) {
+        }
+      }, 1500)
+    }
+  }
+
   /** Show `args` (from the page, or from Rust with the artwork file), starting the service if needed. */
   fun apply(context: android.content.Context, args: NowPlayingArgs) {
     val cur = nowPlaying
@@ -140,6 +172,9 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
     // wry asks for a user gesture before media plays; the player starts the next song and the
     // crossfade's second player on its own, so allow it.
     webView.settings.mediaPlaybackRequiresUserGesture = false
+    val old = MediaBridge.page
+    if (old != null && old !== webView) MediaBridge.retire(old)
+    MediaBridge.page = webView
     MediaBridge.webView = webView
     MediaBridge.pendingLaunch = Widgets.launchJson(activity.intent)
     // Widget buttons now control this page instead of opening the app.
@@ -163,10 +198,14 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
           playing = o.optBoolean("playing")
           positionMs = o.optLong("positionMs")
           durationMs = o.optLong("durationMs")
+          liked = o.optBoolean("liked")
+          canLike = o.optBoolean("canLike")
         }
       } catch (e: Exception) {
         return
       }
+      // A page that a newer one replaced: never let it take the notification back.
+      if (MediaBridge.page !== webView) return
       activity.runOnUiThread { askForNotifications() }
       MediaBridge.apply(activity, args)
     }
@@ -233,6 +272,7 @@ class MediaPlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun update(invoke: Invoke) {
     val args = invoke.parseArgs(NowPlayingArgs::class.java)
+    if (MediaBridge.page !== webView) return invoke.resolve()
     askForNotifications()
     MediaBridge.apply(activity, args)
     invoke.resolve()

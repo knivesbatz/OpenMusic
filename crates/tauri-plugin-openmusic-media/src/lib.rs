@@ -25,6 +25,11 @@ pub struct NowPlaying {
     pub playing: bool,
     pub position_ms: u64,
     pub duration_ms: u64,
+    /** The song is in Liked Songs / it can be liked (the cover widget's heart). */
+    #[serde(default)]
+    pub liked: bool,
+    #[serde(default)]
+    pub can_like: bool,
 }
 
 /// A control pressed outside the app: `play`, `pause`, `next`, `previous` or `seek`.

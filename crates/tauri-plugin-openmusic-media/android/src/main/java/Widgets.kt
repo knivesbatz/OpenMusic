@@ -61,9 +61,12 @@ object Widgets {
         .putString("np_artist", np.artist)
         .putString("np_art", np.artwork)
         .putBoolean("np_playing", np.playing)
+        .putBoolean("np_liked", np.liked)
+        .putBoolean("np_can_like", np.canLike)
         .apply()
     }
     refreshNowPlaying(app)
+    refreshCover(app)
     // Recently played has a play/pause button too.
     if (np != null && np.playing != wasPlaying) refreshRecent(app)
   }
@@ -84,6 +87,7 @@ object Widgets {
   /** The page came or went: buttons switch between controlling it and opening the app. */
   fun refreshAll(c: Context) {
     refreshNowPlaying(c.applicationContext)
+    refreshCover(c.applicationContext)
     refreshRecent(c.applicationContext)
   }
 
@@ -97,6 +101,17 @@ object Widgets {
       }
     } catch (e: Exception) {
       Logger.error("openmusic-media: now playing widget: ${e.message}")
+    }
+  }
+
+  fun refreshCover(c: Context) = worker.execute {
+    try {
+      val mgr = AppWidgetManager.getInstance(c)
+      for (id in mgr.getAppWidgetIds(ComponentName(c, CoverWidget::class.java))) {
+        mgr.updateAppWidget(id, coverViews(c, mgr.getAppWidgetOptions(id)))
+      }
+    } catch (e: Exception) {
+      Logger.error("openmusic-media: cover widget: ${e.message}")
     }
   }
 
@@ -170,6 +185,39 @@ object Widgets {
         Variant(290, 110) { build(R.layout.om_widget_now_playing_tall, prev = true, logo = true) },
       ),
     )
+  }
+
+  /**
+   * The cover widget (Symfonium style): the cover cut to a circle, play/pause at its lower left and
+   * the heart at its upper right. It stays square inside whatever cell size it is given.
+   */
+  private fun coverViews(c: Context, opts: Bundle): RemoteViews {
+    val p = prefs(c)
+    val alive = MediaBridge.webView != null
+    val playing = alive && p.getBoolean("np_playing", false)
+    val liked = p.getBoolean("np_liked", false)
+    val canLike = alive && p.getBoolean("np_can_like", false)
+    val w = size(opts, AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 150)
+    val h = size(opts, AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 150)
+    val side = minOf(w, h)
+    val density = c.resources.displayMetrics.density
+    val art = circle(p.getString("np_art", null), (side * density).toInt().coerceIn(96, 600))
+    val v = RemoteViews(c.packageName, R.layout.om_widget_cover)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      v.setViewLayoutWidth(R.id.om_square, side.toFloat(), android.util.TypedValue.COMPLEX_UNIT_DIP)
+      v.setViewLayoutHeight(R.id.om_square, side.toFloat(), android.util.TypedValue.COMPLEX_UNIT_DIP)
+    }
+    if (art != null) v.setImageViewBitmap(R.id.om_art, art) else v.setImageViewResource(R.id.om_art, R.drawable.om_widget_cover_placeholder)
+    v.setContentDescription(R.id.om_art, p.getString("np_title", null) ?: c.getString(R.string.om_widget_nothing))
+    v.setOnClickPendingIntent(R.id.om_art, openApp(c, 300, null, null, null))
+    v.setImageViewResource(R.id.om_play, if (playing) R.drawable.om_ic_cover_pause else R.drawable.om_ic_cover_play)
+    v.setContentDescription(R.id.om_play, c.getString(if (playing) R.string.om_pause else R.string.om_play))
+    v.setOnClickPendingIntent(R.id.om_play, button(c, 301, "toggle", alive))
+    v.setViewVisibility(R.id.om_like, if (canLike) View.VISIBLE else View.GONE)
+    v.setImageViewResource(R.id.om_like, if (liked) R.drawable.om_ic_cover_heart_on else R.drawable.om_ic_cover_heart)
+    v.setContentDescription(R.id.om_like, c.getString(if (liked) R.string.om_unlike else R.string.om_like))
+    v.setOnClickPendingIntent(R.id.om_like, button(c, 302, "like", alive))
+    return v
   }
 
   private fun recentViews(c: Context, opts: Bundle): RemoteViews {
@@ -320,6 +368,20 @@ object Widgets {
     return out
   }
 
+  /** The cover cut to a circle `px` wide (the cover widget). */
+  private fun circle(path: String?, px: Int): Bitmap? {
+    val square = cover(path, px) ?: return null
+    val key = "$path@$px@circle"
+    synchronized(bitmaps) { bitmaps[key]?.let { return it } }
+    val out = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+      shader = BitmapShader(square, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+    }
+    Canvas(out).drawCircle(px / 2f, px / 2f, px / 2f, paint)
+    synchronized(bitmaps) { bitmaps[key] = out }
+    return out
+  }
+
   /** A muted card colour from the cover's average colour (white text stays readable on it). */
   private fun tint(art: Bitmap?): Int {
     art ?: return DEFAULT_TINT
@@ -359,6 +421,13 @@ class NowPlayingWidget : AppWidgetProvider() {
       Logger.error("openmusic-media: could not open the app from the widget: ${e.message}")
     }
   }
+}
+
+class CoverWidget : AppWidgetProvider() {
+  override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) = Widgets.refreshCover(context)
+
+  override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, options: Bundle) =
+    Widgets.refreshCover(context)
 }
 
 class RecentWidget : AppWidgetProvider() {
